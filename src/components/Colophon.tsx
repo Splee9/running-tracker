@@ -22,13 +22,12 @@ export function Colophon() {
     >
       <p className="eyebrow">Why this exists</p>
       <p className={styles.body}>
-        I'm a runner who can't leave a good number alone. By day I build AI products; before
-        sunrise I'm out chasing a marathon time I have no business chasing. Strava can tell me I
-        ran seven miles on Tuesday — it can't tell me I've quietly run most of the way around the
-        planet. So I built the thing that could: a little pipeline that swallows every run, does
-        the arithmetic, and turns a decade of GPS noise into one number I can actually{" "}
-        <em>feel</em>. Ex-hockey player, full-time tinkerer, recovering perfectionist. The line up
-        there is real, and it's still moving.
+        Around twenty-eight hundred miles a year, most of them before the city's awake. Running is
+        the thing everything else orbits — when I'm not chasing a fast marathon, I'm out on gravel
+        roads. The rest of the time I'm building: AI by trade, and odd little tools like this one
+        for the joy of it. Strava logged every mile but never told me what they added up to — that
+        I'd run most of the way around the planet. So I built the thing that would. I'd rather a
+        number I can <em>feel</em> than one I can only scroll past.
       </p>
       <p className={styles.byline}>
         — Spencer Lee ·{" "}
