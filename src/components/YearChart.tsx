@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { AnimatedNumber } from "./AnimatedNumber";
 import { Magnetic } from "./Magnetic";
 import { Rich } from "./Rich";
-import { data, lifetime } from "../lib/data";
+import { data, lifetime, type RaceCounts } from "../lib/data";
 import { fmt, fmt1 } from "../lib/format";
 import { headlineFor } from "../lib/comparisons";
 import styles from "./YearChart.module.css";
@@ -11,6 +11,25 @@ import styles from "./YearChart.module.css";
 type Scope = number | "lifetime";
 
 const maxMiles = Math.max(...data.years.map((y) => y.miles));
+
+const RACE_KINDS: { key: keyof RaceCounts; label: string }[] = [
+  { key: "marathon", label: "Marathons" },
+  { key: "half", label: "Halves" },
+  { key: "10K", label: "10Ks" },
+  { key: "5K", label: "5Ks" },
+];
+
+const EMPTY_RACES: RaceCounts = { marathon: 0, half: 0, "10K": 0, "5K": 0 };
+
+const lifetimeRaces: RaceCounts = data.years.reduce(
+  (acc, y) => ({
+    marathon: acc.marathon + y.races.marathon,
+    half: acc.half + y.races.half,
+    "10K": acc["10K"] + y.races["10K"],
+    "5K": acc["5K"] + y.races["5K"],
+  }),
+  { ...EMPTY_RACES },
+);
 
 export function YearChart() {
   const [selected, setSelected] = useState<Scope>("lifetime");
@@ -24,6 +43,12 @@ export function YearChart() {
         })();
 
   const avg = scope.miles / scope.runs;
+
+  const races =
+    selected === "lifetime"
+      ? lifetimeRaces
+      : data.years.find((y) => y.year === selected)?.races ?? EMPTY_RACES;
+  const totalRaces = RACE_KINDS.reduce((sum, k) => sum + races[k.key], 0);
 
   return (
     <section className={styles.section} aria-label="Mileage by year">
@@ -88,6 +113,32 @@ export function YearChart() {
           );
         })}
       </div>
+
+      <motion.div
+        key={String(selected)}
+        className={styles.races}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <p className={styles.racesLabel}>
+          Races {selected === "lifetime" ? "logged" : `in ${selected}`}
+        </p>
+        {totalRaces === 0 ? (
+          <p className={styles.racesEmpty}>No races logged{selected === "lifetime" ? "" : " this year"}.</p>
+        ) : (
+          <div className={styles.raceGrid}>
+            {RACE_KINDS.map((k) => (
+              <div key={k.key} className={styles.race}>
+                <div className={styles.raceCount}>
+                  <AnimatedNumber value={races[k.key]} duration={0.5} />
+                </div>
+                <div className={styles.raceKind}>{k.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </motion.div>
     </section>
   );
 }

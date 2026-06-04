@@ -1,10 +1,18 @@
 import raw from "../data.json";
 
+export interface RaceCounts {
+  marathon: number;
+  half: number;
+  "10K": number;
+  "5K": number;
+}
+
 export interface YearDatum {
   year: number;
   miles: number;
   runs: number;
   partial: boolean;
+  races: RaceCounts;
 }
 
 export interface MonthDatum {

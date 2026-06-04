@@ -4,55 +4,109 @@
       "year": 2018,
       "miles": 206.5,
       "runs": 84,
-      "partial": false
+      "partial": false,
+      "races": {
+        "marathon": 0,
+        "half": 0,
+        "10K": 0,
+        "5K": 0
+      }
     },
     {
       "year": 2019,
       "miles": 296.0,
       "runs": 117,
-      "partial": false
+      "partial": false,
+      "races": {
+        "marathon": 0,
+        "half": 0,
+        "10K": 2,
+        "5K": 0
+      }
     },
     {
       "year": 2020,
       "miles": 960.4,
       "runs": 191,
-      "partial": false
+      "partial": false,
+      "races": {
+        "marathon": 0,
+        "half": 0,
+        "10K": 0,
+        "5K": 0
+      }
     },
     {
       "year": 2021,
       "miles": 1342.5,
       "runs": 233,
-      "partial": false
+      "partial": false,
+      "races": {
+        "marathon": 0,
+        "half": 0,
+        "10K": 0,
+        "5K": 0
+      }
     },
     {
       "year": 2022,
       "miles": 1776.8,
       "runs": 251,
-      "partial": false
+      "partial": false,
+      "races": {
+        "marathon": 2,
+        "half": 0,
+        "10K": 1,
+        "5K": 0
+      }
     },
     {
       "year": 2023,
       "miles": 2229.2,
       "runs": 315,
-      "partial": false
+      "partial": false,
+      "races": {
+        "marathon": 1,
+        "half": 2,
+        "10K": 0,
+        "5K": 0
+      }
     },
     {
       "year": 2024,
       "miles": 2338.8,
       "runs": 301,
-      "partial": false
+      "partial": false,
+      "races": {
+        "marathon": 1,
+        "half": 0,
+        "10K": 1,
+        "5K": 0
+      }
     },
     {
       "year": 2025,
       "miles": 2812.0,
       "runs": 323,
-      "partial": false
+      "partial": false,
+      "races": {
+        "marathon": 2,
+        "half": 1,
+        "10K": 1,
+        "5K": 0
+      }
     },
     {
       "year": 2026,
       "miles": 719.1,
       "runs": 103,
-      "partial": true
+      "partial": true,
+      "races": {
+        "marathon": 0,
+        "half": 0,
+        "10K": 0,
+        "5K": 0
+      }
     }
   ],
   "monthly": [

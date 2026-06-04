@@ -156,6 +156,60 @@
   font-weight: 600;
 }
 
+/* race breakdown panel (beneath the chart) */
+.races {
+  margin-top: clamp(28px, 5vw, 44px);
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.racesLabel {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.racesEmpty {
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.raceGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.race {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.raceCount {
+  font-size: clamp(26px, 5vw, 34px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.raceKind {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 560px) {
+  .raceGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 @media (max-width: 480px) {
   .val {
     font-size: 11px;
