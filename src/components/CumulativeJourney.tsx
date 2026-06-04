@@ -45,6 +45,25 @@ const MILESTONES = [
     return { ...m, i, x: px(i), y: py(months[i].cumulative), frac: i / (N - 1) };
   });
 
+// Year boundaries along the x-axis — one tick at the first logged month of each year.
+const YEAR_TICKS = (() => {
+  const seen = new Set<string>();
+  const ticks: { year: string; x: number; frac: number }[] = [];
+  months.forEach((m, i) => {
+    const yr = m.month.slice(0, 4);
+    if (!seen.has(yr)) {
+      seen.add(yr);
+      ticks.push({ year: yr, x: px(i), frac: i / (N - 1) });
+    }
+  });
+  return ticks;
+})();
+
+// pathLength reveals over scroll progress [0.05, 0.95]; this maps an x-fraction
+// to the progress value at which the drawing pen reaches it, so markers pop in
+// exactly as the line passes them.
+const penAt = (frac: number) => 0.05 + 0.9 * frac;
+
 export function CumulativeJourney() {
   const ref = useRef<HTMLElement>(null);
   const reduce = useReducedMotion();
@@ -64,6 +83,9 @@ export function CumulativeJourney() {
         <div className={styles.chartWrap}>
           <svg viewBox={`0 0 ${W} ${H}`} className={styles.svg} aria-hidden>
             <path d={PATH} className={styles.track} />
+            {YEAR_TICKS.map((t) => (
+              <YearTick key={t.year} t={t} progress={scrollYProgress} reduce={reduce} />
+            ))}
             <motion.path
               d={PATH}
               className={styles.draw}
@@ -104,8 +126,9 @@ function Milestone({
   progress: MotionValue<number>;
   reduce: boolean | null;
 }) {
-  const start = Math.max(0, m.frac - 0.05);
-  const end = Math.max(start + 0.001, m.frac);
+  const at = penAt(m.frac);
+  const start = Math.max(0, at - 0.04);
+  const end = Math.min(1, Math.max(start + 0.001, at));
   const opacity = useTransform(progress, [start, end], [0, 1]);
   const ty = useTransform(progress, [start, end], [8, 0]);
 
@@ -117,6 +140,32 @@ function Milestone({
       <circle cx={m.x} cy={m.y} r={4} className={styles.dot} />
       <text x={m.x} y={labelY} className={styles.label} textAnchor={anchor}>
         {fmt(m.miles)} mi · {m.label}
+      </text>
+    </motion.g>
+  );
+}
+
+function YearTick({
+  t,
+  progress,
+  reduce,
+}: {
+  t: { year: string; x: number; frac: number };
+  progress: MotionValue<number>;
+  reduce: boolean | null;
+}) {
+  const at = penAt(t.frac);
+  const start = Math.max(0, at - 0.03);
+  const end = Math.min(1, Math.max(start + 0.001, at));
+  const opacity = useTransform(progress, [start, end], [0, 1]);
+
+  const baseline = H - PAD_BOTTOM;
+  const anchor = t.x < W * 0.04 ? "start" : t.x > W * 0.96 ? "end" : "middle";
+  return (
+    <motion.g style={reduce ? { opacity: 0.9 } : { opacity }}>
+      <line x1={t.x} y1={baseline} x2={t.x} y2={baseline + 7} className={styles.yearTick} />
+      <text x={t.x} y={baseline + 22} className={styles.yearLabel} textAnchor={anchor}>
+        {t.year}
       </text>
     </motion.g>
   );
