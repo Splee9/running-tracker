@@ -3,6 +3,7 @@ import { Hero } from "./components/Hero";
 import { YearChart } from "./components/YearChart";
 import { CumulativeJourney } from "./components/CumulativeJourney";
 import { Comparisons } from "./components/Comparisons";
+import { Colophon } from "./components/Colophon";
 import { Footer } from "./components/Footer";
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
         <YearChart />
         <CumulativeJourney />
         <Comparisons />
+        <Colophon />
         <Footer />
       </main>
     </>
