@@ -69,11 +69,14 @@ const penAt = (frac: number) => 0.05 + 0.9 * frac;
 // (marathon tallest → 5K shortest) so different types separate vertically even
 // when their dates are close.
 const RACE_STYLE: Record<string, { color: string; label: string; stem: number }> = {
-  marathon: { color: "#c0432f", label: "Marathon", stem: 54 },
-  half: { color: "#1f7a5c", label: "Half", stem: 41 },
-  "10K": { color: "#2f6db0", label: "10K", stem: 30 },
-  "5K": { color: "#8a5a9e", label: "5K", stem: 22 },
+  marathon: { color: "#c0432f", label: "Marathon", stem: 30 },
+  half: { color: "#1f7a5c", label: "Half", stem: 24 },
+  "10K": { color: "#2f6db0", label: "10K", stem: 19 },
+  "5K": { color: "#8a5a9e", label: "5K", stem: 14 },
 };
+
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const fmtMonth = (iso: string) => `${MON[+iso.slice(5, 7) - 1]} ${iso.slice(0, 4)}`;
 
 const daysInMonth = (iso: string) => new Date(+iso.slice(0, 4), +iso.slice(5, 7), 0).getDate();
 
@@ -94,12 +97,14 @@ const RACE_MARKERS = data.raceEvents
 export function CumulativeJourney() {
   const ref = useRef<HTMLElement>(null);
   const reduce = useReducedMotion();
+  const [hovered, setHovered] = useState<number | null>(null);
   const { scrollYProgress } = useScroll({
     target: ref,
     offset: ["start start", "end end"],
   });
 
   const pathLength = useTransform(scrollYProgress, [0.05, 0.95], [0, 1]);
+  const hoveredRace = hovered === null ? null : RACE_MARKERS[hovered];
 
   return (
     <section ref={ref} className={styles.section} aria-label="Cumulative distance over time">
@@ -108,7 +113,7 @@ export function CumulativeJourney() {
         <JourneyTotal progress={scrollYProgress} reduce={reduce} />
 
         <div className={styles.chartWrap}>
-          <svg viewBox={`0 0 ${W} ${H}`} className={styles.svg} aria-hidden>
+          <svg viewBox={`0 0 ${W} ${H}`} className={styles.svg}>
             <path d={PATH} className={styles.track} />
             {YEAR_TICKS.map((t) => (
               <YearTick key={t.year} t={t} progress={scrollYProgress} reduce={reduce} />
@@ -122,12 +127,44 @@ export function CumulativeJourney() {
               <Milestone key={m.miles} m={m} progress={scrollYProgress} reduce={reduce} />
             ))}
             {RACE_MARKERS.map((r, i) => (
-              <RaceMarker key={`${r.date}-${i}`} r={r} progress={scrollYProgress} reduce={reduce} />
+              <RaceMarker
+                key={`${r.date}-${i}`}
+                r={r}
+                active={hovered === i}
+                progress={scrollYProgress}
+                reduce={reduce}
+                onEnter={() => setHovered(i)}
+                onLeave={() => setHovered((h) => (h === i ? null : h))}
+              />
             ))}
           </svg>
+
+          {hoveredRace && (
+            <div
+              className={styles.raceTip}
+              style={{
+                left: `${(hoveredRace.x / W) * 100}%`,
+                top: `${(Math.max(12, hoveredRace.y - RACE_STYLE[hoveredRace.distance].stem) / H) * 100}%`,
+                color: RACE_STYLE[hoveredRace.distance].color,
+                borderColor: RACE_STYLE[hoveredRace.distance].color,
+              }}
+            >
+              <span className={styles.raceTipType}>{RACE_STYLE[hoveredRace.distance].label}</span>
+              <span className={styles.raceTipDate}>{fmtMonth(hoveredRace.date)}</span>
+            </div>
+          )}
         </div>
 
-        <p className={styles.cue}>Keep scrolling — the line is every mile, stacked end to end.</p>
+        <div className={styles.legend} aria-hidden>
+          {Object.values(RACE_STYLE).map((s) => (
+            <span key={s.label} className={styles.legendItem}>
+              <span className={styles.legendDot} style={{ background: s.color }} />
+              {s.label}
+            </span>
+          ))}
+        </div>
+
+        <p className={styles.cue}>Hover a marker to see the race. The line is every mile, stacked end to end.</p>
       </div>
     </section>
   );
@@ -177,12 +214,18 @@ function Milestone({
 
 function RaceMarker({
   r,
+  active,
   progress,
   reduce,
+  onEnter,
+  onLeave,
 }: {
   r: { date: string; distance: string; x: number; y: number; frac: number };
+  active: boolean;
   progress: MotionValue<number>;
   reduce: boolean | null;
+  onEnter: () => void;
+  onLeave: () => void;
 }) {
   const s = RACE_STYLE[r.distance];
   const topY = Math.max(12, r.y - s.stem);
@@ -191,25 +234,33 @@ function RaceMarker({
   const start = Math.max(0, at - 0.025);
   const end = Math.min(1, Math.max(start + 0.001, at));
   const opacity = useTransform(progress, [start, end], [0, 1]);
-  const lineTop = useTransform(progress, [start, end], [r.y, topY + 4]); // shoots up
+  const lineTop = useTransform(progress, [start, end], [r.y, topY]); // shoots up
 
-  const anchor = r.x > W * 0.92 ? "end" : r.x < W * 0.05 ? "start" : "middle";
   return (
     <motion.g style={reduce ? { opacity: 1 } : { opacity }}>
       <motion.line
         x1={r.x}
         y1={r.y}
         x2={r.x}
-        y2={reduce ? topY + 4 : lineTop}
+        y2={reduce ? topY : lineTop}
         stroke={s.color}
-        strokeWidth={2}
+        strokeWidth={active ? 3.5 : 2.25}
         strokeLinecap="round"
         vectorEffect="non-scaling-stroke"
       />
-      <circle cx={r.x} cy={r.y} r={3.5} fill={s.color} />
-      <text x={r.x} y={topY} fill={s.color} textAnchor={anchor} className={styles.raceLabel}>
-        {s.label}
-      </text>
+      <circle cx={r.x} cy={topY} r={active ? 5 : 3.5} fill={s.color} />
+      <circle cx={r.x} cy={r.y} r={1.8} fill={s.color} />
+      {/* invisible, generous hit target for hover */}
+      <rect
+        x={r.x - 9}
+        y={topY - 8}
+        width={18}
+        height={r.y - topY + 16}
+        fill="transparent"
+        style={{ cursor: "pointer" }}
+        onPointerEnter={onEnter}
+        onPointerLeave={onLeave}
+      />
     </motion.g>
   );
 }

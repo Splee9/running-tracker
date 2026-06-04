@@ -37,7 +37,60 @@
 }
 
 .chartWrap {
+  position: relative;
   width: 100%;
+}
+
+/* hover tooltip for a race marker (HTML, positioned by % over the SVG) */
+.raceTip {
+  position: absolute;
+  transform: translate(-50%, -116%);
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  white-space: nowrap;
+  background: var(--card);
+  border: 1.5px solid;
+  border-radius: 9px;
+  padding: 7px 11px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.1);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.raceTipType {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.raceTipDate {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* color key for the race markers */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.legendDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
 }
 
 .svg {
@@ -79,18 +132,6 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   /* cream halo keeps labels legible where the line + markers crowd together */
-  paint-order: stroke;
-  stroke: var(--bg);
-  stroke-width: 3px;
-  stroke-linejoin: round;
-}
-
-.raceLabel {
-  font-family: var(--font);
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  font-variant-numeric: tabular-nums;
   paint-order: stroke;
   stroke: var(--bg);
   stroke-width: 3px;

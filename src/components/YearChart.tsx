@@ -127,22 +127,22 @@ export function YearChart() {
         {totalRaces === 0 ? (
           <p className={styles.racesEmpty}>No races logged{selected === "lifetime" ? "" : " this year"}.</p>
         ) : (
-          <div className={styles.raceGrid}>
+          <div className={styles.raceRow}>
             {RACE_KINDS.map((k) => {
               const count = races[k.key];
               return (
                 <div
                   key={k.key}
-                  className={styles.race}
+                  className={styles.raceStat}
                   style={{ "--race-color": k.color } as React.CSSProperties}
                 >
-                  <div
-                    className={styles.raceCount}
+                  <span
+                    className={styles.raceNum}
                     style={{ color: count > 0 ? k.color : "var(--muted)" }}
                   >
                     <AnimatedNumber value={count} duration={0.5} />
-                  </div>
-                  <div className={styles.raceKind}>{k.label}</div>
+                  </span>
+                  <span className={styles.raceName}>{k.label}</span>
                 </div>
               );
             })}
