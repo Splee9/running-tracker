@@ -1,0 +1,9 @@
+# Netlify builds the site from source on every push to the public repo.
+# Only web/running-tracker/ is mirrored out (via git subtree), so these files
+# sit at the repo root that Netlify sees.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"

@@ -1,0 +1,12 @@
+# Dependencies & build output — Netlify installs and builds fresh on deploy.
+node_modules/
+dist/
+dist-ssr/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Local env / logs
+*.local
+npm-debug.log*
+.DS_Store

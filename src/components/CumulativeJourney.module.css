@@ -1,0 +1,94 @@
+.section {
+  position: relative;
+  z-index: 1;
+  height: 300vh; /* scroll runway for the draw animation */
+  border-top: 1px solid var(--line);
+}
+
+.sticky {
+  position: sticky;
+  top: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(40px, 8vw, 80px) 0;
+}
+
+.total {
+  margin: 16px 0 clamp(28px, 5vw, 44px);
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.3em;
+}
+
+.totalNum {
+  font-size: clamp(48px, 11vw, 96px);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.totalUnit {
+  font-size: clamp(16px, 2.6vw, 24px);
+  color: var(--muted);
+}
+
+.chartWrap {
+  width: 100%;
+}
+
+.svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.track {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.draw {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.dot {
+  fill: var(--ink);
+}
+
+.leader {
+  stroke: var(--line);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.label {
+  fill: var(--ink);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.cue {
+  margin-top: clamp(28px, 5vw, 44px);
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+@media (max-width: 560px) {
+  .label {
+    font-size: 18px; /* counteract small-viewport SVG downscale */
+  }
+}

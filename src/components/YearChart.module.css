@@ -1,0 +1,166 @@
+.section {
+  position: relative;
+  z-index: 1;
+  padding: clamp(60px, 12vw, 120px) 0;
+  border-top: 1px solid var(--line);
+}
+
+.scope {
+  margin: 18px 0 clamp(28px, 5vw, 44px);
+}
+
+.scopeNum {
+  font-size: clamp(40px, 9vw, 76px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.scopeUnit {
+  margin-left: 0.18em;
+  font-size: clamp(16px, 2.4vw, 22px);
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.scopeMeta {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.scopeMeta b {
+  color: var(--ink);
+}
+
+.scopeHeadline {
+  margin-top: 16px;
+  font-size: clamp(19px, 3.2vw, 27px);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  max-width: 36ch;
+}
+
+/* chips */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: clamp(32px, 6vw, 52px);
+}
+
+.chip {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip:hover {
+  border-color: #c9c6bf;
+  color: var(--ink);
+}
+
+.chipActive,
+.chipActive:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* chart */
+.chart {
+  display: flex;
+  align-items: flex-end;
+  gap: clamp(6px, 2vw, 18px);
+  height: 260px;
+}
+
+.col {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  margin-bottom: 6px;
+}
+
+.col:hover .val,
+.colActive .val {
+  opacity: 1;
+}
+
+.barTrack {
+  width: 100%;
+  max-width: 72px;
+  display: flex;
+  align-items: flex-end;
+}
+
+.bar {
+  width: 100%;
+  height: 100%;
+  transform-origin: bottom;
+  background: var(--bar);
+  border-radius: 6px 6px 0 0;
+  opacity: 0.6;
+  transition: background 0.25s ease, opacity 0.25s ease;
+}
+
+.col:hover .bar {
+  opacity: 0.85;
+}
+
+.colActive .bar {
+  background: var(--bar-active);
+  opacity: 1;
+}
+
+.xlabel {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.colActive .xlabel {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  .val {
+    font-size: 11px;
+  }
+  .xlabel {
+    font-size: 11px;
+  }
+}

@@ -1,0 +1,19 @@
+.footer {
+  position: relative;
+  z-index: 1;
+  margin-top: clamp(40px, 8vw, 72px);
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.footer b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.stamp {
+  margin-top: 6px;
+  opacity: 0.85;
+}

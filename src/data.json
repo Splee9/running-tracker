@@ -1,0 +1,558 @@
+{
+  "years": [
+    {
+      "year": 2018,
+      "miles": 206.5,
+      "runs": 84,
+      "partial": false
+    },
+    {
+      "year": 2019,
+      "miles": 296.0,
+      "runs": 117,
+      "partial": false
+    },
+    {
+      "year": 2020,
+      "miles": 960.4,
+      "runs": 191,
+      "partial": false
+    },
+    {
+      "year": 2021,
+      "miles": 1342.5,
+      "runs": 233,
+      "partial": false
+    },
+    {
+      "year": 2022,
+      "miles": 1776.8,
+      "runs": 251,
+      "partial": false
+    },
+    {
+      "year": 2023,
+      "miles": 2229.2,
+      "runs": 315,
+      "partial": false
+    },
+    {
+      "year": 2024,
+      "miles": 2338.8,
+      "runs": 301,
+      "partial": false
+    },
+    {
+      "year": 2025,
+      "miles": 2812.0,
+      "runs": 323,
+      "partial": false
+    },
+    {
+      "year": 2026,
+      "miles": 719.1,
+      "runs": 103,
+      "partial": true
+    }
+  ],
+  "monthly": [
+    {
+      "month": "2018-04",
+      "miles": 17.1,
+      "cumulative": 17.1
+    },
+    {
+      "month": "2018-05",
+      "miles": 13.9,
+      "cumulative": 31.0
+    },
+    {
+      "month": "2018-06",
+      "miles": 23.5,
+      "cumulative": 54.5
+    },
+    {
+      "month": "2018-07",
+      "miles": 17.9,
+      "cumulative": 72.4
+    },
+    {
+      "month": "2018-08",
+      "miles": 27.2,
+      "cumulative": 99.6
+    },
+    {
+      "month": "2018-09",
+      "miles": 19.2,
+      "cumulative": 118.8
+    },
+    {
+      "month": "2018-10",
+      "miles": 25.3,
+      "cumulative": 144.1
+    },
+    {
+      "month": "2018-11",
+      "miles": 21.4,
+      "cumulative": 165.5
+    },
+    {
+      "month": "2018-12",
+      "miles": 40.9,
+      "cumulative": 206.4
+    },
+    {
+      "month": "2019-01",
+      "miles": 19.2,
+      "cumulative": 225.6
+    },
+    {
+      "month": "2019-02",
+      "miles": 9.4,
+      "cumulative": 235.0
+    },
+    {
+      "month": "2019-03",
+      "miles": 12.4,
+      "cumulative": 247.4
+    },
+    {
+      "month": "2019-04",
+      "miles": 31.6,
+      "cumulative": 279.0
+    },
+    {
+      "month": "2019-05",
+      "miles": 16.1,
+      "cumulative": 295.1
+    },
+    {
+      "month": "2019-06",
+      "miles": 19.5,
+      "cumulative": 314.6
+    },
+    {
+      "month": "2019-07",
+      "miles": 11.0,
+      "cumulative": 325.6
+    },
+    {
+      "month": "2019-08",
+      "miles": 6.8,
+      "cumulative": 332.4
+    },
+    {
+      "month": "2019-09",
+      "miles": 58.8,
+      "cumulative": 391.2
+    },
+    {
+      "month": "2019-10",
+      "miles": 53.9,
+      "cumulative": 445.1
+    },
+    {
+      "month": "2019-11",
+      "miles": 54.0,
+      "cumulative": 499.1
+    },
+    {
+      "month": "2019-12",
+      "miles": 3.3,
+      "cumulative": 502.4
+    },
+    {
+      "month": "2020-01",
+      "miles": 10.4,
+      "cumulative": 512.8
+    },
+    {
+      "month": "2020-02",
+      "miles": 48.5,
+      "cumulative": 561.3
+    },
+    {
+      "month": "2020-03",
+      "miles": 63.8,
+      "cumulative": 625.1
+    },
+    {
+      "month": "2020-04",
+      "miles": 73.5,
+      "cumulative": 698.6
+    },
+    {
+      "month": "2020-05",
+      "miles": 94.3,
+      "cumulative": 792.9
+    },
+    {
+      "month": "2020-06",
+      "miles": 80.8,
+      "cumulative": 873.7
+    },
+    {
+      "month": "2020-07",
+      "miles": 60.7,
+      "cumulative": 934.4
+    },
+    {
+      "month": "2020-08",
+      "miles": 95.3,
+      "cumulative": 1029.7
+    },
+    {
+      "month": "2020-09",
+      "miles": 88.8,
+      "cumulative": 1118.5
+    },
+    {
+      "month": "2020-10",
+      "miles": 115.3,
+      "cumulative": 1233.8
+    },
+    {
+      "month": "2020-11",
+      "miles": 99.2,
+      "cumulative": 1333.0
+    },
+    {
+      "month": "2020-12",
+      "miles": 129.9,
+      "cumulative": 1462.9
+    },
+    {
+      "month": "2021-01",
+      "miles": 57.3,
+      "cumulative": 1520.2
+    },
+    {
+      "month": "2021-02",
+      "miles": 33.4,
+      "cumulative": 1553.6
+    },
+    {
+      "month": "2021-03",
+      "miles": 84.6,
+      "cumulative": 1638.2
+    },
+    {
+      "month": "2021-04",
+      "miles": 111.7,
+      "cumulative": 1749.9
+    },
+    {
+      "month": "2021-05",
+      "miles": 159.2,
+      "cumulative": 1909.1
+    },
+    {
+      "month": "2021-06",
+      "miles": 191.1,
+      "cumulative": 2100.2
+    },
+    {
+      "month": "2021-07",
+      "miles": 126.8,
+      "cumulative": 2227.0
+    },
+    {
+      "month": "2021-08",
+      "miles": 158.1,
+      "cumulative": 2385.1
+    },
+    {
+      "month": "2021-09",
+      "miles": 66.1,
+      "cumulative": 2451.2
+    },
+    {
+      "month": "2021-10",
+      "miles": 117.4,
+      "cumulative": 2568.6
+    },
+    {
+      "month": "2021-11",
+      "miles": 108.0,
+      "cumulative": 2676.6
+    },
+    {
+      "month": "2021-12",
+      "miles": 128.8,
+      "cumulative": 2805.4
+    },
+    {
+      "month": "2022-01",
+      "miles": 170.2,
+      "cumulative": 2975.6
+    },
+    {
+      "month": "2022-02",
+      "miles": 116.9,
+      "cumulative": 3092.5
+    },
+    {
+      "month": "2022-03",
+      "miles": 230.2,
+      "cumulative": 3322.7
+    },
+    {
+      "month": "2022-04",
+      "miles": 193.3,
+      "cumulative": 3516.0
+    },
+    {
+      "month": "2022-05",
+      "miles": 69.1,
+      "cumulative": 3585.1
+    },
+    {
+      "month": "2022-06",
+      "miles": 115.6,
+      "cumulative": 3700.7
+    },
+    {
+      "month": "2022-07",
+      "miles": 174.0,
+      "cumulative": 3874.7
+    },
+    {
+      "month": "2022-08",
+      "miles": 221.9,
+      "cumulative": 4096.6
+    },
+    {
+      "month": "2022-09",
+      "miles": 233.7,
+      "cumulative": 4330.3
+    },
+    {
+      "month": "2022-10",
+      "miles": 131.7,
+      "cumulative": 4462.0
+    },
+    {
+      "month": "2022-11",
+      "miles": 30.0,
+      "cumulative": 4492.0
+    },
+    {
+      "month": "2022-12",
+      "miles": 90.1,
+      "cumulative": 4582.1
+    },
+    {
+      "month": "2023-01",
+      "miles": 157.4,
+      "cumulative": 4739.5
+    },
+    {
+      "month": "2023-02",
+      "miles": 156.1,
+      "cumulative": 4895.6
+    },
+    {
+      "month": "2023-03",
+      "miles": 175.1,
+      "cumulative": 5070.7
+    },
+    {
+      "month": "2023-04",
+      "miles": 233.0,
+      "cumulative": 5303.7
+    },
+    {
+      "month": "2023-05",
+      "miles": 220.6,
+      "cumulative": 5524.3
+    },
+    {
+      "month": "2023-06",
+      "miles": 91.2,
+      "cumulative": 5615.5
+    },
+    {
+      "month": "2023-07",
+      "miles": 66.1,
+      "cumulative": 5681.6
+    },
+    {
+      "month": "2023-08",
+      "miles": 173.6,
+      "cumulative": 5855.2
+    },
+    {
+      "month": "2023-09",
+      "miles": 249.4,
+      "cumulative": 6104.6
+    },
+    {
+      "month": "2023-10",
+      "miles": 276.9,
+      "cumulative": 6381.5
+    },
+    {
+      "month": "2023-11",
+      "miles": 152.2,
+      "cumulative": 6533.7
+    },
+    {
+      "month": "2023-12",
+      "miles": 277.5,
+      "cumulative": 6811.2
+    },
+    {
+      "month": "2024-01",
+      "miles": 282.9,
+      "cumulative": 7094.1
+    },
+    {
+      "month": "2024-02",
+      "miles": 124.7,
+      "cumulative": 7218.8
+    },
+    {
+      "month": "2024-03",
+      "miles": 4.5,
+      "cumulative": 7223.3
+    },
+    {
+      "month": "2024-04",
+      "miles": 89.8,
+      "cumulative": 7313.1
+    },
+    {
+      "month": "2024-05",
+      "miles": 191.1,
+      "cumulative": 7504.2
+    },
+    {
+      "month": "2024-06",
+      "miles": 219.5,
+      "cumulative": 7723.7
+    },
+    {
+      "month": "2024-07",
+      "miles": 299.2,
+      "cumulative": 8022.9
+    },
+    {
+      "month": "2024-08",
+      "miles": 281.3,
+      "cumulative": 8304.2
+    },
+    {
+      "month": "2024-09",
+      "miles": 285.7,
+      "cumulative": 8589.9
+    },
+    {
+      "month": "2024-10",
+      "miles": 150.9,
+      "cumulative": 8740.8
+    },
+    {
+      "month": "2024-11",
+      "miles": 207.8,
+      "cumulative": 8948.6
+    },
+    {
+      "month": "2024-12",
+      "miles": 201.5,
+      "cumulative": 9150.1
+    },
+    {
+      "month": "2025-01",
+      "miles": 252.3,
+      "cumulative": 9402.4
+    },
+    {
+      "month": "2025-02",
+      "miles": 221.9,
+      "cumulative": 9624.3
+    },
+    {
+      "month": "2025-03",
+      "miles": 276.4,
+      "cumulative": 9900.7
+    },
+    {
+      "month": "2025-04",
+      "miles": 184.7,
+      "cumulative": 10085.4
+    },
+    {
+      "month": "2025-05",
+      "miles": 157.2,
+      "cumulative": 10242.6
+    },
+    {
+      "month": "2025-06",
+      "miles": 199.2,
+      "cumulative": 10441.8
+    },
+    {
+      "month": "2025-07",
+      "miles": 199.2,
+      "cumulative": 10641.0
+    },
+    {
+      "month": "2025-08",
+      "miles": 300.8,
+      "cumulative": 10941.8
+    },
+    {
+      "month": "2025-09",
+      "miles": 308.4,
+      "cumulative": 11250.2
+    },
+    {
+      "month": "2025-10",
+      "miles": 304.5,
+      "cumulative": 11554.7
+    },
+    {
+      "month": "2025-11",
+      "miles": 156.2,
+      "cumulative": 11710.9
+    },
+    {
+      "month": "2025-12",
+      "miles": 251.3,
+      "cumulative": 11962.2
+    },
+    {
+      "month": "2026-01",
+      "miles": 67.9,
+      "cumulative": 12030.1
+    },
+    {
+      "month": "2026-02",
+      "miles": 111.7,
+      "cumulative": 12141.8
+    },
+    {
+      "month": "2026-03",
+      "miles": 157.8,
+      "cumulative": 12299.6
+    },
+    {
+      "month": "2026-04",
+      "miles": 121.1,
+      "cumulative": 12420.7
+    },
+    {
+      "month": "2026-05",
+      "miles": 238.0,
+      "cumulative": 12658.7
+    },
+    {
+      "month": "2026-06",
+      "miles": 22.5,
+      "cumulative": 12681.2
+    }
+  ],
+  "firstRun": "2018-04-23",
+  "ytdFraction": 0.4247,
+  "lastUpdated": "2026-06-04"
+}

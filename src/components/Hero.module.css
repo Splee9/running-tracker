@@ -1,0 +1,48 @@
+.hero {
+  position: relative;
+  z-index: 1;
+  min-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.title {
+  font-size: clamp(28px, 5vw, 44px);
+  margin: 10px 0 clamp(28px, 6vw, 56px);
+}
+
+.number {
+  font-size: clamp(64px, 17vw, 168px);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+
+.unit {
+  display: inline-block;
+  margin-left: 0.2em;
+  font-size: clamp(20px, 4vw, 34px);
+  color: var(--muted);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.meta {
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: clamp(15px, 2.2vw, 17px);
+  font-variant-numeric: tabular-nums;
+}
+
+.meta b {
+  color: var(--ink);
+}
+
+.scrollCue {
+  margin-top: clamp(36px, 7vw, 64px);
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
