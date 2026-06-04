@@ -23,7 +23,7 @@ export function Colophon() {
       <p className="eyebrow">Why this exists</p>
       <p className={styles.body}>
         Runner, builder, perpetual tinkerer. I put in miles before sunrise — fast marathons, gravel
-        roads — and spend the rest of my time building: AI by trade, and odd little tools like this
+        roads — and spend a lot of my time building: AI by trade, and odd little tools like this
         one for the joy of it. A decade of running deserved more than a total buried in an app. So
         here it is: every mile, stacked end to end, turned into something I can <em>feel</em>. The
         line's still moving.
