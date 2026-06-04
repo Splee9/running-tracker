@@ -13,6 +13,11 @@ export function Footer() {
         Last refreshed {formatDate(data.lastUpdated)} · rebuilt automatically from a Strava +
         Garmin training log.
       </p>
+      <p className={styles.crosslink}>
+        <a href="https://chicagomarathon2026.netlify.app/">
+          Follow my Chicago 2026 marathon build <span className={styles.arrow}>→</span>
+        </a>
+      </p>
     </footer>
   );
 }

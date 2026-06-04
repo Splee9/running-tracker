@@ -17,3 +17,30 @@
   margin-top: 6px;
   opacity: 0.85;
 }
+
+.crosslink {
+  margin-top: 16px;
+}
+
+.crosslink a {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1px;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.crosslink a:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.arrow {
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.crosslink a:hover .arrow {
+  transform: translateX(3px);
+}
