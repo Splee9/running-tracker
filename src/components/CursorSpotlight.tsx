@@ -14,7 +14,7 @@ export function CursorSpotlight() {
   const background = useTransform(
     [x, y],
     ([lx, ly]: number[]) =>
-      `radial-gradient(420px circle at ${lx}px ${ly}px, rgba(26,26,26,0.045), transparent 70%)`,
+      `radial-gradient(460px circle at ${lx}px ${ly}px, rgba(26,26,26,0.10), transparent 72%)`,
   );
 
   if (reduce) return null;

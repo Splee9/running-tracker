@@ -12,11 +12,11 @@ type Scope = number | "lifetime";
 
 const maxMiles = Math.max(...data.years.map((y) => y.miles));
 
-const RACE_KINDS: { key: keyof RaceCounts; label: string }[] = [
-  { key: "marathon", label: "Marathons" },
-  { key: "half", label: "Halves" },
-  { key: "10K", label: "10Ks" },
-  { key: "5K", label: "5Ks" },
+const RACE_KINDS: { key: keyof RaceCounts; label: string; color: string }[] = [
+  { key: "marathon", label: "Marathons", color: "#c0432f" },
+  { key: "half", label: "Halves", color: "#1f7a5c" },
+  { key: "10K", label: "10Ks", color: "#2f6db0" },
+  { key: "5K", label: "5Ks", color: "#8a5a9e" },
 ];
 
 const EMPTY_RACES: RaceCounts = { marathon: 0, half: 0, "10K": 0, "5K": 0 };
@@ -128,14 +128,24 @@ export function YearChart() {
           <p className={styles.racesEmpty}>No races logged{selected === "lifetime" ? "" : " this year"}.</p>
         ) : (
           <div className={styles.raceGrid}>
-            {RACE_KINDS.map((k) => (
-              <div key={k.key} className={styles.race}>
-                <div className={styles.raceCount}>
-                  <AnimatedNumber value={races[k.key]} duration={0.5} />
+            {RACE_KINDS.map((k) => {
+              const count = races[k.key];
+              return (
+                <div
+                  key={k.key}
+                  className={styles.race}
+                  style={{ "--race-color": k.color } as React.CSSProperties}
+                >
+                  <div
+                    className={styles.raceCount}
+                    style={{ color: count > 0 ? k.color : "var(--muted)" }}
+                  >
+                    <AnimatedNumber value={count} duration={0.5} />
+                  </div>
+                  <div className={styles.raceKind}>{k.label}</div>
                 </div>
-                <div className={styles.raceKind}>{k.label}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </motion.div>

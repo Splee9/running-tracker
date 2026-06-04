@@ -606,6 +606,64 @@
       "cumulative": 12681.2
     }
   ],
+  "raceEvents": [
+    {
+      "date": "2019-06-15",
+      "distance": "10K"
+    },
+    {
+      "date": "2019-10-27",
+      "distance": "10K"
+    },
+    {
+      "date": "2022-05-01",
+      "distance": "marathon"
+    },
+    {
+      "date": "2022-06-18",
+      "distance": "10K"
+    },
+    {
+      "date": "2022-10-16",
+      "distance": "marathon"
+    },
+    {
+      "date": "2023-06-04",
+      "distance": "half"
+    },
+    {
+      "date": "2023-10-01",
+      "distance": "half"
+    },
+    {
+      "date": "2023-11-12",
+      "distance": "marathon"
+    },
+    {
+      "date": "2024-10-13",
+      "distance": "marathon"
+    },
+    {
+      "date": "2024-11-28",
+      "distance": "10K"
+    },
+    {
+      "date": "2025-05-03",
+      "distance": "marathon"
+    },
+    {
+      "date": "2025-09-06",
+      "distance": "half"
+    },
+    {
+      "date": "2025-11-08",
+      "distance": "marathon"
+    },
+    {
+      "date": "2025-11-27",
+      "distance": "10K"
+    }
+  ],
   "firstRun": "2018-04-23",
   "ytdFraction": 0.4247,
   "lastUpdated": "2026-06-04"

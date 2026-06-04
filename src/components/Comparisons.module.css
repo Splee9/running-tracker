@@ -21,21 +21,56 @@
 }
 
 .card {
-  background: var(--card);
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(165deg, #ffffff 0%, #fbfaf7 100%);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 22px 24px;
+  border-radius: 16px;
+  padding: 24px 26px;
+  transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease;
+}
+
+/* sheen sweep on hover */
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 38%,
+    rgba(26, 26, 26, 0.05) 50%,
+    transparent 62%
+  );
+  transform: translateX(-120%);
+  transition: transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  border-color: #cfccc4;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.09);
+}
+
+.card:hover::after {
+  transform: translateX(120%);
 }
 
 .big {
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  position: relative;
+  font-size: clamp(30px, 5vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, var(--ink) 0%, #54534c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .desc {
-  margin-top: 6px;
+  position: relative;
+  margin-top: 8px;
   color: var(--muted);
   font-size: 14px;
 }

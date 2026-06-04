@@ -184,13 +184,44 @@
 }
 
 .race {
+  position: relative;
+  overflow: hidden;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 16px 18px;
+  cursor: default;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+/* colored sheen that sweeps across on hover */
+.race::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 36%,
+    color-mix(in srgb, var(--race-color) 20%, transparent) 50%,
+    transparent 64%
+  );
+  transform: translateX(-120%);
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.race:hover {
+  transform: translateY(-4px);
+  border-color: var(--race-color);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.08);
+}
+
+.race:hover::after {
+  transform: translateX(120%);
 }
 
 .raceCount {
+  position: relative;
   font-size: clamp(26px, 5vw, 34px);
   font-weight: 600;
   letter-spacing: -0.02em;

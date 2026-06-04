@@ -21,9 +21,17 @@ export interface MonthDatum {
   cumulative: number;
 }
 
+export type RaceDistance = keyof RaceCounts;
+
+export interface RaceEvent {
+  date: string; // ISO "YYYY-MM-DD"
+  distance: RaceDistance;
+}
+
 export interface TrackerData {
   years: YearDatum[];
   monthly: MonthDatum[];
+  raceEvents: RaceEvent[];
   firstRun: string; // ISO "YYYY-MM-DD"
   ytdFraction: number; // fraction of the current year elapsed at build
   lastUpdated: string; // ISO "YYYY-MM-DD"
