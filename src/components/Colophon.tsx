@@ -22,12 +22,11 @@ export function Colophon() {
     >
       <p className="eyebrow">Why this exists</p>
       <p className={styles.body}>
-        Around twenty-eight hundred miles a year, most of them before the city's awake. Running is
-        the thing everything else orbits — when I'm not chasing a fast marathon, I'm out on gravel
-        roads. The rest of the time I'm building: AI by trade, and odd little tools like this one
-        for the joy of it. Strava logged every mile but never told me what they added up to — that
-        I'd run most of the way around the planet. So I built the thing that would. I'd rather a
-        number I can <em>feel</em> than one I can only scroll past.
+        Runner, builder, perpetual tinkerer. I put in miles before sunrise — fast marathons, gravel
+        roads — and spend the rest of my time building: AI by trade, and odd little tools like this
+        one for the joy of it. A decade of running deserved more than a total buried in an app. So
+        here it is: every mile, stacked end to end, turned into something I can <em>feel</em>. The
+        line's still moving.
       </p>
       <p className={styles.byline}>
         — Spencer Lee ·{" "}
