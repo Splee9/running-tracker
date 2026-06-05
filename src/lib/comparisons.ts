@@ -10,16 +10,19 @@ export interface Journey {
 }
 
 export const JOURNEYS: Journey[] = [
-  { from: "Land's End", to: "John o' Groats (end to end of Britain)", short: "the length of Britain", miles: 874 },
+  // Chicago is the home hub — most city-pair analogies radiate out from it.
+  { from: "Chicago", to: "New York", short: "Chicago to New York", miles: 790 },
+  { from: "Chicago", to: "Denver", short: "Chicago to Denver", miles: 1000 },
+  { from: "Chicago", to: "Miami", short: "Chicago to Miami", miles: 1380 },
+  { from: "Chicago", to: "Los Angeles", short: "Chicago to Los Angeles", miles: 2015 },
+  { from: "Chicago", to: "San Francisco", short: "Chicago to San Francisco", miles: 2130 },
   { from: "San Francisco", to: "Seattle", short: "San Francisco to Seattle", miles: 808 },
+  { from: "Land's End", to: "John o' Groats (end to end of Britain)", short: "the length of Britain", miles: 874 },
   { from: "London", to: "Rome", short: "London to Rome", miles: 890 },
-  { from: "New York", to: "Chicago", short: "New York to Chicago", miles: 790 },
   { from: "Paris", to: "Berlin", short: "Paris to Berlin", miles: 545 },
+  { from: "Tokyo", to: "the tip of Japan", short: "the length of Japan", miles: 1860 },
   { from: "the start", to: "the end of the Appalachian Trail", short: "the Appalachian Trail", miles: 2190 },
   { from: "the start", to: "the end of the Pacific Crest Trail", short: "the Pacific Crest Trail", miles: 2650 },
-  { from: "New York", to: "Miami", short: "New York to Miami", miles: 1280 },
-  { from: "Los Angeles", to: "New York", short: "coast to coast across the U.S.", miles: 2790 },
-  { from: "Tokyo", to: "the tip of Japan", short: "the length of Japan", miles: 1860 },
 ];
 
 export const GLOBE = [

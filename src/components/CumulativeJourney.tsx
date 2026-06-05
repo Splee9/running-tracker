@@ -34,7 +34,7 @@ const PATH = months
 // early-years portion of the curve.
 const MILESTONES = [
   { miles: 874, label: "the length of Britain" },
-  { miles: 2790, label: "coast to coast, U.S." },
+  { miles: 2760, label: "Chicago to Miami and back" },
   { miles: 6786, label: "the Moon's circumference" },
   { miles: 12450, label: "halfway around the Earth" },
 ]
