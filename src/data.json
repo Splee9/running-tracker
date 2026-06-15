@@ -664,6 +664,44 @@
       "distance": "10K"
     }
   ],
+  "marathonResults": [
+    {
+      "date": "2022-05-01",
+      "name": "Flying Pig Marathon",
+      "seconds": 12102,
+      "pr": false
+    },
+    {
+      "date": "2022-10-16",
+      "name": "Grand Rapids Marathon",
+      "seconds": 10977,
+      "pr": true
+    },
+    {
+      "date": "2023-11-12",
+      "name": "Madison Marathon",
+      "seconds": 10667,
+      "pr": true
+    },
+    {
+      "date": "2024-10-13",
+      "name": "Chicago Marathon",
+      "seconds": 10745,
+      "pr": false
+    },
+    {
+      "date": "2025-05-03",
+      "name": "Wisconsin Marathon",
+      "seconds": 10558,
+      "pr": true
+    },
+    {
+      "date": "2025-11-08",
+      "name": "Indy Marathon",
+      "seconds": 9956,
+      "pr": true
+    }
+  ],
   "firstRun": "2018-04-23",
   "ytdFraction": 0.4548,
   "lastUpdated": "2026-06-15"

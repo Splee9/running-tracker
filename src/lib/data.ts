@@ -28,16 +28,26 @@ export interface RaceEvent {
   distance: RaceDistance;
 }
 
+export interface MarathonResult {
+  date: string; // ISO "YYYY-MM-DD"
+  name: string; // race name, e.g. "Indy Marathon"
+  seconds: number; // official finish time, in seconds
+  pr: boolean; // personal record at the time
+}
+
 export interface TrackerData {
   years: YearDatum[];
   monthly: MonthDatum[];
   raceEvents: RaceEvent[];
+  marathonResults: MarathonResult[];
   firstRun: string; // ISO "YYYY-MM-DD"
   ytdFraction: number; // fraction of the current year elapsed at build
   lastUpdated: string; // ISO "YYYY-MM-DD"
 }
 
 export const data = raw as TrackerData;
+
+export const marathonResults: MarathonResult[] = data.marathonResults ?? [];
 
 export const lifetime = {
   miles: data.years.reduce((sum, y) => sum + y.miles, 0),
