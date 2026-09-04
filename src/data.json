@@ -98,8 +98,8 @@
     },
     {
       "year": 2026,
-      "miles": 1526.1,
-      "runs": 196,
+      "miles": 1536.0,
+      "runs": 198,
       "partial": true,
       "races": {
         "marathon": 0,
@@ -617,8 +617,8 @@
     },
     {
       "month": "2026-09",
-      "miles": 31.0,
-      "cumulative": 13488.2
+      "miles": 40.9,
+      "cumulative": 13498.1
     }
   ],
   "raceEvents": [
@@ -718,6 +718,6 @@
     }
   ],
   "firstRun": "2018-04-23",
-  "ytdFraction": 0.674,
-  "lastUpdated": "2026-09-03"
+  "ytdFraction": 0.6767,
+  "lastUpdated": "2026-09-04"
 }
