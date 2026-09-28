@@ -275,7 +275,8 @@ function Plot({
           className={styles.hit}
           onPointerMove={(e) => track(e.clientX)}
           onPointerDown={(e) => track(e.clientX)}
-          onPointerLeave={() => setHovered(null)}
+          // Touch fires pointerleave on lift; keep the tapped week showing until the next tap.
+          onPointerLeave={(e) => e.pointerType !== "touch" && setHovered(null)}
         />
       </svg>
 
