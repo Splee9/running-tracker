@@ -12,6 +12,7 @@ const PAD_TOP = 14;
 const PAD_BOTTOM = 30;
 
 const THRESHOLDS = BANDS.slice(1).map((b) => b.min);
+const MIN_LABEL_GAP = 20; // viewBox units; clears the enlarged mobile label size
 
 const px = (iso: string) =>
   PAD_LEFT + ((toDays(iso) - DAY0) / (DAY1 - DAY0)) * (W - PAD_LEFT - PAD_RIGHT);
@@ -31,6 +32,17 @@ export function TvChart({ points, label }: Props) {
   const peak = Math.max(...points.map((p) => p.tv));
   const yMax = Math.max(100, Math.ceil(peak / 50) * 50);
   const py = (v: number) => PAD_TOP + (1 - v / yMax) * (H - PAD_TOP - PAD_BOTTOM);
+
+  // On a stretched axis the thresholds bunch up; drop labels that would collide
+  // (working down from the top) but keep every dashed line.
+  const labelled = new Set<number>();
+  let lastLabelY = py(yMax);
+  for (const t of [...THRESHOLDS].reverse()) {
+    if (py(t) - lastLabelY >= MIN_LABEL_GAP) {
+      labelled.add(t);
+      lastLabelY = py(t);
+    }
+  }
 
   const coords = points.map((p) => ({ ...p, x: px(p.week_end), y: py(p.tv) }));
 
@@ -102,9 +114,11 @@ export function TvChart({ points, label }: Props) {
         {THRESHOLDS.map((t) => (
           <g key={t}>
             <line x1={PAD_LEFT} y1={py(t)} x2={W - PAD_RIGHT} y2={py(t)} className={styles.threshold} />
-            <text x={PAD_LEFT - 10} y={py(t) + 4} className={styles.axisLabel} textAnchor="end">
-              {t}
-            </text>
+            {labelled.has(t) && (
+              <text x={PAD_LEFT - 10} y={py(t) + 4} className={styles.axisLabel} textAnchor="end">
+                {t}
+              </text>
+            )}
           </g>
         ))}
         <text x={PAD_LEFT - 10} y={py(yMax) + 4} className={styles.axisLabel} textAnchor="end">
