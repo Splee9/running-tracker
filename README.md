@@ -43,7 +43,18 @@ src/
 - `/` — the running log.
 - `/training` — training variability: how much weekly hours swing around their
   mean over rolling 8 / 12 / 52-week windows, for Run, Bike, or All. Lower is
-  steadier (Steady < 35, Moderate 35–55, Uneven 55–80, Erratic ≥ 80).
+  steadier (Steady < 35, Moderate 35–55, Uneven 55–80, Erratic ≥ 80). One
+  window is shown at a time; a switch overlays weekly hours as bars on a second
+  axis.
+
+`src/training-weekly-hours.json` is derived from `src/training-variability.json`
+(the export carries only rolling stats). Regenerate it whenever the TV file
+changes:
+
+```bash
+pip install numpy scipy
+python3 scripts/derive_weekly_hours.py
+```
 
 Routing is a ~50-line `history.pushState` wrapper (`src/lib/router.tsx`), not a
 library. `netlify.toml` rewrites every path to `index.html` so deep links load.

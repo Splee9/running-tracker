@@ -1,4 +1,5 @@
 import raw from "../training-variability.json";
+import rawHours from "../training-weekly-hours.json";
 
 export type Sport = "run" | "bike" | "all";
 export type Horizon = "short" | "medium" | "long";
@@ -25,6 +26,13 @@ export interface TrainingVariability {
 }
 
 export const tv = raw as TrainingVariability;
+
+export interface WeeklyHours {
+  weeks: string[]; // week_end ISO dates, oldest first
+  hours: Record<Sport, number[]>; // parallel to `weeks`
+}
+
+export const weekly = rawHours as WeeklyHours;
 
 export const SPORTS: Sport[] = ["run", "bike", "all"];
 export const HORIZONS: Horizon[] = ["short", "medium", "long"];

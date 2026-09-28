@@ -4,14 +4,38 @@
 }
 
 .svg {
-  width: 100%;
-  height: auto;
+  display: block;
   overflow: visible;
   touch-action: pan-y;
 }
 
 .bandFill {
   opacity: 0.07;
+  transition: opacity 0.3s ease;
+}
+
+.bandFillDim {
+  opacity: 0.035;
+}
+
+.bar {
+  fill: var(--bar);
+  opacity: 0.75;
+  transition: fill 0.15s ease, opacity 0.15s ease;
+}
+
+.barActive {
+  fill: var(--ink);
+  opacity: 0.55;
+}
+
+.axisHint {
+  fill: var(--muted);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .threshold {
@@ -38,7 +62,7 @@
 
 .yearLabel {
   paint-order: stroke;
-  stroke: var(--bg);
+  stroke: var(--card);
   stroke-width: 3px;
   stroke-linejoin: round;
 }
@@ -97,6 +121,10 @@
   margin-top: 2px;
 }
 
+.tipMeta b {
+  font-weight: 600;
+}
+
 .tipDate {
   font-size: 11.5px;
   color: var(--muted);
@@ -106,6 +134,9 @@
 @media (max-width: 560px) {
   .axisLabel,
   .yearLabel {
-    font-size: 20px; /* counteract small-viewport SVG downscale */
+    font-size: 11px;
+  }
+  .axisHint {
+    font-size: 10.5px;
   }
 }
