@@ -5,7 +5,18 @@ import { Chip } from "./Chip";
 import { TvChart } from "./TvChart";
 import { Link } from "../lib/router";
 import { formatDate } from "../lib/format";
-import { BANDS, BAND_COLOR, HORIZONS, SPORTS, fmtTv, tv, type Band, type Sport } from "../lib/training";
+import {
+  BANDS,
+  BAND_COLOR,
+  HORIZONS,
+  SPORTS,
+  fmtTv,
+  tv,
+  weekly,
+  type Band,
+  type Horizon,
+  type Sport,
+} from "../lib/training";
 import styles from "./Training.module.css";
 
 const rise = {
@@ -17,15 +28,6 @@ const rise = {
   }),
 };
 
-const reveal = {
-  hidden: { opacity: 0, y: 18 },
-  show: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] },
-  },
-};
-
 const BAND_RANGE: Record<Band, string> = {
   Steady: "under 35",
   Moderate: "35–55",
@@ -33,8 +35,12 @@ const BAND_RANGE: Record<Band, string> = {
   Erratic: "80+",
 };
 
+const SHORT_NAME: Record<Horizon, string> = { short: "Short", medium: "Medium", long: "Long" };
+
 export function Training() {
   const [sport, setSport] = useState<Sport>("run");
+  const [horizon, setHorizon] = useState<Horizon>("medium");
+  const [showHours, setShowHours] = useState(false);
   const current = tv.current[sport];
 
   return (
@@ -58,71 +64,117 @@ export function Training() {
         </motion.p>
       </header>
 
-      <section className={styles.section} aria-label="Training variability by sport">
-        <div className={styles.chips} role="group" aria-label="Choose a sport">
-          {SPORTS.map((s) => (
-            <Chip key={s} active={sport === s} onClick={() => setSport(s)}>
-              {tv.filters[s].label}
-            </Chip>
-          ))}
-        </div>
-
-        <p className={styles.statsLabel}>
-          Now · week ending {formatDate(tv.last_complete_week_end)}
-        </p>
-        <div className={styles.stats} aria-live="polite">
-          {HORIZONS.map((h) => {
-            const p = current[h];
-            return (
-              <div
-                key={h}
-                className={styles.stat}
-                style={{ "--band-color": BAND_COLOR[p.band] } as React.CSSProperties}
-              >
-                <span className={styles.statNum} style={{ color: BAND_COLOR[p.band] }}>
-                  <AnimatedNumber value={p.tv} format={fmtTv} duration={0.5} />
-                </span>
-                <span className={styles.statName}>
-                  <b>{p.band}</b> · {tv.horizons[h].weeks} weeks
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className={styles.legend} aria-label="Bands">
-          {BANDS.map((b) => (
-            <span key={b.name} className={styles.legendItem}>
-              <span className={styles.legendDot} style={{ background: b.color }} />
-              {b.name} <span className={styles.legendRange}>{BAND_RANGE[b.name]}</span>
-            </span>
-          ))}
-        </div>
-
-        {HORIZONS.map((h) => (
-          <motion.div
-            key={h}
-            className={styles.chartBlock}
-            variants={reveal}
-            initial="hidden"
-            whileInView="show"
-            viewport={{ once: true, margin: "-10%" }}
+      <motion.section
+        className={styles.section}
+        aria-label="Training variability"
+        variants={rise}
+        custom={3}
+        initial="hidden"
+        animate="show"
+      >
+        <div className={styles.controls}>
+          <div className={styles.chips} role="group" aria-label="Choose a sport">
+            {SPORTS.map((s) => (
+              <Chip key={s} active={sport === s} onClick={() => setSport(s)}>
+                {tv.filters[s].label}
+              </Chip>
+            ))}
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showHours}
+            className={`${styles.switch} ${showHours ? styles.switchOn : ""}`}
+            onClick={() => setShowHours((v) => !v)}
           >
-            <div className={styles.chartHead}>
-              <h2 className={styles.chartTitle}>{tv.horizons[h].label}</h2>
-              <p className={styles.chartMeta}>
-                rolling {tv.horizons[h].weeks}-week window · {tv.filters[sport].label.toLowerCase()}
-              </p>
+            <span className={styles.switchTrack} aria-hidden>
+              <motion.span
+                className={styles.switchThumb}
+                layout
+                transition={{ type: "spring", stiffness: 500, damping: 34 }}
+              />
+            </span>
+            Weekly hours
+          </button>
+        </div>
+
+        <div className={styles.folder}>
+          <div className={styles.tabs} role="tablist" aria-label="Choose a window">
+            {HORIZONS.map((h) => {
+              const p = current[h];
+              const active = horizon === h;
+              return (
+                <button
+                  key={h}
+                  type="button"
+                  role="tab"
+                  id={`tv-tab-${h}`}
+                  aria-selected={active}
+                  aria-controls="tv-panel"
+                  className={`${styles.tab} ${active ? styles.tabActive : ""}`}
+                  onClick={() => setHorizon(h)}
+                >
+                  <span className={styles.tabLabel}>
+                    {SHORT_NAME[h]} · {tv.horizons[h].weeks} wk
+                  </span>
+                  <span className={styles.tabNum} style={{ color: BAND_COLOR[p.band] }}>
+                    <AnimatedNumber value={p.tv} format={fmtTv} duration={0.5} />
+                  </span>
+                  <span className={styles.tabBand}>{p.band}</span>
+                  {active && (
+                    <motion.span
+                      layoutId="tv-tab-indicator"
+                      className={styles.tabIndicator}
+                      style={{ background: BAND_COLOR[p.band] }}
+                      transition={{ type: "spring", stiffness: 420, damping: 36 }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div
+            className={styles.panel}
+            role="tabpanel"
+            id="tv-panel"
+            aria-labelledby={`tv-tab-${horizon}`}
+            data-edge={horizon === "short" ? "left" : horizon === "long" ? "right" : undefined}
+          >
+            <p className={styles.panelMeta}>
+              {tv.filters[sport].label} · rolling {tv.horizons[horizon].weeks}-week window · now as
+              of week ending {formatDate(tv.last_complete_week_end)}
+            </p>
+            <TvChart
+              points={tv.series[sport][horizon]}
+              weeks={weekly.weeks}
+              hours={weekly.hours[sport]}
+              showHours={showHours}
+              drawKey={`${sport}-${horizon}`}
+              label={`${tv.filters[sport].label}, ${tv.horizons[horizon].label}`}
+            />
+
+            <div className={styles.legend}>
+              {BANDS.map((b) => (
+                <span key={b.name} className={styles.legendItem}>
+                  <span className={styles.legendDot} style={{ background: b.color }} />
+                  {b.name} <span className={styles.legendRange}>{BAND_RANGE[b.name]}</span>
+                </span>
+              ))}
+              {showHours && (
+                <span className={styles.legendItem}>
+                  <span className={styles.legendBar} />
+                  Weekly hours <span className={styles.legendRange}>right axis</span>
+                </span>
+              )}
             </div>
-            <TvChart key={sport} points={tv.series[sport][h]} label={tv.horizons[h].label} />
-          </motion.div>
-        ))}
+          </div>
+        </div>
 
         <p className={styles.cue}>
-          Hover or tap a chart to read any week. The dot at the end of each line is where things
-          stand now.
+          Pick a window above; hover or tap the chart to read any week.
         </p>
-      </section>
+      </motion.section>
 
       <footer className={styles.footer}>
         <p>
