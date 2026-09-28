@@ -1,0 +1,212 @@
+.page {
+  position: relative;
+  z-index: 1;
+}
+
+.nav {
+  display: flex;
+}
+
+.navLink,
+.crosslink a {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1px;
+  transition: border-color 0.2s ease;
+}
+
+.navLink:hover,
+.crosslink a:hover {
+  border-bottom-color: var(--accent);
+}
+
+.navArrow,
+.arrow {
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.navLink:hover .navArrow,
+.crosslink a:hover .arrow {
+  transform: translateX(-3px);
+}
+
+.header {
+  padding: clamp(48px, 10vw, 104px) 0 clamp(48px, 9vw, 88px);
+}
+
+.title {
+  font-size: clamp(28px, 5vw, 44px);
+  margin: 10px 0 18px;
+}
+
+.intro {
+  max-width: 46ch;
+  color: var(--muted);
+  font-size: clamp(16px, 2.4vw, 19px);
+  line-height: 1.5;
+}
+
+.intro b {
+  color: var(--ink);
+}
+
+.section {
+  padding: clamp(40px, 8vw, 72px) 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: clamp(32px, 6vw, 48px);
+}
+
+.statsLabel {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+/* editorial stat row — same treatment as the race counts on the home page */
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(22px, 6vw, 56px);
+  align-items: flex-end;
+}
+
+.stat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-bottom: 9px;
+  cursor: default;
+}
+
+.stat::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--band-color);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stat:hover::after {
+  transform: scaleX(1);
+}
+
+.statNum {
+  font-size: clamp(40px, 9vw, 68px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.3s ease, transform 0.22s ease;
+}
+
+.stat:hover .statNum {
+  transform: translateY(-3px);
+}
+
+.statName {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.statName b {
+  color: var(--ink);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: clamp(24px, 4vw, 32px);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.legendRange {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.legendDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.chartBlock {
+  margin-top: clamp(48px, 9vw, 80px);
+}
+
+.chartHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  margin-bottom: 14px;
+}
+
+.chartTitle {
+  font-size: clamp(19px, 3vw, 24px);
+  letter-spacing: -0.02em;
+}
+
+.chartMeta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.cue {
+  margin-top: clamp(28px, 5vw, 44px);
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.footer {
+  margin-top: clamp(48px, 9vw, 80px);
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 72ch;
+}
+
+.footer b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.stamp {
+  margin-top: 6px;
+  opacity: 0.85;
+}
+
+.crosslink {
+  margin-top: 16px;
+}
