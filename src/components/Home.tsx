@@ -53,7 +53,7 @@ export function Home() {
           >
             <h3 className={styles.projectName}>Chicago build</h3>
             <p className={styles.projectDesc}>
-              16-week marathon training plan with weekly progress and race-day countdown.
+              23-week marathon training plan with weekly progress and race-day countdown.
             </p>
             <span className={styles.projectArrow}>↗</span>
           </a>
