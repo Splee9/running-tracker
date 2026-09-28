@@ -7,10 +7,14 @@ line and cursor-reactive polish.
 
 ## About the data
 
-The app shows **aggregate running totals only** — yearly and lifetime mileage,
-run counts, monthly cumulative distance, and the date of the first logged run.
-There is no location, GPS, route, pace, heart-rate, or health data of any kind.
-Nothing on the page identifies an individual.
+The running log and training pages show **aggregate totals only** — yearly and
+lifetime mileage, run counts, monthly cumulative distance, and the date of the
+first logged run.
+
+`/activity-lookup` is the exception: it lists individual **public** Strava
+activities (name, date, sport, distance, moving time, elevation gain, workout
+type). Private activities are dropped at export. There is no location, GPS,
+route, heart-rate, or other health data anywhere on the site.
 
 All numbers live in `src/data.json`, which is regenerated from a private training
 pipeline (the source data never ships here — only the aggregate JSON does).
@@ -31,10 +35,14 @@ src/
   App.tsx                 routes (/ and /training) + home section composition
   data.json               aggregate stats (generated; do not hand-edit)
   training-variability.json  weekly training-variability series (generated)
+  activities.json         public activity list for /activity-lookup (generated)
   components/             Hero, YearChart, CumulativeJourney, Comparisons, Footer,
                           Training + TvChart (the /training page)
   hooks/usePointer.ts     spring-smoothed cursor tracking
-  lib/                    data types, formatting, comparisons, tiny history router
+  lib/                    data types, formatting, comparisons, tiny history router,
+                          activitySearch (keyword + fuzzy index)
+netlify/functions/
+  jev-rerank.mts          Jev reranking for /activity-lookup (holds the API key)
   styles/global.css       design tokens + base styles
 ```
 
@@ -56,6 +64,24 @@ pip install numpy scipy
 python3 scripts/derive_weekly_hours.py
 ```
 
+- `/activity-lookup` — search every public activity. Two stages:
+  1. **Keyword + fuzzy**, in the browser on every keystroke: activity names plus
+     derived tags (sport, month, weekday, year, race / long / workout, hilly /
+     flat, indoor, 5k / 10k / half / marathon, morning / afternoon / evening),
+     typo-tolerant (edit distance 1–2 by word length; numbers exact only).
+  2. **Jev rerank**, 300 ms after typing stops: the top 25 candidates go to
+     `/.netlify/functions/jev-rerank`, which asks Jev one yes/no question
+     (a `noul`) per activity and returns its probability; the list re-sorts by
+     it. Without a key the function returns 503 and the page quietly stays on
+     keyword + fuzzy.
+
+Regenerate `src/activities.json` (incremental by default — usually one Strava
+request; `--full` re-downloads everything and waits out 429s):
+
+```bash
+STRAVA_ACCESS_TOKEN=... node scripts/export-activities.mjs [--full]
+```
+
 Routing is a ~50-line `history.pushState` wrapper (`src/lib/router.tsx`), not a
 library. `netlify.toml` rewrites every path to `index.html` so deep links load.
 
@@ -63,6 +89,14 @@ library. `netlify.toml` rewrites every path to `index.html` so deep links load.
 
 Netlify builds from source on every push (see `netlify.toml`): `npm run build`,
 publishing `dist/`. No manual upload step.
+
+Environment variables (Netlify → Site configuration → Environment variables):
+
+| Variable             | Purpose                                                              |
+| -------------------- | -------------------------------------------------------------------- |
+| `OPENROUTER_API_KEY` | Jev via OpenRouter's Decisions API (`typesafe/jev-1.13`).            |
+| `TYPESAFE_API_KEY`   | Alternative: Jev direct from TypeSafe. Used only if no OpenRouter key. |
+| `JEV_MODEL`          | Optional model override.                                             |
 
 ## Notes
 
