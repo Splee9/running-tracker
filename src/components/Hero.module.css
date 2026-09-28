@@ -7,6 +7,35 @@
   justify-content: center;
 }
 
+.nav {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.navLink {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1px;
+  transition: border-color 0.2s ease;
+}
+
+.navLink:hover {
+  border-bottom-color: var(--accent);
+}
+
+.navArrow {
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.navLink:hover .navArrow {
+  transform: translateX(3px);
+}
+
 .title {
   font-size: clamp(28px, 5vw, 44px);
   margin: 10px 0 clamp(28px, 6vw, 56px);

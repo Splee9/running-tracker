@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { AnimatedNumber } from "./AnimatedNumber";
-import { Magnetic } from "./Magnetic";
+import { Chip } from "./Chip";
 import { Rich } from "./Rich";
 import { data, lifetime, type RaceCounts } from "../lib/data";
 import { fmt, fmt1 } from "../lib/format";
@@ -150,28 +150,5 @@ export function YearChart() {
         )}
       </motion.div>
     </section>
-  );
-}
-
-function Chip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Magnetic strength={0.25}>
-      <button
-        type="button"
-        className={`${styles.chip} ${active ? styles.chipActive : ""}`}
-        onClick={onClick}
-        aria-pressed={active}
-      >
-        {children}
-      </button>
-    </Magnetic>
   );
 }

@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { AnimatedNumber } from "./AnimatedNumber";
 import { lifetime } from "../lib/data";
 import { fmt } from "../lib/format";
+import { Link } from "../lib/router";
 import styles from "./Hero.module.css";
 
 const rise = {
@@ -16,6 +17,11 @@ const rise = {
 export function Hero() {
   return (
     <header className={styles.hero}>
+      <motion.nav className={styles.nav} variants={rise} custom={4} initial="hidden" animate="show">
+        <Link href="/training" className={styles.navLink}>
+          Training variability <span className={styles.navArrow}>→</span>
+        </Link>
+      </motion.nav>
       <motion.p className="eyebrow" variants={rise} custom={0} initial="hidden" animate="show">
         A running log
       </motion.p>

@@ -1,0 +1,25 @@
+.chip {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip:hover {
+  border-color: #c9c6bf;
+  color: var(--ink);
+}
+
+.chipActive,
+.chipActive:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}

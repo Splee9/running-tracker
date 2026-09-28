@@ -28,13 +28,25 @@ npm run preview  # serve the production build locally
 
 ```
 src/
-  App.tsx                 section composition
+  App.tsx                 routes (/ and /training) + home section composition
   data.json               aggregate stats (generated; do not hand-edit)
-  components/             Hero, YearChart, CumulativeJourney, Comparisons, Footer
+  training-variability.json  weekly training-variability series (generated)
+  components/             Hero, YearChart, CumulativeJourney, Comparisons, Footer,
+                          Training + TvChart (the /training page)
   hooks/usePointer.ts     spring-smoothed cursor tracking
-  lib/                    data types, formatting, distance-comparison logic
+  lib/                    data types, formatting, comparisons, tiny history router
   styles/global.css       design tokens + base styles
 ```
+
+## Routes
+
+- `/` — the running log.
+- `/training` — training variability: how much weekly hours swing around their
+  mean over rolling 8 / 12 / 52-week windows, for Run, Bike, or All. Lower is
+  steadier (Steady < 35, Moderate 35–55, Uneven 55–80, Erratic ≥ 80).
+
+Routing is a ~50-line `history.pushState` wrapper (`src/lib/router.tsx`), not a
+library. `netlify.toml` rewrites every path to `index.html` so deep links load.
 
 ## Deploy
 

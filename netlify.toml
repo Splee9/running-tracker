@@ -7,3 +7,10 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+# SPA fallback: client routes like /training get index.html. Not forced, so
+# real files in dist/ (JS, CSS, favicon) are still served as-is.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
