@@ -1,12 +1,8 @@
 import { lazy, Suspense, useEffect } from "react";
 import { CursorSpotlight } from "./components/CursorSpotlight";
-import { Hero } from "./components/Hero";
-import { YearChart } from "./components/YearChart";
-import { CumulativeJourney } from "./components/CumulativeJourney";
-import { MarathonTimes } from "./components/MarathonTimes";
-import { Comparisons } from "./components/Comparisons";
-import { Colophon } from "./components/Colophon";
-import { Footer } from "./components/Footer";
+import { Nav } from "./components/Nav";
+import { Home } from "./components/Home";
+import { Miles } from "./components/Miles";
 import { NotFound } from "./components/NotFound";
 import { usePathname } from "./lib/router";
 
@@ -14,37 +10,27 @@ import { usePathname } from "./lib/router";
 const Training = lazy(() => import("./components/Training").then((m) => ({ default: m.Training })));
 
 const TITLES: Record<string, string> = {
-  "/": "Miles — a running log",
+  "/": "Spencer Lee — Projects",
+  "/miles": "Miles — a running log",
   "/training": "Training variability — Miles",
 };
-
-function Home() {
-  return (
-    <>
-      <Hero />
-      <YearChart />
-      <CumulativeJourney />
-      <MarathonTimes />
-      <Comparisons />
-      <Colophon />
-      <Footer />
-    </>
-  );
-}
 
 export default function App() {
   const path = usePathname();
 
   useEffect(() => {
-    document.title = TITLES[path] ?? "Not found — Miles";
+    document.title = TITLES[path] ?? "Not found — Spencer Lee";
   }, [path]);
 
   return (
     <>
       <CursorSpotlight />
+      <Nav />
       <main>
         {path === "/" ? (
           <Home />
+        ) : path === "/miles" ? (
+          <Miles />
         ) : path === "/training" ? (
           <Suspense fallback={null}>
             <Training />

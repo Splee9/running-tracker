@@ -1,6 +1,5 @@
 import { data, lifetime } from "../lib/data";
 import { fmt, formatDate } from "../lib/format";
-import { Link } from "../lib/router";
 import styles from "./Footer.module.css";
 
 export function Footer() {
@@ -13,16 +12,6 @@ export function Footer() {
       <p className={styles.stamp}>
         Last refreshed {formatDate(data.lastUpdated)} · rebuilt automatically from a Strava +
         Garmin training log.
-      </p>
-      <p className={styles.crosslink}>
-        <Link href="/training">
-          How steady is the training? <span className={styles.arrow}>→</span>
-        </Link>
-      </p>
-      <p className={styles.crosslink}>
-        <a href="https://chicagomarathon2026.netlify.app/">
-          Follow my Chicago 2026 marathon build <span className={styles.arrow}>→</span>
-        </a>
       </p>
     </footer>
   );
