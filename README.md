@@ -60,7 +60,7 @@ netlify/functions/
   plan, weekly load by workout type, aerobic efficiency trend, and head-to-head
   comparison against prior marathon builds. Aggregate weekly figures only — no
   pace, GPS, heart rate, or health data.
-- `/activity-lookup` — search every public activity. Two stages:
+- `/activity-lookup` — label filters, fan-out, then Jev. Full behavior below.
 
 `src/training-weekly-hours.json` is derived from `src/training-variability.json`
 (the export carries only rolling stats). Regenerate it whenever the TV file
@@ -71,16 +71,23 @@ pip install numpy scipy
 python3 scripts/derive_weekly_hours.py
 ```
 
-- `/activity-lookup` — search every public activity. Two stages:
-  1. **Keyword + fuzzy**, in the browser on every keystroke: activity names plus
-     derived tags (sport, month, weekday, year, race / long / workout, hilly /
-     flat, indoor, 5k / 10k / half / marathon, morning / afternoon / evening),
-     typo-tolerant (edit distance 1–2 by word length; numbers exact only).
-  2. **Jev rerank**, 300 ms after typing stops: the top 25 candidates go to
-     `/.netlify/functions/jev-rerank`, which asks Jev one yes/no question
-     (a `noul`) per activity and returns its probability; the list re-sorts by
-     it. Without a key the function returns 503 and the page quietly stays on
-     keyword + fuzzy.
+- `/activity-lookup` — search every public activity. Three stages:
+  1. **Label hard filters**, in the browser: modality, date, distance, place,
+     weekday, and stimulus words (`easy`, `intervals`, `quality`, `long`,
+     `race`, `recovery`, `probe`, `hills`, plus modifiers such as `tempo`).
+     These read `primary_stimulus`, `modifiers`, and `stimulus_cluster` when
+     that field is present. `interval` is a workout filter, never a place.
+     `low_confidence` ranks lower and is not dropped on its own. Fuzzy
+     name/place stays soft.
+  2. **Fan-out** for the rest of the query: metric, then place-longest,
+     date-list, place-list, then keyword/fuzzy. First claim wins. A query that
+     does not name a stimulus keeps the previous metric, place, and date behavior.
+  3. **Jev**, 300 ms after typing stops: one request asks parallel intent
+     questions (easy, intervals, quality, place, year, fastest, longest) and a
+     membership score per shortlisted activity. A high-confidence answer fills
+     a gap in an incomplete parse. A parse the code already settled is not
+     replaced. Membership reorders only the keyword branch. Without a key the
+     function returns 503 and the page stays on the local shortlist.
 
 `src/activities.json` is gitignored and built before every deploy from
 `data/public/strava-activities.json`, the public Strava activities export grokbot

@@ -1,7 +1,7 @@
 // Intent, distance-band sort, and describeActivity checks.
 // Run: node --experimental-strip-types test-intent.mjs
 
-import { activityFacts, buildIndex, buildJevRequest, classifyIntent, describeActivity, describeIntent, planShortlist, searchActivities } from "./src/lib/activitySearch.ts";
+import { activityFacts, applyJevIntent, buildIndex, buildJevRequest, classifyIntent, describeActivity, describeIntent, planShortlist, searchActivities, splitJevAnswers } from "./src/lib/activitySearch.ts";
 import { toActivity } from "./scripts/strava-activity.mjs";
 
 const testClock = new Date("2026-09-29T12:00:00-05:00");
@@ -50,6 +50,22 @@ const activities = [
   act({ id: 29, name: "Naperville fast", start_date_local: "2026-09-05T08:00:00", distance_m: 15000, moving_time_s: 4500, place: "Naperville" }),
   act({ id: 30, name: "Monday long", start_date_local: "2026-09-28T08:00:00", distance_m: 42000, moving_time_s: 14000 }),
   act({ id: 31, name: "easy miles", start_date_local: "2026-09-01T08:00:00", distance_m: 28000, moving_time_s: 10000 }),
+  // Labeled stimulus fixtures. Names disagree with the label on purpose.
+  act({ id: 40, name: "Shakeout", start_date_local: "2026-09-23T08:00:00", distance_m: 12000, moving_time_s: 4500, primary_stimulus: "easy", modifiers: ["outdoor"] }),
+  act({ id: 41, name: "Easy Run", start_date_local: "2026-09-26T08:00:00", distance_m: 10000, moving_time_s: 3000, primary_stimulus: "quality", modifiers: ["intervals", "outdoor"], hard_lap_count: 5, has_intervals: true }),
+  act({ id: 42, name: "Test Run", start_date_local: "2026-09-21T08:00:00", distance_m: 6000, moving_time_s: 2400, primary_stimulus: "probe", modifiers: ["outdoor"] }),
+  act({ id: 43, name: "Earlier easy", start_date_local: "2026-09-16T08:00:00", distance_m: 8000, moving_time_s: 3000, primary_stimulus: "easy" }),
+  act({ id: 44, name: "Easy spin", sport_type: "Run", modality: "bike", start_date_local: "2026-09-23T09:00:00", distance_m: 20000, moving_time_s: 3600, primary_stimulus: "easy" }),
+  act({ id: 45, name: "Unsure", start_date_local: "2026-09-27T08:00:00", distance_m: 8000, moving_time_s: 3000, primary_stimulus: "easy", modifiers: ["outdoor"], low_confidence: true }),
+  act({ id: 46, name: "Morning", start_date_local: "2026-09-25T08:00:00", distance_m: 10000, moving_time_s: 3600, primary_stimulus: "easy", modifiers: ["outdoor"] }),
+  act({ id: 50, name: "Tuesday", start_date_local: "2024-06-02T08:00:00", distance_m: 9000, moving_time_s: 2700, primary_stimulus: "quality", modifiers: ["intervals", "outdoor"], hard_lap_count: 8, has_intervals: true }),
+  act({ id: 51, name: "Session", start_date_local: "2024-05-02T08:00:00", distance_m: 8000, moving_time_s: 2400, primary_stimulus: "quality", modifiers: ["outdoor"], hard_lap_count: 3 }),
+  act({ id: 52, name: "Tempo", start_date_local: "2024-07-02T08:00:00", distance_m: 8000, moving_time_s: 2400, primary_stimulus: "quality", modifiers: ["tempo", "outdoor"] }),
+  act({ id: 53, name: "Easy Run", start_date_local: "2024-04-02T08:00:00", distance_m: 8000, moving_time_s: 3000, primary_stimulus: "easy", modifiers: ["strides", "outdoor"], hard_lap_count: 6, has_intervals: true }),
+  act({ id: 54, name: "Untitled", start_date_local: "2024-08-02T08:00:00", distance_m: 8000, moving_time_s: 2400, primary_stimulus: "easy", stimulus_cluster: "quality_intervals" }),
+  act({ id: 55, name: "Old repeats", start_date_local: "2023-06-02T08:00:00", distance_m: 8000, moving_time_s: 2400, primary_stimulus: "quality", modifiers: ["intervals"], hard_lap_count: 6 }),
+  act({ id: 56, name: "Interval City", start_date_local: "2024-03-02T08:00:00", distance_m: 5000, moving_time_s: 1800, place: "Interval", primary_stimulus: "easy" }),
+  act({ id: 57, name: "Cruise", start_date_local: "2024-09-02T08:00:00", distance_m: 10000, moving_time_s: 3000, primary_stimulus: "quality", stimulus_cluster: "quality_tempo", modifiers: ["tempo"], hard_lap_count: 4, has_intervals: true }),
 ];
 
 const index = buildIndex(activities);
@@ -125,6 +141,12 @@ const classTests = [
   ["longest Tuesday run", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: null, band: null, weekday: "tuesday" }],
   ["runs on Tuesdays", { isDeterministic: true, kind: "list", sport: "run", dateWindow: null, band: null, weekday: "tuesday" }],
   ["fastest run on a Tuesday", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, weekday: "tuesday" }],
+  ["easy runs last week", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-09-21", end: "2026-09-27" }, band: null, place: null, stimulusPrimary: "easy", intervals: false }],
+  ["interval workouts 2024", { isDeterministic: true, kind: "list", dateWindow: { start: "2024-01-01", end: "2024-12-31" }, band: null, place: null, intervals: true }],
+  ["quality runs", { isDeterministic: true, kind: "list", sport: "run", dateWindow: null, band: null, place: null, stimulusPrimary: "quality", intervals: false }],
+  ["tempo runs last month", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-08-01", end: "2026-08-31" }, band: null, place: null, stimulusPrimary: null, modifier: "tempo" }],
+  ["hilly ride", { isDeterministic: false, kind: null, dateWindow: null, band: null, stimulusPrimary: null, intervals: false }],
+  ["fartlek session", { isDeterministic: false, kind: null, dateWindow: null, band: null, place: null }],
 ];
 
 for (const [query, expected] of classTests) {
@@ -139,9 +161,12 @@ for (const [query, expected] of classTests) {
   if (expected.label !== undefined && result.distanceBand?.label !== expected.label) pass = false;
   if (expected.place !== undefined && result.place !== expected.place) pass = false;
   if (expected.weekday !== undefined && result.weekday !== expected.weekday) pass = false;
+  if (expected.stimulusPrimary !== undefined && (result.stimulus?.primary ?? null) !== expected.stimulusPrimary) pass = false;
+  if (expected.intervals !== undefined && Boolean(result.stimulus?.intervals) !== expected.intervals) pass = false;
+  if (expected.modifier !== undefined && !(result.stimulus?.modifiers ?? []).includes(expected.modifier)) pass = false;
   const detail = pass
     ? ""
-    : `got deterministic=${result.isDeterministic} kind=${result.intent?.kind ?? "null"} sport=${result.intent?.sport ?? "-"} band=${result.distanceBand?.kind ?? "null"} label=${result.distanceBand?.label ?? "-"} place=${result.place ?? "null"} weekday=${result.weekday ?? "null"} window=${result.dateWindow ? `${result.dateWindow.start}..${result.dateWindow.end}` : "null"} remaining=${result.remainingTokens.join(",")}`;
+    : `got deterministic=${result.isDeterministic} kind=${result.intent?.kind ?? "null"} sport=${result.intent?.sport ?? "-"} band=${result.distanceBand?.kind ?? "null"} label=${result.distanceBand?.label ?? "-"} place=${result.place ?? "null"} weekday=${result.weekday ?? "null"} stimulus=${JSON.stringify(result.stimulus)} window=${result.dateWindow ? `${result.dateWindow.start}..${result.dateWindow.end}` : "null"} remaining=${result.remainingTokens.join(",")}`;
   check(`"${query}"`, pass, detail);
 }
 
@@ -208,12 +233,12 @@ order("fastest 50k stays on runs and sorts by time", "fastest 50k", [17, 8], [18
 order("fastest run in Chicago ignores other cities", "fastest run in Chicago", [19], [22, 7]);
 order("longest run in Chicago sorts by distance", "longest run in Chicago", [26], [7, 17, 22]);
 order("speedy runs last month is pace within August", "speedy runs last month", [22, 19], [21, 6]);
-order("runs last week is the previous week, newest first", "runs last week", [27, 23], [24, 21]);
+order("runs last week is the previous week, newest first", "runs last week", [41, 46, 27, 40, 23, 42, 45], [24, 21, 44]);
 order("fastest Chicago run matches in-Chicago pace order", "fastest Chicago run", [19], [22, 29]);
 order("windy city alias includes a nameless-place Chicago run", "fastest run in the windy city", [19], [22, 29]);
 order("longest run Chicago sorts by distance", "longest run Chicago", [26], [7, 17, 22, 29]);
-order("runs in the last week matches runs last week", "runs in the last week", [27, 23], [24, 21]);
-order("runs from last week is not an empty keyword search", "runs from last week", [27, 23], [24]);
+order("runs in the last week matches runs last week", "runs in the last week", [41, 46, 27, 40, 23, 42, 45], [24, 21, 44]);
+order("runs from last week is not an empty keyword search", "runs from last week", [41, 46, 27, 40, 23, 42, 45], [24]);
 order("speedy runs in the last month keeps August pace order", "speedy runs in the last month", [22, 19], [21]);
 order("quick 10ks last month sorts by time inside the band", "quick 10ks last month", [22, 19, 20], [21]);
 order("chitown runs are Chicago runs, newest first", "chitown runs", [21, 20], [22, 29]);
@@ -266,6 +291,89 @@ check("Longest run in Chicago branches", branches("Longest run in Chicago") === 
 check("Speedy runs last month branches", branches("Speedy runs last month") === "metric,date-list", branches("Speedy runs last month"));
 check("Runs last week branches", branches("Runs last week") === "date-list", branches("Runs last week"));
 check("plain 10k this year stays a keyword branch", branches("10k this year") === "keyword", branches("10k this year"));
+check("easy runs last week branches", branches("easy runs last week") === "date-list", branches("easy runs last week"));
+check("interval workouts 2024 branches", branches("interval workouts 2024") === "date-list", branches("interval workouts 2024"));
+check("hilly ride stays a keyword branch", branches("hilly ride") === "keyword", branches("hilly ride"));
+check("most intervals stays on the metric branch", branches("most intervals") === "metric", branches("most intervals"));
+
+order(
+  "easy runs last week is labeled easy runs, low confidence last",
+  "easy runs last week",
+  [46, 40, 45],
+  [41, 42, 23, 27, 44, 43],
+);
+order(
+  "interval workouts 2024 uses labels, not the word interval",
+  "interval workouts 2024",
+  [54, 50, 51],
+  [52, 53, 55, 56, 57, 5],
+);
+order("most intervals keeps easy strides out", "most intervals", [50, 55, 41], [53, 45]);
+
+const easySettled = classifyIntent("easy runs last week", testClock);
+check(
+  "Jev does not replace a settled easy parse",
+  applyJevIntent(easySettled, { is_quality: 0.99, is_intervals: 0.99, year_2020: 0.99 }) === easySettled,
+);
+const intervalSettled = classifyIntent("interval workouts 2024", testClock);
+check(
+  "Jev does not move interval workouts off 2024 or onto a place",
+  applyJevIntent(intervalSettled, { year_2023: 0.99, is_easy: 0.99, place_chicago: 0.99 }) === intervalSettled &&
+    intervalSettled.place === null,
+);
+const runsSettled = classifyIntent("runs last week", testClock);
+check(
+  "Jev does not turn a settled date list into fastest",
+  applyJevIntent(runsSettled, { is_fastest: 0.99 }) === runsSettled,
+);
+const fartlek = classifyIntent("fartlek", testClock);
+const fartlekFilled = applyJevIntent(fartlek, { is_intervals: 0.91, is_quality: 0.84, is_easy: 0.1 });
+check(
+  "Jev intervals facet fills an unrecognized workout word",
+  !fartlek.isDeterministic &&
+    fartlekFilled !== fartlek &&
+    fartlekFilled.stimulus?.intervals === true &&
+    fartlekFilled.intent?.kind === "list" &&
+    fartlekFilled.place == null,
+  JSON.stringify(fartlekFilled.stimulus),
+);
+check(
+  "a low Jev interval score is discarded",
+  applyJevIntent(fartlek, { is_intervals: 0.4, is_easy: 0.2 }) === fartlek,
+);
+check(
+  "tied Jev stimulus scores are discarded",
+  applyJevIntent(fartlek, { is_easy: 0.8, is_quality: 0.78 }) === fartlek,
+);
+const speedwork = applyJevIntent(classifyIntent("speedwork", testClock), {
+  is_intervals: 0.92,
+  year_2024: 0.9,
+  year_2025: 0.2,
+});
+check(
+  "Jev year facet applies only as a gap fill beside a stimulus",
+  speedwork.stimulus?.intervals === true && speedwork.dateWindow?.start === "2024-01-01" && speedwork.dateWindow?.end === "2024-12-31",
+  JSON.stringify({ stimulus: speedwork.stimulus, window: speedwork.dateWindow }),
+);
+const bestRun = classifyIntent("best run in Chicago", testClock);
+const bestSped = applyJevIntent(bestRun, { is_fastest: 0.92, is_longest: 0.2 });
+check(
+  "Jev fastest facet can complete an unsettled Chicago query",
+  !bestRun.isDeterministic && bestSped.intent?.kind === "fastest" && bestSped.intent?.sport === "run" && bestSped.place === "chicago",
+  JSON.stringify({ kind: bestSped.intent?.kind, sport: bestSped.intent?.sport, place: bestSped.place }),
+);
+
+const split = splitJevAnswers({
+  a31: { noul: 0.8 },
+  is_intervals: { noul: 0.91 },
+  is_easy: { noul: 0.2 },
+  has_place: { noul: 0.4 },
+});
+check(
+  "Jev answers split into membership scores and intent facets",
+  split.scores[31] === 0.8 && split.facets.is_intervals === 0.91 && split.facets.is_easy === 0.2 && split.scores.is_intervals === undefined,
+  JSON.stringify(split),
+);
 
 console.log("\ndescribeActivity:\n");
 
@@ -375,6 +483,19 @@ check(
     packed.state.activities.a30.weekday === "Monday",
   JSON.stringify({ interpreted: packed.state.interpreted_query, q: packed.questions.a31 }),
 );
+check(
+  "Jev request asks intent facets in parallel with membership",
+  packed.questions.is_intervals?.type === "noul" &&
+    packed.questions.is_easy?.type === "noul" &&
+    packed.questions.is_fastest?.type === "noul" &&
+    packed.questions.has_place?.type === "noul" &&
+    packed.questions.year_2024?.type === "noul" &&
+    packed.questions.band_10k?.type === "noul" &&
+    packed.state.vocab.primary_stimulus.includes("easy") &&
+    packed.state.vocab.stimulus_cluster.includes("quality_intervals") &&
+    packed.questions.a31?.type === "noul",
+  Object.keys(packed.questions).sort().join(","),
+);
 
 console.log("\nexport mapping:\n");
 
@@ -403,6 +524,32 @@ const mappedBlank = toActivity({
   description: "   ",
 });
 check("toActivity omits a blank description", !("description" in mappedBlank), JSON.stringify(mappedBlank));
+
+const mappedLabels = toActivity({
+  id: 3,
+  name: "repeats",
+  sport_type: "Run",
+  start_date_local: "2024-06-01T00:00:00Z",
+  primary_stimulus: "quality",
+  modifiers: ["intervals"],
+  stimulus_cluster: "quality_intervals",
+  modality: "run",
+  low_confidence: true,
+  hard_lap_count: 4,
+});
+check(
+  "toActivity keeps stimulus cluster, modality, and low confidence",
+  mappedLabels.stimulus_cluster === "quality_intervals" &&
+    mappedLabels.modality === "run" &&
+    mappedLabels.low_confidence === true &&
+    mappedLabels.primary_stimulus === "quality",
+  JSON.stringify(mappedLabels),
+);
+check(
+  "toActivity omits an absent stimulus cluster",
+  !("stimulus_cluster" in mappedBlank) && !("modality" in mappedBlank) && !("low_confidence" in mappedBlank),
+  JSON.stringify(mappedBlank),
+);
 
 console.log();
 if (failures === 0) {

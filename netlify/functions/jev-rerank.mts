@@ -1,9 +1,12 @@
-// POST /.netlify/functions/jev-rerank  { query: string, ids: number[] } → { scores: { [id]: p } }
-// One packed Jev call: the query is shared state, and each activity is its own noul.
-// The probability is a membership score. Metric and date order stay on the client.
+// POST /.netlify/functions/jev-rerank  { query: string, ids: number[] }
+//   → { scores: { [id]: p }, facets: { [question]: p } }
+// One packed Jev call. State is the query, the closed stimulus vocab, and the
+// shortlist. Intent facets and per-activity membership noul run in parallel.
+// Code applies a facet only when it fills a gap. Membership does not reorder
+// locked branches.
 
 import snapshot from "../../src/activities.json" with { type: "json" };
-import { buildJevRequest, type Activity } from "../../src/lib/activitySearch.ts";
+import { buildJevRequest, splitJevAnswers, type Activity } from "../../src/lib/activitySearch.ts";
 
 const MAX_CANDIDATES = 25;
 const MAX_QUERY_LENGTH = 120;
@@ -74,6 +77,14 @@ type JevResponse = {
   usage?: { input_tokens?: number; output_tokens?: number; cost?: number };
 };
 
+const facetCache = new Map<string, Record<string, number>>();
+const FACET_CACHE_MAX = 500;
+
+function rememberFacets(key: string, value: Record<string, number>) {
+  if (facetCache.size >= FACET_CACHE_MAX) facetCache.delete(facetCache.keys().next().value as string);
+  facetCache.set(key, value);
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -93,7 +104,6 @@ export default async (req: Request, context: { ip?: string }) => {
   if (
     !query ||
     query.length > MAX_QUERY_LENGTH ||
-    ids.length === 0 ||
     ids.length > MAX_CANDIDATES ||
     !ids.every((id) => Number.isInteger(id))
   ) {
@@ -110,7 +120,9 @@ export default async (req: Request, context: { ip?: string }) => {
     else pending.push(activity);
   }
 
-  if (pending.length === 0) return json({ scores });
+  const facetKey = `${provider.model}\u0000${query}\u0000facets`;
+  const cachedFacets = facetCache.get(facetKey);
+  if (pending.length === 0 && cachedFacets) return json({ scores, facets: cachedFacets });
 
   const started = Date.now();
   const controller = new AbortController();
@@ -140,12 +152,13 @@ export default async (req: Request, context: { ip?: string }) => {
     if (data.model && data.model !== provider.model) {
       console.warn(JSON.stringify({ msg: "jev.model_drift", expected: provider.model, got: data.model }));
     }
-    for (const [key, answer] of Object.entries(data.answers ?? {})) {
-      const id = Number(key.startsWith("a") ? key.slice(1) : key);
-      if (!Number.isInteger(id) || typeof answer?.noul !== "number") continue;
-      scores[id] = answer.noul;
-      remember(cacheKey(provider.model, query, id), answer.noul);
+    const split = splitJevAnswers(data.answers ?? {});
+    for (const [id, score] of Object.entries(split.scores)) {
+      const numeric = Number(id);
+      scores[numeric] = score;
+      remember(cacheKey(provider.model, query, numeric), score);
     }
+    rememberFacets(facetKey, split.facets);
     console.log(JSON.stringify({
       msg: "jev.decision",
       model: data.model ?? provider.model,
@@ -153,6 +166,7 @@ export default async (req: Request, context: { ip?: string }) => {
       latency_ms: Date.now() - started,
       query,
       scores,
+      facets: split.facets,
     }));
   } catch (err) {
     const aborted = controller.signal.aborted;
@@ -166,5 +180,5 @@ export default async (req: Request, context: { ip?: string }) => {
   } finally {
     clearTimeout(timer);
   }
-  return json({ scores });
+  return json({ scores, facets: facetCache.get(facetKey) ?? {} });
 };

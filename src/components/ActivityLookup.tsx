@@ -3,16 +3,20 @@ import { motion } from "framer-motion";
 import { Chip } from "./Chip";
 import snapshot from "../activities.json";
 import {
+  applyJevIntent,
   buildIndex,
   classifyIntent,
   formatDuration,
+  intentHardKey,
   isRide,
   isRun,
   searchActivities,
   sportLabel,
   type Activity,
+  type IntentClassification,
   type SearchHit,
 } from "../lib/activitySearch";
+import { stimulusSummary } from "../lib/stimulus";
 import styles from "./ActivityLookup.module.css";
 
 type SportFilter = "all" | "run" | "ride" | "other";
@@ -39,7 +43,16 @@ const SPORT_FILTERS: { key: SportFilter; label: string }[] = [
   { key: "other", label: "Other" },
 ];
 
-const EXAMPLES = ["longest run", "fastest run in Chicago", "speedy runs", "most intervals", "Chicago races", "hilly ride"];
+const EXAMPLES = [
+  "longest run",
+  "fastest run in Chicago",
+  "easy runs last week",
+  "interval workouts 2024",
+  "speedy runs",
+  "most intervals",
+  "Chicago races",
+  "hilly ride",
+];
 
 const rise = {
   hidden: { opacity: 0, y: 16 },
@@ -80,15 +93,20 @@ export function ActivityLookup() {
 
   const trimmed = query.trim();
 
-  const intentClassification = useMemo(() => {
-    if (!trimmed) return null;
-    return classifyIntent(trimmed);
-  }, [trimmed]);
+  const codeClassification = useMemo(() => (trimmed ? classifyIntent(trimmed) : null), [trimmed]);
+  const [facetOverride, setFacetOverride] = useState<{ query: string; classification: IntentClassification } | null>(
+    null,
+  );
+  const intentClassification =
+    facetOverride && facetOverride.query === trimmed ? facetOverride.classification : codeClassification;
+  const hardKey = intentClassification ? intentHardKey(intentClassification) : "";
 
   const localHits: SearchHit[] = useMemo(() => {
-    if (!trimmed) return [];
-    return searchActivities(index, trimmed, 500).filter((h) => matchesSport(h.activity, sport));
-  }, [trimmed, sport]);
+    if (!trimmed || !intentClassification) return [];
+    return searchActivities(index, trimmed, 500, undefined, intentClassification).filter((h) =>
+      matchesSport(h.activity, sport),
+    );
+  }, [trimmed, sport, intentClassification]);
 
   const candidateIds = useMemo(
     () => localHits.slice(0, JEV_CANDIDATES).map((h) => h.activity.id),
@@ -101,10 +119,11 @@ export function ActivityLookup() {
   const shouldScoreWithJev = jevAvailable;
 
   useEffect(() => {
-    if (!shouldScoreWithJev || !trimmed || candidateIds.length === 0) {
+    if (!shouldScoreWithJev || !trimmed) {
       setJev({ status: "idle" });
       return;
     }
+    const requestedKey = hardKey;
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setJev({ status: "loading", query: trimmed });
@@ -121,9 +140,17 @@ export function ActivityLookup() {
           }
           return r.ok ? r.json() : Promise.reject(r.status);
         })
-        .then((data: { scores: Record<number, number> }) =>
-          setJev({ status: "done", query: trimmed, scores: data.scores }),
-        )
+        .then((data: { scores?: Record<number, number>; facets?: Record<string, number> }) => {
+          const code = classifyIntent(trimmed);
+          const merged = applyJevIntent(code, data.facets);
+          // A facet that changes the hard filters needs a new shortlist before membership
+          // scores mean anything. That second request is the one real dependency.
+          if (intentHardKey(merged) !== requestedKey) {
+            setFacetOverride({ query: trimmed, classification: merged });
+            return;
+          }
+          setJev({ status: "done", query: trimmed, scores: data.scores ?? {} });
+        })
         .catch(() => {
           if (!controller.signal.aborted) setJev({ status: "error", query: trimmed });
         });
@@ -133,7 +160,7 @@ export function ActivityLookup() {
       controller.abort();
     };
     // candidateKey stands in for candidateIds so identical shortlists don't refetch.
-  }, [shouldScoreWithJev, trimmed, candidateKey]);
+  }, [shouldScoreWithJev, trimmed, candidateKey, hardKey]);
 
   const jevScores = jev.status === "done" && jev.query === trimmed ? jev.scores : null;
 
@@ -181,7 +208,8 @@ export function ActivityLookup() {
     // fan-out readings are called out separately so a pace sort is not
     // described as if it included the related tail.
     const intent = intentClassification.intent;
-    const whereBits = [intentClassification.place, intentClassification.weekday].filter(Boolean);
+    const stimulusBit = stimulusSummary(intentClassification.stimulus);
+    const whereBits = [intentClassification.place, intentClassification.weekday, stimulusBit].filter(Boolean);
     const where = whereBits.length > 0 ? ` · ${whereBits.join(" · ")}` : "";
     const primaryId =
       intent?.kind === "fastest" || intent?.kind === "longest" || intent?.kind === "most_intervals" ||
@@ -274,8 +302,9 @@ export function ActivityLookup() {
           Find any session.
         </motion.h1>
         <motion.p className={styles.intro} variants={rise} custom={2} initial="hidden" animate="show">
-          Search every logged activity by name, stimulus, place, or workout type. Keyword and fuzzy
-          matching run as you type. <b>Jev</b> then scores the shortlist. Metric searches such as
+          Search every logged activity by name, stimulus, place, or workout type. Easy, intervals, and
+          the other stimulus words filter on labels. Keyword and fuzzy matching cover the rest. <b>Jev</b>{" "}
+          asks those intent questions in parallel, then scores the shortlist. Metric searches such as
           "longest run" or "fastest 10k" keep that order; other searches rerank when Jev is confident.
         </motion.p>
       </header>
