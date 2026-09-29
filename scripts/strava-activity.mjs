@@ -26,6 +26,9 @@ export function toActivity(a) {
   if (a.hard_lap_count !== undefined) base.hard_lap_count = a.hard_lap_count;
   if (a.has_intervals !== undefined) base.has_intervals = a.has_intervals;
   if (a.interval_score !== undefined) base.interval_score = a.interval_score;
+  if (a.stimulus_cluster !== undefined && a.stimulus_cluster !== "") base.stimulus_cluster = a.stimulus_cluster;
+  if (a.modality !== undefined && a.modality !== "") base.modality = a.modality;
+  if (a.low_confidence) base.low_confidence = true;
   // v3 enrichment (omit undefined fields to keep backward compatibility)
   if (a.average_heartrate !== undefined) base.average_heartrate = a.average_heartrate;
   if (a.max_heartrate !== undefined) base.max_heartrate = a.max_heartrate;

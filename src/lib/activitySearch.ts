@@ -17,6 +17,11 @@ export type Activity = {
   hard_lap_count?: number;
   has_intervals?: boolean;
   interval_score?: number;
+  // Optional vault labels. Search still works when a field is missing.
+  stimulus_cluster?: string;
+  modality?: string;
+  /** Caveat only. Rank the activity down; do not drop it for this flag alone. */
+  low_confidence?: boolean;
   // v3 enrichment (optional, backward compatible)
   average_heartrate?: number;
   max_heartrate?: number;
@@ -243,6 +248,7 @@ function derivedTags(a: Activity): string[] {
   // v2 enrichment tags
   if (a.primary_stimulus) tags.push(a.primary_stimulus);
   if (a.modifiers) tags.push(...a.modifiers);
+  if (a.stimulus_cluster) tags.push(...tokenize(a.stimulus_cluster));
   if (a.place) tags.push(...tokenize(a.place));
   if (a.has_intervals) tags.push("intervals", "reps", "repeats");
   // v3 enrichment tags: HR zones, power zones
@@ -547,6 +553,8 @@ export type IntentClassification = {
   place: string | null;
   /** "on a Tuesday" → "tuesday". Null when the query does not name a weekday. */
   weekday: string | null;
+  /** Label hard filter. Null when the query does not name a stimulus. */
+  stimulus: StimulusConstraint | null;
   remainingTokens: string[];
   isDeterministic: boolean;
 };
@@ -566,6 +574,7 @@ const PLACE_STOP = new Set([
   ...RIDE_WORDS,
   ...LIST_SYNONYMS,
   ...SPEED_WORDS,
+  ...STIMULUS_PLACE_WORDS,
   "longest",
   "farthest",
   "race",
@@ -588,6 +597,23 @@ const PLACE_ALIASES: { canonical: string; phrases: string[][] }[] = [
 // Unbanded "fastest run" should not be won by a stride or a short shakeout.
 const MIN_UNBANDED_FASTEST_M = 3000;
 
+import {
+  isBlockedPlaceName,
+  labelConfidence,
+  matchesModality,
+  matchesPrimary,
+  matchesStimulus,
+  parseStimulusTokens,
+  STIMULUS_PLACE_WORDS,
+  STIMULUS_VOCAB,
+  stimulusFromFacets,
+  stimulusSummary,
+  winningDistanceBand,
+  winningYear,
+  JEV_INTENT_CONFIDENCE,
+  type StimulusConstraint,
+} from "./stimulus.ts";
+
 function phraseAt(tokens: string[], index: number, phrase: string[]): boolean {
   return phrase.every((word, offset) => tokens[index + offset] === word);
 }
@@ -609,6 +635,12 @@ function canonicalPlaceName(phrase: string): string {
   const hit = aliasAt(tokens, 0);
   if (hit && hit.length === tokens.length) return hit.canonical;
   return tokens.join(" ");
+}
+
+function isKnownPlaceTokens(tokens: string[]): boolean {
+  if (tokens.length === 0) return false;
+  const hit = aliasAt(tokens, 0);
+  return hit != null && hit.length === tokens.length;
 }
 
 function textHasPlace(text: string, place: string): boolean {
@@ -937,6 +969,15 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     if (weightedIdx >= 0) consumedIndices.add(weightedIdx);
   }
 
+  // Stimulus words are labels, not places and not name keywords.
+  // "most intervals" already consumed its tokens; still apply the interval predicate.
+  const parsedStimulus = parseStimulusTokens(tokens, consumedIndices);
+  parsedStimulus.indices.forEach((i) => consumedIndices.add(i));
+  let stimulus = parsedStimulus.stimulus;
+  if (intent?.kind === "most_intervals") {
+    stimulus = { intervals: true, modifiers: stimulus?.modifiers ?? [] };
+  }
+
   // Detect place filters (e.g., "Chicago races")
   if (!intent) {
     const raceIdx = tokens.findIndex(t => ["race", "races"].includes(t));
@@ -946,13 +987,17 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     const remainingAfterSuperlative = tokens.filter((_, i) => !consumedIndices.has(i));
     if (remainingAfterSuperlative.length > 0 && (raceIdx >= 0 || workoutIdx >= 0)) {
       // Try to extract place: anything that's not race/workout
-      const placeTokens = remainingAfterSuperlative.filter(t => 
-        !["race", "races", "workout", "workouts", "session", "sessions", "run", "runs", "running", "ride", "rides", "bike", "cycling"].includes(t)
+      const placeTokens = remainingAfterSuperlative.filter(t =>
+        !["race", "races", "workout", "workouts", "session", "sessions", "run", "runs", "running", "ride", "rides", "bike", "cycling"].includes(t) &&
+        !STIMULUS_PLACE_WORDS.has(t)
       );
       if (placeTokens.length > 0) {
         const place = canonicalPlaceName(placeTokens.join(" "));
         const filterType = raceIdx >= 0 ? "race" as const : workoutIdx >= 0 ? "workout" as const : undefined;
-        if (place) {
+        // "Chicago races" is a city plus a race word. A bare "fartlek session"
+        // is not a place: workout/session only keeps a place when it is a known alias.
+        const acceptPlace = filterType === "race" || isKnownPlaceTokens(placeTokens);
+        if (place && acceptPlace && !isBlockedPlaceName(place)) {
           intent = { kind: "place_filter", place, filterType };
           consumedIndices.add(raceIdx >= 0 ? raceIdx : workoutIdx);
           placeTokens.forEach(pt => {
@@ -986,6 +1031,11 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   });
 
   if (!place && intent?.kind === "place_filter") place = canonicalPlaceName(intent.place);
+  // "interval" is a workout word. It must not survive as a place after the detector.
+  if (place && isBlockedPlaceName(place)) {
+    place = "";
+    if (intent?.kind === "place_filter") intent = null;
+  }
 
   const parsedWeekday = parseWeekday(tokens, consumedIndices);
   const weekday = parsedWeekday.weekday;
@@ -1003,12 +1053,12 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     sportHit.indices.forEach((i) => consumedIndices.add(i));
   }
 
-  if (!intent && (dateWindow || place)) {
+  if (!intent && (dateWindow || place || stimulus)) {
     const synonyms = listSynonymIndices(tokens, consumedIndices);
     const pending = tokens.filter(
       (_, i) => !consumedIndices.has(i) && !sportHit.indices.includes(i) && !synonyms.includes(i),
     );
-    if (pending.length === 0 && (dateWindow || sportHit.sport)) {
+    if (pending.length === 0 && (dateWindow || sportHit.sport || stimulus)) {
       sportHit.indices.forEach((i) => consumedIndices.add(i));
       synonyms.forEach((i) => consumedIndices.add(i));
       intent = { kind: "list", sport: sportHit.sport };
@@ -1052,11 +1102,140 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   }
   // Deterministic if we have an intent and no remaining semantic tokens
   const isDeterministic = intent !== null && remainingTokens.length === 0;
-  return { intent, dateWindow, distanceBand, place: resolvedPlace, weekday, remainingTokens, isDeterministic };
+  return { intent, dateWindow, distanceBand, place: resolvedPlace, weekday, stimulus, remainingTokens, isDeterministic };
 }
 
 export function classifyIntent(query: string, now?: Date): IntentClassification {
   return detectSuperlativeIntent(query, now);
+}
+
+function sportFromRemaining(tokens: string[]): "run" | "ride" | undefined {
+  if (tokens.some((token) => RUN_WORDS.has(token))) return "run";
+  if (tokens.some((token) => RIDE_WORDS.has(token))) return "ride";
+  return undefined;
+}
+
+/** Stable identity for "did Jev change the hard filters?" Refetches only when this changes. */
+export function intentHardKey(c: IntentClassification): string {
+  const sport = c.intent && "sport" in c.intent ? c.intent.sport ?? "" : "";
+  const placeFilter = c.intent?.kind === "place_filter" ? `${c.intent.place}:${c.intent.filterType ?? ""}` : "";
+  const field = c.intent?.kind === "mmp_power" ? c.intent.field : "";
+  return [
+    c.intent?.kind ?? "",
+    sport,
+    placeFilter,
+    field,
+    c.place ?? "",
+    c.weekday ?? "",
+    c.dateWindow ? `${c.dateWindow.start}:${c.dateWindow.end}` : "",
+    c.distanceBand?.kind ?? "",
+    c.distanceBand?.label ?? "",
+    c.stimulus?.intervals ? "intervals" : "",
+    c.stimulus?.primary ?? "",
+    (c.stimulus?.modifiers ?? []).join("+"),
+  ].join("|");
+}
+
+/**
+ * Fill gaps in an incomplete parse from parallel Jev answers.
+ * A deterministic code parse is already a hard filter: those answers are discarded.
+ * has_place and has_date_window carry no value code can apply, so they are discarded too.
+ */
+export function applyJevIntent(
+  base: IntentClassification,
+  facets: Record<string, number> | undefined,
+): IntentClassification {
+  if (!facets || Object.keys(facets).length === 0) return base;
+  const blocked = base.place != null && isBlockedPlaceName(base.place);
+  if (base.isDeterministic && !blocked) return base;
+
+  let next = base;
+  const edit = (): IntentClassification => {
+    if (next !== base) return next;
+    next = {
+      ...base,
+      intent: base.intent ? { ...base.intent } : null,
+      stimulus: base.stimulus
+        ? { intervals: base.stimulus.intervals, primary: base.stimulus.primary, modifiers: [...base.stimulus.modifiers] }
+        : null,
+    };
+    return next;
+  };
+
+  if (blocked) {
+    const edited = edit();
+    edited.place = null;
+    if (edited.intent?.kind === "place_filter") {
+      edited.intent = { kind: "list", sport: edited.intent.sport };
+    }
+  }
+  if (base.isDeterministic) return next;
+
+  if (!base.stimulus) {
+    const stimulus = stimulusFromFacets(facets);
+    if (stimulus) {
+      const edited = edit();
+      edited.stimulus = stimulus;
+      if (!edited.intent) {
+        edited.intent = { kind: "list", sport: sportFromRemaining(edited.remainingTokens) };
+      }
+    }
+  }
+
+  if (!base.intent || base.intent.kind === "list") {
+    const fast = facets.is_fastest ?? 0;
+    const long = facets.is_longest ?? 0;
+    if (Math.max(fast, long) >= JEV_INTENT_CONFIDENCE && Math.abs(fast - long) >= 0.1) {
+      const edited = edit();
+      const existing = edited.intent && "sport" in edited.intent ? edited.intent.sport : undefined;
+      edited.intent = {
+        kind: fast > long ? "fastest" : "longest",
+        sport: existing ?? sportFromRemaining(edited.remainingTokens),
+      };
+    }
+  }
+
+  if (!base.dateWindow && (next.stimulus || next.intent)) {
+    const year = winningYear(facets);
+    if (year) {
+      const edited = edit();
+      edited.dateWindow = { start: `${year}-01-01`, end: `${year}-12-31` };
+      if (!edited.intent) edited.intent = { kind: "list", sport: sportFromRemaining(edited.remainingTokens) };
+    }
+  }
+
+  if (!base.place && (facets.place_chicago ?? 0) >= JEV_INTENT_CONFIDENCE) {
+    const edited = edit();
+    edited.place = "chicago";
+  }
+
+  const kind = next.intent?.kind;
+  if (!base.distanceBand && (kind === "fastest" || kind === "longest")) {
+    const band = winningDistanceBand(facets);
+    if (band) {
+      const edited = edit();
+      edited.distanceBand = raceBand(band);
+      if (edited.distanceBand.runsOnly && edited.intent && "sport" in edited.intent && !edited.intent.sport) {
+        edited.intent.sport = "run";
+      }
+    }
+  }
+
+  if (next.stimulus && next.intent && "sport" in next.intent && !next.intent.sport) {
+    const run = facets.is_run ?? 0;
+    const ride = facets.is_ride ?? 0;
+    const pick = run >= JEV_INTENT_CONFIDENCE && ride <= 0.25 && run - ride >= 0.4
+      ? "run"
+      : ride >= JEV_INTENT_CONFIDENCE && run <= 0.25 && ride - run >= 0.4
+        ? "ride"
+        : null;
+    if (pick) {
+      const edited = edit();
+      if (edited.intent && "sport" in edited.intent) edited.intent.sport = pick;
+    }
+  }
+
+  return next;
 }
 
 // Short gloss for Jev so "speedy", "last month", and "in Chicago" are explicit.
@@ -1079,6 +1258,8 @@ export function describeIntent(c: IntentClassification): string {
     bits.push(intent.kind.replaceAll("_", " "));
   }
   if (intent && "sport" in intent && intent.sport) bits.push(`${intent.sport}s only`);
+  const stimulusBit = stimulusSummary(c.stimulus);
+  if (stimulusBit) bits.push(`stimulus ${stimulusBit}`);
   if (c.place) bits.push(`in ${c.place}`);
   if (c.weekday) bits.push(`on ${c.weekday}`);
   if (c.dateWindow) bits.push(`dated ${c.dateWindow.start} through ${c.dateWindow.end}`);
@@ -1146,6 +1327,7 @@ type ShortlistBranch = {
   place: string | null;
   weekday: string | null;
   sport?: "run" | "ride";
+  stimulus: StimulusConstraint | null;
   distanceBand: DistanceBand | null;
   filterType?: "race" | "workout";
   intent: SuperlativeIntent;
@@ -1160,21 +1342,25 @@ function isLoosenedMetric(intent: SuperlativeIntent): boolean {
   return intent?.kind === "fastest" || intent?.kind === "longest";
 }
 
-// One query, several plausible pools. Date, place, weekday, and an explicit sport
-// are hard on every branch. Band, pace floor, and keyword leftovers are not: a
-// too-narrow metric branch must not be the only way an activity can appear.
+// One query, several plausible pools. Date, place, weekday, sport, and stimulus
+// labels are hard on every branch. Band, pace floor, and keyword leftovers are not:
+// a too-narrow metric branch must not be the only way an activity can appear.
 function buildShortlistBranches(c: IntentClassification, query: string): ShortlistBranch[] {
   const sport = intentSport(c.intent);
   const branches: ShortlistBranch[] = [];
+  const shared = {
+    dateWindow: c.dateWindow,
+    place: c.place,
+    weekday: c.weekday,
+    sport,
+    stimulus: c.stimulus,
+  };
   const metric = c.intent && c.intent.kind !== "list" && c.intent.kind !== "place_filter" ? c.intent : null;
 
   if (metric) {
     branches.push({
+      ...shared,
       id: "metric",
-      dateWindow: c.dateWindow,
-      place: c.place,
-      weekday: c.weekday,
-      sport,
       distanceBand: c.distanceBand,
       intent: metric,
       tokens: [],
@@ -1185,11 +1371,8 @@ function buildShortlistBranches(c: IntentClassification, query: string): Shortli
   // Ahead of the date list so an empty distance band falls open onto it.
   if (c.place && c.intent?.kind === "fastest") {
     branches.push({
+      ...shared,
       id: "place-longest",
-      dateWindow: c.dateWindow,
-      place: c.place,
-      weekday: c.weekday,
-      sport,
       distanceBand: null,
       intent: { kind: "longest", sport },
       tokens: [],
@@ -1198,11 +1381,8 @@ function buildShortlistBranches(c: IntentClassification, query: string): Shortli
 
   if (c.dateWindow && (c.intent?.kind === "list" || isLoosenedMetric(c.intent))) {
     branches.push({
+      ...shared,
       id: "date-list",
-      dateWindow: c.dateWindow,
-      place: c.place,
-      weekday: c.weekday,
-      sport,
       distanceBand: null,
       intent: { kind: "list", sport },
       tokens: [],
@@ -1211,11 +1391,9 @@ function buildShortlistBranches(c: IntentClassification, query: string): Shortli
 
   if (c.place && !c.dateWindow && (c.intent?.kind === "list" || c.intent?.kind === "place_filter" || isLoosenedMetric(c.intent))) {
     branches.push({
+      ...shared,
       id: "place-list",
       dateWindow: null,
-      place: c.place,
-      weekday: c.weekday,
-      sport,
       distanceBand: null,
       filterType: c.intent?.kind === "place_filter" ? c.intent.filterType : undefined,
       intent: c.intent?.kind === "place_filter" ? c.intent : { kind: "list", sport },
@@ -1226,11 +1404,8 @@ function buildShortlistBranches(c: IntentClassification, query: string): Shortli
   // "runs on a Tuesday" is a list with no date and no place.
   if (!c.dateWindow && !c.place && c.intent?.kind === "list") {
     branches.push({
+      ...shared,
       id: "place-list",
-      dateWindow: null,
-      place: null,
-      weekday: c.weekday,
-      sport,
       distanceBand: null,
       intent: { kind: "list", sport },
       tokens: [],
@@ -1244,11 +1419,8 @@ function buildShortlistBranches(c: IntentClassification, query: string): Shortli
       : [];
   if (keywordTokens.length > 0) {
     branches.push({
+      ...shared,
       id: "keyword",
-      dateWindow: c.dateWindow,
-      place: c.place,
-      weekday: c.weekday,
-      sport,
       distanceBand: null,
       intent: null,
       tokens: keywordTokens,
@@ -1269,7 +1441,11 @@ function inWindow(activity: Activity, window: DateWindow): boolean {
 
 function matchesSportChoice(activity: Activity, sport: "run" | "ride" | undefined): boolean {
   if (!sport) return true;
-  return sport === "run" ? isRun(activity) : isRide(activity);
+  return matchesModality(activity, sport);
+}
+
+function compareRecency(a: Activity, b: Activity): number {
+  return labelConfidence(a) - labelConfidence(b) || b.start_date_local.localeCompare(a.start_date_local);
 }
 
 function applyBranchFilters(index: IndexedActivity[], branch: ShortlistBranch): IndexedActivity[] {
@@ -1293,15 +1469,15 @@ function applyBranchFilters(index: IndexedActivity[], branch: ShortlistBranch): 
   } else if (branch.sport) {
     candidates = candidates.filter(({ activity }) => matchesSportChoice(activity, branch.sport));
   }
+  if (branch.stimulus) {
+    const stimulus = branch.stimulus;
+    candidates = candidates.filter(({ activity }) => matchesStimulus(activity, stimulus));
+  }
   if (branch.place) {
     candidates = candidates.filter(({ activity }) => activityMatchesPlace(activity, branch.place!));
   }
   if (branch.filterType === "race") {
-    candidates = candidates.filter(({ activity }) =>
-      activity.primary_stimulus === "race" ||
-      activity.workout_type === 1 ||
-      activity.workout_type === 11 ||
-      activity.name.toLowerCase().includes("race"));
+    candidates = candidates.filter(({ activity }) => matchesPrimary(activity, "race"));
   } else if (branch.filterType === "workout") {
     candidates = candidates.filter(({ activity }) => activity.workout_type === 3 || activity.workout_type === 12);
   }
@@ -1337,7 +1513,8 @@ function keywordHits(candidates: IndexedActivity[], tokens: string[]): SearchHit
     if (hitCount === 0) continue;
     const hit: SearchHit = {
       activity,
-      score: total / tokens.length,
+      // low_confidence sinks the hit. It does not remove it.
+      score: total / tokens.length - 0.2 * labelConfidence(activity),
       kind: anyFuzzy ? "fuzzy" : "keyword",
       matched,
     };
@@ -1363,9 +1540,7 @@ function runShortlistBranch(index: IndexedActivity[], branch: ShortlistBranch, l
     matched: [],
   }));
   if (branch.intent?.kind === "place_filter") {
-    return hits
-      .sort((a, b) => b.activity.start_date_local.localeCompare(a.activity.start_date_local))
-      .slice(0, limit);
+    return hits.sort((a, b) => compareRecency(a.activity, b.activity)).slice(0, limit);
   }
   return applySuperlativeSorting(hits, branch.intent, limit, branch.distanceBand);
 }
@@ -1375,8 +1550,8 @@ export function searchActivities(
   query: string,
   limit = 200,
   now?: Date,
+  classification: IntentClassification = detectSuperlativeIntent(query, now),
 ): SearchHit[] {
-  const classification = detectSuperlativeIntent(query, now);
   const branches = buildShortlistBranches(classification, query);
   const seen = new Set<number>();
   const merged: SearchHit[] = [];
@@ -1467,8 +1642,7 @@ function applySuperlativeSorting(
     });
     return withPower.slice(0, limit);
   } else if (intent.kind === "list") {
-    // Sort by start_date_local descending (most recent first)
-    sorted.sort((a, b) => b.activity.start_date_local.localeCompare(a.activity.start_date_local));
+    sorted.sort((a, b) => compareRecency(a.activity, b.activity));
   }
 
   return sorted.slice(0, limit);
@@ -1544,6 +1718,9 @@ export type ActivityFacts = {
   workout?: string;
   indoor?: true;
   stimulus?: string;
+  stimulus_cluster?: string;
+  modality?: string;
+  low_confidence?: true;
   modifiers?: string[];
   place?: string;
   intervals?: string;
@@ -1581,6 +1758,9 @@ export function activityFacts(a: Activity, now?: Date): ActivityFacts {
   if (workout) facts.workout = workout;
   if (a.trainer) facts.indoor = true;
   if (a.primary_stimulus) facts.stimulus = a.primary_stimulus;
+  if (a.stimulus_cluster) facts.stimulus_cluster = a.stimulus_cluster;
+  if (a.modality) facts.modality = a.modality;
+  if (a.low_confidence || a.primary_stimulus === "low_confidence") facts.low_confidence = true;
   if (a.modifiers && a.modifiers.length > 0) facts.modifiers = a.modifiers.slice(0, 3);
   if (a.place) facts.place = a.place;
   if (a.has_intervals) facts.intervals = a.hard_lap_count ? `${a.hard_lap_count} hard laps` : "intervals";
@@ -1608,12 +1788,107 @@ export type JevNoul = {
 // neighborhood counts as the city are still open against main, so this rubric
 // does not assert either one.
 const HOW_TO_JUDGE =
-  "Sport, place, weekday, and dates must fit the interpreted query. The dates in interpreted_query are the window; do not substitute a different month. Last week is the previous Monday–Sunday. Speedy, fast, and quick mean a fast pace: trust a fast pace label, or a run around 7:30/mi or quicker. An easy pace is not speedy. Fastest matches a genuinely quick effort. Longest matches a long effort, well over 20 km for a run. A city counts when the place or the name matches that city. A list or date-window query matches every activity of the right sport inside that window. A race is marked race, not merely mentioned.";
+  "Sport, place, weekday, and dates must fit the interpreted query. The dates in interpreted_query are the window; do not substitute a different month. Last week is the previous Monday–Sunday. Speedy, fast, and quick mean a fast pace: trust a fast pace label, or a run around 7:30/mi or quicker. An easy pace is not speedy. Fastest matches a genuinely quick effort. Longest matches a long effort, well over 20 km for a run. A city counts when the place or the name matches that city. A list or date-window query matches every activity of the right sport inside that window. A race is marked race, not merely mentioned. Stimulus words are label filters already applied before this score. low_confidence is a caveat, not by itself a mismatch.";
 
-/** One shared state and one noul per activity. Questions do not see each other. */
+function facetNoul(instructions: string, yes: string, no: string): JevNoul {
+  return { type: "noul", instructions, criteria: { true: yes, false: no } };
+}
+
+// Speculative intent questions. They share state with the membership noul and
+// cannot see each other. Code discards the ones it does not use.
+function intentFacetQuestions(now?: Date): Record<string, JevNoul> {
+  const year = chicagoClock(now).getFullYear();
+  const yes = "The query asks for this.";
+  const no = "The query does not ask for this.";
+  const questions: Record<string, JevNoul> = {
+    is_easy: facetNoul(
+      "Using only search_query and vocab, the user wants primary_stimulus easy. Not an easy pace inside a fastest query.",
+      yes,
+      no,
+    ),
+    is_intervals: facetNoul(
+      "Using only search_query and vocab, the user wants interval workouts, repeats, or reps. Interval is a workout kind, never a place.",
+      yes,
+      no,
+    ),
+    is_quality: facetNoul(
+      "Using only search_query and vocab, the user wants quality sessions and is not specifically asking for intervals.",
+      yes,
+      no,
+    ),
+    is_long: facetNoul(
+      "Using only search_query and vocab, the user wants long-run stimulus, not the single longest activity.",
+      yes,
+      no,
+    ),
+    is_race: facetNoul("Using only search_query and vocab, the user wants races.", yes, no),
+    is_recovery: facetNoul("Using only search_query and vocab, the user wants recovery stimulus.", yes, no),
+    is_probe: facetNoul("Using only search_query and vocab, the user wants probe stimulus.", yes, no),
+    is_hills: facetNoul(
+      "Using only search_query and vocab, the user wants hills stimulus, not the hilliest activity.",
+      yes,
+      no,
+    ),
+    is_tempo: facetNoul("Using only search_query and vocab, the user wants tempo.", yes, no),
+    is_marathon_pace: facetNoul("Using only search_query and vocab, the user wants marathon pace.", yes, no),
+    is_fastest: facetNoul("Using only search_query and vocab, the user wants the fastest pace or shortest time.", yes, no),
+    is_longest: facetNoul("Using only search_query and vocab, the user wants the longest distance.", yes, no),
+    is_run: facetNoul("Using only search_query and vocab, the user restricts modality to run.", yes, no),
+    is_ride: facetNoul("Using only search_query and vocab, the user restricts modality to bike or ride.", yes, no),
+    place_chicago: facetNoul(
+      "Using only search_query and vocab, the user names Chicago (Chi, Chitown, or Windy City) as the place.",
+      yes,
+      no,
+    ),
+    // Discarded in code: a yes does not name which place or which dates.
+    has_place: facetNoul(
+      "Using only search_query, the user names a place. A workout word such as interval is not a place.",
+      yes,
+      no,
+    ),
+    has_date_window: facetNoul(
+      "Using only search_query, the user restricts dates. Code computes the window.",
+      yes,
+      no,
+    ),
+    band_5k: facetNoul("Using only search_query, the user asks for a 5k distance.", yes, no),
+    band_10k: facetNoul("Using only search_query, the user asks for a 10k distance.", yes, no),
+    band_half: facetNoul("Using only search_query, the user asks for a half marathon distance.", yes, no),
+    band_marathon: facetNoul("Using only search_query, the user asks for a marathon distance.", yes, no),
+  };
+  for (let y = year - 6; y <= year; y++) {
+    questions[`year_${y}`] = facetNoul(
+      `Using only search_query, the user refers to calendar year ${y}.`,
+      yes,
+      no,
+    );
+  }
+  return questions;
+}
+
+export type JevAnswerMap = Record<string, { noul?: number }>;
+
+/** Membership keys are a{id}. Every other noul is an intent facet. */
+export function splitJevAnswers(answers: JevAnswerMap): {
+  scores: Record<number, number>;
+  facets: Record<string, number>;
+} {
+  const scores: Record<number, number> = {};
+  const facets: Record<string, number> = {};
+  for (const [key, answer] of Object.entries(answers)) {
+    if (typeof answer?.noul !== "number") continue;
+    const membership = /^a(\d+)$/.exec(key);
+    if (membership) scores[Number(membership[1])] = answer.noul;
+    else facets[key] = answer.noul;
+  }
+  return { scores, facets };
+}
+
+/** One shared state. Intent facets and per-activity membership noul run in parallel. */
 export function buildJevRequest(query: string, activities: Activity[], now?: Date): {
   state: {
     search_query: string;
+    vocab: typeof STIMULUS_VOCAB;
     interpreted_query: string;
     how_to_judge: string;
     activities: Record<string, ActivityFacts>;
@@ -1621,13 +1896,13 @@ export function buildJevRequest(query: string, activities: Activity[], now?: Dat
   questions: Record<string, JevNoul>;
 } {
   const packed: Record<string, ActivityFacts> = {};
-  const questions: Record<string, JevNoul> = {};
+  const questions: Record<string, JevNoul> = { ...intentFacetQuestions(now) };
   for (const activity of activities) {
     const key = `a${activity.id}`;
     packed[key] = activityFacts(activity, now);
     questions[key] = {
       type: "noul",
-      instructions: `Does activities.${key} match interpreted_query? Apply how_to_judge. Ignore every other activity.`,
+      instructions: `Does activities.${key} match interpreted_query? Apply how_to_judge. Ignore every other activity. Ignore the intent facet questions.`,
       criteria: {
         true: "This activity fits interpreted_query under how_to_judge.",
         false: "A required part of interpreted_query does not fit this activity.",
@@ -1637,6 +1912,7 @@ export function buildJevRequest(query: string, activities: Activity[], now?: Dat
   return {
     state: {
       search_query: query,
+      vocab: STIMULUS_VOCAB,
       interpreted_query: describeIntent(classifyIntent(query, now)),
       how_to_judge: HOW_TO_JUDGE,
       activities: packed,
@@ -1665,6 +1941,8 @@ export function describeActivity(a: Activity, now?: Date): string {
   ];
   // v2 enrichment for Jev
   if (a.primary_stimulus) parts.push(a.primary_stimulus);
+  if (a.stimulus_cluster) parts.push(a.stimulus_cluster);
+  if (a.low_confidence || a.primary_stimulus === "low_confidence") parts.push("low confidence");
   if (a.modifiers && a.modifiers.length > 0) {
     parts.push(a.modifiers.slice(0, 3).join(", "));
   }
