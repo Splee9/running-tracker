@@ -13,3 +13,6 @@ src/activities.json
 *.local
 npm-debug.log*
 .DS_Store
+
+# Jev responses cached by scripts/eval-jev.mjs
+eval/.cache/

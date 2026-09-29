@@ -86,14 +86,47 @@
 
 .readPart {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
+  min-height: 32px;
   padding: 4px 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius-pill);
   background: var(--card);
   color: var(--ink);
+  font: inherit;
+  font-size: 14px;
   font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.18s ease;
+}
+
+.readPart:hover,
+.readPart:focus-visible {
+  border-color: var(--ink);
+}
+
+.readRemove {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.readReset {
+  font: inherit;
+  font-size: 14px;
+  color: var(--muted);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  min-height: 32px;
+  padding: 0 4px;
+}
+
+.readReset:hover {
+  color: var(--ink);
 }
 
 .readPartJev {
@@ -127,6 +160,25 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.rightControls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.order select {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  min-height: 36px;
+  padding: 4px 8px;
+  cursor: pointer;
 }
 
 .units {
@@ -340,7 +392,10 @@
 
 @media (max-width: 640px) {
   .unit,
-  .moreButton {
+  .moreButton,
+  .order select,
+  .readPart,
+  .readReset {
     min-height: 44px;
   }
 

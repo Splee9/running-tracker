@@ -56,8 +56,24 @@ export const STIMULUS_VOCAB = {
   synonyms: { ...STIMULUS_SYNONYMS },
 };
 
-/** A Jev facet becomes a hard filter only at or above this. Below it, the answer is discarded. */
+/** A Jev noul facet becomes a hard filter only at or above this. Below it, the answer is discarded. */
 export const JEV_INTENT_CONFIDENCE = 0.75;
+
+/**
+ * A Jev Choice facet applies only at or above this confidence. Confidence is how concentrated the
+ * distribution is, so it is not comparable to a noul: do not reuse JEV_INTENT_CONFIDENCE here.
+ * Starting point; calibrate against logged queries (jev.decision).
+ */
+export const JEV_CHOICE_CONFIDENCE = 0.5;
+
+/** A Jev Choice answer reduced to what intent code reads. */
+export type FacetPick = { choice: string; confidence: number };
+
+/** The winning option, or null for a no-match option or a spread-out distribution. */
+export function confidentPick(pick: FacetPick | undefined, noMatch: string): string | null {
+  if (!pick || pick.choice === noMatch || pick.confidence < JEV_CHOICE_CONFIDENCE) return null;
+  return pick.choice;
+}
 
 export type StimulusConstraint = {
   /** Interval workouts: cluster quality_intervals, or quality plus an intervals modifier or ≥2 hard laps. */
@@ -126,15 +142,22 @@ const MODIFIER_CLUSTER: Record<string, string> = {
   return_to_run: "probe_rtr",
 };
 
-const PRIMARY_FACET: Record<string, PrimaryStimulus> = {
-  is_easy: "easy",
-  is_quality: "quality",
-  is_long: "long",
-  is_race: "race",
-  is_recovery: "recovery",
-  is_probe: "probe",
-  is_hills: "hills",
-};
+/** Options of the stimulus Choice facet. Code maps each onto a label constraint. */
+export const STIMULUS_CHOICE_OPTIONS = {
+  intervals: "Interval workouts, repeats, reps, fartlek, or speed play. vocab.synonyms maps fartlek, speed play, and speedwork onto intervals.",
+  easy: "Easy runs as a kind of workout. Not an easy pace inside a fastest query.",
+  quality: "Quality sessions in general, when the query does not specifically ask for intervals, tempo, or marathon pace.",
+  long: "Long-run stimulus. Not the single longest activity.",
+  race: "Races.",
+  recovery: "Recovery sessions.",
+  probe: "Probe sessions.",
+  hills: "Hills stimulus. Not the hilliest activity.",
+  tempo: "Tempo work.",
+  marathon_pace: "Marathon-pace work.",
+  none: "The query does not ask for a kind of workout.",
+} as const;
+
+const PRIMARY_CHOICES = new Set<string>(["easy", "quality", "long", "race", "recovery", "probe", "hills"]);
 
 type Accumulator = {
   intervals: boolean;
@@ -298,52 +321,12 @@ export function stimulusSummary(stimulus: StimulusConstraint | null | undefined)
   return [stimulus.primary, ...stimulus.modifiers].filter(Boolean).join(" · ");
 }
 
-function marginWinner<T>(ranked: { item: T; score: number }[]): T | null {
-  if (ranked.length === 0 || ranked[0].score < JEV_INTENT_CONFIDENCE) return null;
-  const second = ranked[1]?.score ?? 0;
-  if (ranked[0].score - second < 0.1) return null;
-  return ranked[0].item;
-}
-
-/** Map parallel Jev answers onto a constraint. Low and tied scores are discarded. */
-export function stimulusFromFacets(facets: Record<string, number>): StimulusConstraint | null {
-  const intervalScore = facets.is_intervals ?? 0;
-  const ranked = Object.entries(PRIMARY_FACET)
-    .map(([facet, primary]) => ({ primary, score: facets[facet] ?? 0 }))
-    .sort((a, b) => b.score - a.score);
-  const top = ranked[0];
-  if (intervalScore >= JEV_INTENT_CONFIDENCE && intervalScore + 0.1 >= (top?.score ?? 0)) {
-    return { intervals: true, modifiers: [] };
-  }
-  if (top && top.score >= JEV_INTENT_CONFIDENCE && top.score - (ranked[1]?.score ?? 0) >= 0.1) {
-    const modifiers: string[] = [];
-    if (top.primary === "quality" && (facets.is_tempo ?? 0) >= JEV_INTENT_CONFIDENCE) modifiers.push("tempo");
-    if (top.primary === "quality" && (facets.is_marathon_pace ?? 0) >= JEV_INTENT_CONFIDENCE) {
-      modifiers.push("marathon_pace");
-    }
-    return { intervals: false, primary: top.primary, modifiers };
-  }
-  if ((facets.is_tempo ?? 0) >= JEV_INTENT_CONFIDENCE && (facets.is_tempo ?? 0) - (facets.is_marathon_pace ?? 0) >= 0.1) {
-    return { intervals: false, modifiers: ["tempo"] };
-  }
-  if ((facets.is_marathon_pace ?? 0) >= JEV_INTENT_CONFIDENCE && (facets.is_marathon_pace ?? 0) - (facets.is_tempo ?? 0) >= 0.1) {
-    return { intervals: false, modifiers: ["marathon_pace"] };
-  }
+/** Map the stimulus Choice onto a constraint. A no-match or unsure answer adds nothing. */
+export function stimulusFromChoice(pick: FacetPick | undefined): StimulusConstraint | null {
+  const choice = confidentPick(pick, "none");
+  if (!choice) return null;
+  if (choice === "intervals") return { intervals: true, modifiers: [] };
+  if (choice === "tempo" || choice === "marathon_pace") return { intervals: false, modifiers: [choice] };
+  if (PRIMARY_CHOICES.has(choice)) return { intervals: false, primary: choice as PrimaryStimulus, modifiers: [] };
   return null;
-}
-
-export function winningYear(facets: Record<string, number>): number | null {
-  const ranked = Object.entries(facets)
-    .filter(([key]) => /^year_\d{4}$/.test(key))
-    .map(([key, score]) => ({ item: Number(key.slice(5)), score }))
-    .sort((a, b) => b.score - a.score);
-  return marginWinner(ranked);
-}
-
-export function winningDistanceBand(facets: Record<string, number>): "5k" | "10k" | "half" | "marathon" | null {
-  const keys = ["5k", "10k", "half", "marathon"] as const;
-  const ranked = keys
-    .map((item) => ({ item, score: facets[`band_${item}`] ?? 0 }))
-    .sort((a, b) => b.score - a.score);
-  return marginWinner(ranked);
 }

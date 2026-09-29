@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Chip } from "./Chip";
 import snapshot from "../activities.json";
+import gradeFile from "../activity-grades.json";
 import {
   applyJevIntent,
   buildIndex,
@@ -11,16 +12,32 @@ import {
   isRide,
   isRun,
   MEMBERSHIP_DEMOTE_BELOW,
+  rankGradeFor,
   rerankUnlockedHits,
   searchActivities,
   settledIntentPayload,
   sportLabel,
   type Activity,
   type IntentClassification,
+  type IntentFacets,
   type MembershipCompanions,
   type SearchHit,
+  parseRemovedParts,
+  withGrades,
+  withoutParts,
+  type ActivityGrades,
+  type IntentPartKey,
 } from "../lib/activitySearch";
-import { formatHours, interpretationParts, lookupStatus, primaryHits, resultTotals } from "../lib/lookupView";
+import {
+  formatHours,
+  interpretationParts,
+  lookupStatus,
+  orderHits,
+  primaryHits,
+  resultTotals,
+  USER_ORDERS,
+  type UserOrder,
+} from "../lib/lookupView";
 import styles from "./ActivityLookup.module.css";
 
 type SportFilter = "all" | "run" | "ride" | "other";
@@ -36,7 +53,8 @@ const JEV_CANDIDATES = 25;
 const JEV_DEBOUNCE_MS = 300;
 const PAGE_SIZE = 50;
 
-const activities = snapshot.activities as Activity[];
+const activities = withGrades(snapshot.activities as Activity[], gradeFile as ActivityGrades);
+const standoutGraded = activities.some((a) => a.standout !== undefined);
 const index = buildIndex(activities);
 
 const SPORT_FILTERS: { key: SportFilter; label: string }[] = [
@@ -73,6 +91,8 @@ function readParams() {
     query: params.get("q") ?? "",
     sport: (SPORT_FILTERS.some((f) => f.key === sport) ? sport : "all") as SportFilter,
     units: (params.get("u") === "km" ? "km" : "mi") as Units,
+    order: (USER_ORDERS.find((o) => o.key === params.get("sort"))?.key ?? "match") as UserOrder,
+    removed: parseRemovedParts(params.get("drop")?.split(",") ?? []),
     // Match kind, branch, and Jev scores are for tuning. ?debug=1 shows them on each row.
     debug: params.has("debug"),
   };
@@ -90,6 +110,14 @@ export function ActivityLookup() {
   const [query, setQuery] = useState(initial.query);
   const [sport, setSport] = useState<SportFilter>(initial.sport);
   const [units, setUnits] = useState<Units>(initial.units);
+  const [order, setOrder] = useState<UserOrder>(initial.order);
+  // Parts removed from the "Read as" row. They belong to one query and reset when it changes.
+  const [removed, setRemoved] = useState<{ query: string; keys: IntentPartKey[] }>({
+    query: initial.query.trim(),
+    keys: initial.removed,
+  });
+  const removedKeys = removed.query === query.trim() ? removed.keys : [];
+  const removedKey = removedKeys.join(",");
   const debug = initial.debug;
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [jev, setJev] = useState<JevState>({ status: "idle" });
@@ -108,12 +136,16 @@ export function ActivityLookup() {
     else params.delete("sport");
     if (units !== "mi") params.set("u", units);
     else params.delete("u");
+    if (order !== "match") params.set("sort", order);
+    else params.delete("sort");
+    if (removedKey) params.set("drop", removedKey);
+    else params.delete("drop");
     const search = params.toString();
     const url = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`;
     if (url !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
       window.history.replaceState(window.history.state, "", url);
     }
-  }, [query, sport, units]);
+  }, [query, sport, units, order, removedKey]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -132,8 +164,13 @@ export function ActivityLookup() {
   const [facetOverride, setFacetOverride] = useState<{ query: string; classification: IntentClassification } | null>(
     null,
   );
-  const intentClassification =
+  const filledClassification =
     facetOverride && facetOverride.query === trimmed ? facetOverride.classification : codeClassification;
+  const intentClassification = useMemo(
+    () => (filledClassification ? withoutParts(filledClassification, removedKeys) : null),
+    // removedKey stands in for removedKeys, which is a new array each render.
+    [filledClassification, removedKey],
+  );
   const hardKey = intentClassification ? intentHardKey(intentClassification) : "";
 
   const localHits: SearchHit[] = useMemo(() => {
@@ -168,7 +205,8 @@ export function ActivityLookup() {
         body: JSON.stringify({
           query: trimmed,
           ids: candidateIds,
-          settled: intentClassification ? settledIntentPayload(intentClassification) : undefined,
+          settled: filledClassification ? settledIntentPayload(filledClassification) : undefined,
+          removed: removedKeys.length > 0 ? removedKeys : undefined,
         }),
         signal: controller.signal,
       })
@@ -181,14 +219,15 @@ export function ActivityLookup() {
         })
         .then((data: {
           scores?: Record<number, number>;
-          facets?: Record<string, number>;
+          facets?: IntentFacets;
           companions?: MembershipCompanions;
         }) => {
           const code = classifyIntent(trimmed);
           const merged = applyJevIntent(code, data.facets);
           // A facet that changes the hard filters needs a new shortlist before membership
           // scores mean anything. That second request is the one real dependency.
-          if (intentHardKey(merged) !== requestedKey) {
+          // A part the person removed stays removed, whatever Jev filled in.
+          if (intentHardKey(withoutParts(merged, removedKeys)) !== requestedKey) {
             setFacetOverride({ query: trimmed, classification: merged });
             return;
           }
@@ -208,7 +247,7 @@ export function ActivityLookup() {
       controller.abort();
     };
     // candidateKey stands in for candidateIds so identical shortlists don't refetch.
-  }, [shouldScoreWithJev, trimmed, candidateKey, hardKey, intentClassification]);
+  }, [shouldScoreWithJev, trimmed, candidateKey, hardKey, intentClassification, filledClassification, removedKey]);
 
   const jevScores = jev.status === "done" && jev.query === trimmed ? jev.scores : null;
   const jevCompanions = jev.status === "done" && jev.query === trimmed ? jev.companions : undefined;
@@ -219,21 +258,31 @@ export function ActivityLookup() {
         .filter((a) => matchesSport(a, sport))
         .map((activity): SearchHit => ({ activity, score: 0, kind: "keyword", matched: [] }));
     }
-    if (!jevScores) return localHits;
-    // Locked metric and date rows stay in code order. Unlocked rows sort by membership noul.
-    return rerankUnlockedHits(localHits, jevScores, jevCompanions);
-  }, [trimmed, sport, localHits, jevScores, jevCompanions]);
+    // Locked metric and date rows stay in code order. Unlocked rows are gated by the membership
+    // noul, then ordered by a graded dimension when the query asks for one, else by the noul.
+    const grade = rankGradeFor(trimmed, intentClassification, standoutGraded)?.value;
+    if (!jevScores) return grade ? rerankUnlockedHits(localHits, {}, undefined, grade) : localHits;
+    return rerankUnlockedHits(localHits, jevScores, jevCompanions, grade);
+  }, [trimmed, sport, localHits, jevScores, jevCompanions, intentClassification]);
 
-  useEffect(() => setVisible(PAGE_SIZE), [trimmed, sport]);
+  useEffect(() => setVisible(PAGE_SIZE), [trimmed, sport, order]);
 
-  const shown = results.slice(0, visible);
+  const ordered = useMemo(() => orderHits(results, order), [results, order]);
+  const shown = ordered.slice(0, visible);
 
-  const status = lookupStatus(trimmed, results, intentClassification, {
-    available: jevAvailable,
-    scored: Boolean(jevScores),
-    pending: jev.status === "loading" || (jev.status !== "error" && candidateIds.length > 0),
-    error: jev.status === "error" && jev.query === trimmed,
-  });
+  const status = lookupStatus(
+    trimmed,
+    results,
+    intentClassification,
+    {
+      available: jevAvailable,
+      scored: Boolean(jevScores),
+      pending: jev.status === "loading" || (jev.status !== "error" && candidateIds.length > 0),
+      error: jev.status === "error" && jev.query === trimmed,
+    },
+    rankGradeFor(trimmed, intentClassification, standoutGraded)?.label,
+    USER_ORDERS.find((o) => o.key === order && o.key !== "match")?.status,
+  );
   const readAs = intentClassification ? interpretationParts(intentClassification, codeClassification) : [];
   const totals = trimmed ? resultTotals(primaryHits(results, intentClassification).map((h) => h.activity)) : null;
 
@@ -298,20 +347,31 @@ export function ActivityLookup() {
           />
           <kbd className={styles.kbd}>/</kbd>
         </div>
-        {readAs.length > 0 && (
-          <div className={styles.readAs} aria-label="Search read as">
+        {(readAs.length > 0 || removedKeys.length > 0) && (
+          <div className={styles.readAs} role="group" aria-label="Search read as">
             <span>Read as</span>
             {readAs.map((part) => (
-              <span
+              <button
                 key={part.key}
+                type="button"
                 className={`${styles.readPart} ${part.fromJev ? styles.readPartJev : ""}`}
-                title={part.fromJev ? "Filled in by Jev" : undefined}
+                title={part.fromJev ? "Filled in by Jev. Click to remove." : "Click to remove."}
+                aria-label={`Remove ${part.label.toLowerCase()} ${part.value}`}
+                onClick={() => setRemoved({ query: trimmed, keys: [...removedKeys, part.key] })}
               >
                 <span className={styles.readLabel}>{part.label}</span>
                 {part.value}
                 {part.fromJev && <span className={styles.readJev}>Jev</span>}
-              </span>
+                <span className={styles.readRemove} aria-hidden="true">
+                  ×
+                </span>
+              </button>
             ))}
+            {removedKeys.length > 0 && (
+              <button type="button" className={styles.readReset} onClick={() => setRemoved({ query: trimmed, keys: [] })}>
+                Reset
+              </button>
+            )}
           </div>
         )}
         {!trimmed && (
@@ -333,18 +393,30 @@ export function ActivityLookup() {
               </Chip>
             ))}
           </div>
-          <div className={styles.units} role="group" aria-label="Units">
-            {(["mi", "km"] as Units[]).map((u) => (
-              <button
-                key={u}
-                type="button"
-                aria-pressed={units === u}
-                className={`${styles.unit} ${units === u ? styles.unitActive : ""}`}
-                onClick={() => setUnits(u)}
-              >
-                {u}
-              </button>
-            ))}
+          <div className={styles.rightControls}>
+            <label className={styles.order}>
+              <span className="sr-only">Order</span>
+              <select value={order} onChange={(e) => setOrder(e.target.value as UserOrder)}>
+                {USER_ORDERS.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className={styles.units} role="group" aria-label="Units">
+              {(["mi", "km"] as Units[]).map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  aria-pressed={units === u}
+                  className={`${styles.unit} ${units === u ? styles.unitActive : ""}`}
+                  onClick={() => setUnits(u)}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

@@ -1,11 +1,18 @@
 // Plain-language view of an Activity Lookup search: what the query was read as,
 // how the list is ordered, and totals for the matches. No ranking logic lives here.
 
-import { isRun, type Activity, type IntentClassification, type SearchHit, type ShortlistBranchId } from "./activitySearch.ts";
+import {
+  isRun,
+  type Activity,
+  type IntentClassification,
+  type IntentPartKey,
+  type SearchHit,
+  type ShortlistBranchId,
+} from "./activitySearch.ts";
 import { stimulusSummary } from "./stimulus.ts";
 
 export type InterpretationPart = {
-  key: "sort" | "sport" | "distance" | "stimulus" | "place" | "weekday" | "dates" | "words";
+  key: IntentPartKey;
   label: string;
   value: string;
   /** True when Jev filled this in; code did not parse it from the query. */
@@ -149,8 +156,12 @@ export function lookupStatus(
   hits: SearchHit[],
   c: IntentClassification | null,
   jev: JevView,
+  /** Set when unlocked rows are ordered by a graded dimension ("standout", "climbing"). */
+  grade?: string,
+  /** Set when the person picked an order; it replaces every ranking note. */
+  userOrder?: string,
 ): string {
-  if (!query) return `${countLabel(hits.length, "activity")} · most recent first`;
+  if (!query) return `${countLabel(hits.length, "activity")} · ${userOrder ?? "most recent first"}`;
   if (hits.length === 0) return `No activities match "${query}"`;
 
   const branch = c ? primaryBranch(c) : null;
@@ -158,17 +169,23 @@ export function lookupStatus(
   const related = primaryCount > 0 ? hits.length - primaryCount : 0;
   const unlocked = hits.some((hit) => hit.locked === false);
   const reranked = unlocked && jev.scored;
+  const unlockedOrder = grade ? `by ${grade}` : reranked ? "ranked by Jev" : "best match first";
 
   const bits: string[] = [];
+  if (userOrder) {
+    bits.push(countLabel(primaryCount > 0 ? primaryCount : hits.length, "match"), userOrder);
+    if (related > 0) bits.push(`${related.toLocaleString()} related`);
+    return bits.join(" · ");
+  }
   if (c?.isDeterministic && branch && primaryCount === 0) {
     bits.push(`No exact matches · ${hits.length.toLocaleString()} related`);
   } else {
     // A list opened by a soft synonym ("fartlek") is unlocked, so Jev owns its order once scored.
     const primaryUnlocked = hits.some((hit) => hit.branch === branch && hit.locked === false);
-    const ordered = primaryCount === 0 ? null : primaryUnlocked && jev.scored ? "ranked by Jev" : sortPhrase(c!);
+    const ordered = primaryCount === 0 ? null : primaryUnlocked && (jev.scored || grade) ? unlockedOrder : sortPhrase(c!);
     bits.push(countLabel(primaryCount > 0 ? primaryCount : hits.length, "match"));
-    bits.push(ordered ?? (reranked ? "ranked by Jev" : "best match first"));
-    if (related > 0) bits.push(`${related.toLocaleString()} related${reranked ? ", ranked by Jev" : ""}`);
+    bits.push(ordered ?? unlockedOrder);
+    if (related > 0) bits.push(`${related.toLocaleString()} related${reranked || grade ? `, ${unlockedOrder}` : ""}`);
   }
   // Jev only changes the order of unlocked rows, so a fully locked list says nothing about it.
   if (unlocked && jev.available && !jev.scored) {
@@ -207,4 +224,36 @@ export function formatHours(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.round((seconds % 3600) / 60);
   return h > 0 ? `${h.toLocaleString()}h ${m}m` : `${m}m`;
+}
+
+export type UserOrder = "match" | "newest" | "oldest" | "longest" | "fastest" | "climbing";
+
+export const USER_ORDERS: { key: UserOrder; label: string; status: string }[] = [
+  { key: "match", label: "Best match", status: "" },
+  { key: "newest", label: "Newest", status: "newest first" },
+  { key: "oldest", label: "Oldest", status: "oldest first" },
+  { key: "longest", label: "Longest", status: "longest first" },
+  { key: "fastest", label: "Fastest pace", status: "fastest pace first" },
+  { key: "climbing", label: "Most climbing", status: "most climbing first" },
+];
+
+function paceOf(a: Activity): number {
+  return a.distance_m > 0 && a.moving_time_s > 0 ? a.moving_time_s / a.distance_m : Infinity;
+}
+
+/**
+ * A person-picked order over the whole list, locked rows included. Stable, so ties keep the
+ * search order. "match" leaves the list as search ranked it.
+ */
+export function orderHits(hits: SearchHit[], order: UserOrder): SearchHit[] {
+  if (order === "match") return hits;
+  const key: Record<Exclude<UserOrder, "match">, (a: Activity, b: Activity) => number> = {
+    newest: (a, b) => b.start_date_local.localeCompare(a.start_date_local),
+    oldest: (a, b) => a.start_date_local.localeCompare(b.start_date_local),
+    longest: (a, b) => b.distance_m - a.distance_m,
+    fastest: (a, b) => paceOf(a) - paceOf(b),
+    climbing: (a, b) => b.elevation_gain_m - a.elevation_gain_m,
+  };
+  const compare = key[order];
+  return [...hits].sort((a, b) => compare(a.activity, b.activity));
 }

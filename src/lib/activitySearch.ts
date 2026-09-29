@@ -37,6 +37,8 @@ export type Activity = {
   best_watts_60m?: number;
   // Public Strava description. Used only when ranking (Jev); never shown on cards.
   description?: string;
+  /** Offline Jev Score, 0 (routine) to 3 (standout). From src/activity-grades.json; see scripts/grade-activities.mjs. */
+  standout?: number;
 };
 
 export type MatchKind = "keyword" | "fuzzy";
@@ -612,11 +614,12 @@ import {
   PRIMARY_STIMULI,
   STIMULUS_PLACE_WORDS,
   STIMULUS_VOCAB,
-  stimulusFromFacets,
+  confidentPick,
+  stimulusFromChoice,
   stimulusSummary,
-  winningDistanceBand,
-  winningYear,
   JEV_INTENT_CONFIDENCE,
+  STIMULUS_CHOICE_OPTIONS,
+  type FacetPick,
   type PrimaryStimulus,
   type StimulusConstraint,
 } from "./stimulus.ts";
@@ -1144,15 +1147,41 @@ export function intentHardKey(c: IntentClassification): string {
 }
 
 /**
+ * Intent answers from one packed Jev call. Pick-one facets are Choices with an explicit
+ * no-match option; Chicago is a yes/no Noul.
+ */
+export type IntentFacets = {
+  stimulus?: FacetPick;
+  superlative?: FacetPick;
+  year?: FacetPick;
+  distance?: FacetPick;
+  sport?: FacetPick;
+  place_chicago?: number;
+};
+
+const FACET_CHOICE_KEYS = ["stimulus", "superlative", "year", "distance", "sport"] as const;
+
+/** Years the year facet offers. Code owns the window; Jev only names which year. */
+function facetYears(now?: Date): number[] {
+  const year = chicagoClock(now).getFullYear();
+  return Array.from({ length: 7 }, (_, i) => year - 6 + i);
+}
+
+function facetYear(pick: FacetPick | undefined): number | null {
+  const choice = confidentPick(pick, "none");
+  return choice && /^\d{4}$/.test(choice) ? Number(choice) : null;
+}
+
+/**
  * Fill gaps in an incomplete parse from parallel Jev answers.
  * A deterministic code parse is already a hard filter: those answers are discarded.
  * has_place and has_date_window carry no value code can apply, so they are discarded too.
  */
 export function applyJevIntent(
   base: IntentClassification,
-  answers: Record<string, number> | undefined,
+  answers: IntentFacets | undefined,
 ): IntentClassification {
-  const facets = answers ?? {};
+  const facets: IntentFacets = answers ?? {};
   const blocked = base.place != null && isBlockedPlaceName(base.place);
   // A blocked place is cleared in code, so it must not wait on facets a deterministic query no longer asks.
   if (!blocked && Object.keys(facets).length === 0) return base;
@@ -1181,7 +1210,7 @@ export function applyJevIntent(
   if (base.isDeterministic) return next;
 
   if (!base.stimulus) {
-    const stimulus = stimulusFromFacets(facets);
+    const stimulus = stimulusFromChoice(facets.stimulus);
     if (stimulus) {
       const edited = edit();
       edited.stimulus = stimulus;
@@ -1192,20 +1221,19 @@ export function applyJevIntent(
   }
 
   if (!base.intent || base.intent.kind === "list") {
-    const fast = facets.is_fastest ?? 0;
-    const long = facets.is_longest ?? 0;
-    if (Math.max(fast, long) >= JEV_INTENT_CONFIDENCE && Math.abs(fast - long) >= 0.1) {
+    const superlative = confidentPick(facets.superlative, "none");
+    if (superlative === "fastest" || superlative === "longest") {
       const edited = edit();
       const existing = edited.intent && "sport" in edited.intent ? edited.intent.sport : undefined;
       edited.intent = {
-        kind: fast > long ? "fastest" : "longest",
+        kind: superlative,
         sport: existing ?? sportFromRemaining(edited.remainingTokens),
       };
     }
   }
 
   if (!base.dateWindow && (next.stimulus || next.intent)) {
-    const year = winningYear(facets);
+    const year = facetYear(facets.year);
     if (year) {
       const edited = edit();
       edited.dateWindow = { start: `${year}-01-01`, end: `${year}-12-31` };
@@ -1220,8 +1248,8 @@ export function applyJevIntent(
 
   const kind = next.intent?.kind;
   if (!base.distanceBand && (kind === "fastest" || kind === "longest")) {
-    const band = winningDistanceBand(facets);
-    if (band) {
+    const band = confidentPick(facets.distance, "none");
+    if (band === "5k" || band === "10k" || band === "half" || band === "marathon") {
       const edited = edit();
       edited.distanceBand = raceBand(band);
       if (edited.distanceBand.runsOnly && edited.intent && "sport" in edited.intent && !edited.intent.sport) {
@@ -1231,20 +1259,49 @@ export function applyJevIntent(
   }
 
   if (next.stimulus && next.intent && "sport" in next.intent && !next.intent.sport) {
-    const run = facets.is_run ?? 0;
-    const ride = facets.is_ride ?? 0;
-    const pick = run >= JEV_INTENT_CONFIDENCE && ride <= 0.25 && run - ride >= 0.4
-      ? "run"
-      : ride >= JEV_INTENT_CONFIDENCE && run <= 0.25 && ride - run >= 0.4
-        ? "ride"
-        : null;
-    if (pick) {
+    const pick = confidentPick(facets.sport, "any");
+    if (pick === "run" || pick === "ride") {
       const edited = edit();
       if (edited.intent && "sport" in edited.intent) edited.intent.sport = pick;
     }
   }
 
   return next;
+}
+
+/** Parts of a parse a person can remove from the "Read as" row. */
+export const INTENT_PART_KEYS = ["sort", "sport", "distance", "stimulus", "place", "weekday", "dates", "words"] as const;
+export type IntentPartKey = (typeof INTENT_PART_KEYS)[number];
+
+export function parseRemovedParts(raw: unknown): IntentPartKey[] {
+  if (!Array.isArray(raw)) return [];
+  return INTENT_PART_KEYS.filter((key) => raw.includes(key));
+}
+
+/**
+ * The parse with the parts a person removed. Removing the sort keeps the filters as a
+ * most-recent list; removing a place from a place filter does the same.
+ */
+export function withoutParts(c: IntentClassification, removed: readonly IntentPartKey[]): IntentClassification {
+  if (removed.length === 0) return c;
+  const drop = new Set(removed);
+  let intent: SuperlativeIntent = c.intent ? { ...c.intent } : null;
+  const sport = intent && "sport" in intent ? intent.sport : undefined;
+  if (drop.has("sort") && intent) {
+    intent = intent.kind === "place_filter" ? { kind: "place_filter", place: intent.place, sport } : { kind: "list", sport };
+  }
+  if (drop.has("place") && intent?.kind === "place_filter") intent = { kind: "list", sport: intent.sport };
+  if (drop.has("sport") && intent && "sport" in intent) intent = { ...intent, sport: undefined };
+  return {
+    ...c,
+    intent,
+    distanceBand: drop.has("distance") || drop.has("sort") ? null : c.distanceBand,
+    stimulus: drop.has("stimulus") ? null : c.stimulus,
+    place: drop.has("place") ? null : c.place,
+    weekday: drop.has("weekday") ? null : c.weekday,
+    dateWindow: drop.has("dates") ? null : c.dateWindow,
+    remainingTokens: drop.has("words") ? [] : c.remainingTokens,
+  };
 }
 
 /** applyJevIntent discards every facet for a deterministic parse, so only an open parse asks them. */
@@ -1256,10 +1313,15 @@ export function needsIntentFacets(c: IntentClassification): boolean {
  * Server cache scope for membership. The criteria depend on the interpreted query,
  * and activity facts carry days_ago, so neither the raw query nor a stale day may share an entry.
  */
-export function jevCacheScope(query: string, settled: unknown, now?: Date): { day: string; interpreted: string } {
+export function jevCacheScope(
+  query: string,
+  settled: unknown,
+  now?: Date,
+  removed: readonly IntentPartKey[] = [],
+): { day: string; interpreted: string } {
   return {
     day: formatISODate(chicagoClock(now)),
-    interpreted: describeIntent(resolveInterpretation(query, settled, now)),
+    interpreted: describeIntent(withoutParts(resolveInterpretation(query, settled, now), removed)),
   };
 }
 
@@ -1769,11 +1831,13 @@ export function searchActivities(
 }
 
 /**
- * Cookbook re-rank floor. A noul below this is a weak yes (Jev 1.13 sits near
- * 0.26–0.40 when the proposition is unclear). Demote those unlocked rows behind
- * stronger yeses. Do not drop them: an all-weak shortlist should still show,
- * in noul order. Locked rows are not passed through this sort.
- * https://docs.typesafe.ai/cookbooks/rerank_typesafe
+ * Membership floor. An unlocked row whose noul is below this is ranked after the rows
+ * above it. It is not dropped: an all-weak shortlist should still show, in noul order.
+ * Locked rows are not passed through this sort.
+ *
+ * The rerank cookbook sorts by the noul alone and sets no floor; this value is our own
+ * starting point, not a TypeSafe number. Tune it with scripts/eval-jev.mjs on labeled
+ * queries (docs.typesafe.ai: validate thresholds on your own data).
  */
 export const MEMBERSHIP_DEMOTE_BELOW = 0.3;
 
@@ -1788,12 +1852,22 @@ export function rerankUnlockedHits<T extends { activity: { id: number }; locked?
   hits: T[],
   scores: Record<number, number>,
   companions?: MembershipCompanions,
+  grade?: (activity: T["activity"]) => number | undefined,
+  floor = MEMBERSHIP_DEMOTE_BELOW,
 ): T[] {
   const open = hits.filter((hit) => hit.locked === false);
   if (open.length === 0) return hits;
   const locked = hits.filter((hit) => hit.locked !== false);
   const scored = open.filter((hit) => typeof scores[hit.activity.id] === "number");
   const unscored = open.filter((hit) => typeof scores[hit.activity.id] !== "number");
+  // A graded row sorts ahead of an ungraded one; two ungraded rows keep their order.
+  const compareGrade = (a: T, b: T) => {
+    if (!grade) return 0;
+    const left = grade(a.activity);
+    const right = grade(b.activity);
+    if (left === undefined || right === undefined) return (left === undefined ? 1 : 0) - (right === undefined ? 1 : 0);
+    return right - left;
+  };
   const tie = (id: number) => {
     const extra = companions?.[id];
     if (!extra) return 0;
@@ -1802,12 +1876,16 @@ export function rerankUnlockedHits<T extends { activity: { id: number }; locked?
   scored.sort((a, b) => {
     const left = scores[a.activity.id];
     const right = scores[b.activity.id];
-    const demoteLeft = left < MEMBERSHIP_DEMOTE_BELOW ? 1 : 0;
-    const demoteRight = right < MEMBERSHIP_DEMOTE_BELOW ? 1 : 0;
+    const demoteLeft = left < floor ? 1 : 0;
+    const demoteRight = right < floor ? 1 : 0;
     if (demoteLeft !== demoteRight) return demoteLeft - demoteRight;
+    // The noul gates; a graded dimension (standout, climbing) orders what passes.
+    const byGrade = compareGrade(a, b);
+    if (byGrade !== 0) return byGrade;
     if (right !== left) return right - left;
     return tie(b.activity.id) - tie(a.activity.id);
   });
+  if (grade) unscored.sort(compareGrade);
   return [...locked, ...scored, ...unscored];
 }
 
@@ -1946,6 +2024,30 @@ function rankingDescription(description: string | undefined): string {
   return clipped ? `description: ${clipped}` : "";
 }
 
+export type ClimbingLabel = "flat" | "rolling" | "hilly" | "mountainous";
+
+/** Metres climbed per kilometre. Code owns this number; Jev only ever sees the named bucket. */
+export function climbPerKm(a: Activity): number | undefined {
+  if (a.distance_m <= 0) return undefined;
+  return a.elevation_gain_m / (a.distance_m / 1000);
+}
+
+// Rides spread the same climbing over more distance, so their buckets are tighter.
+const CLIMB_BUCKETS: Record<"run" | "ride", [number, number, number]> = {
+  run: [5, 12, 25],
+  ride: [4, 8, 15],
+};
+
+export function climbingLabel(a: Activity): ClimbingLabel | undefined {
+  const rate = climbPerKm(a);
+  if (rate === undefined || a.trainer) return undefined;
+  const [rolling, hilly, mountainous] = CLIMB_BUCKETS[isRide(a) ? "ride" : "run"];
+  if (rate >= mountainous) return "mountainous";
+  if (rate >= hilly) return "hilly";
+  if (rate >= rolling) return "rolling";
+  return "flat";
+}
+
 export type ActivityFacts = {
   name: string;
   sport: string;
@@ -1958,6 +2060,7 @@ export type ActivityFacts = {
   pace?: string;
   pace_label?: string;
   climbing_m?: number;
+  climbing?: ClimbingLabel;
   workout?: string;
   indoor?: true;
   stimulus?: string;
@@ -1997,6 +2100,8 @@ export function activityFacts(a: Activity, now?: Date): ActivityFacts {
     facts.pace_label = pace.label;
   }
   if (a.elevation_gain_m > 0) facts.climbing_m = a.elevation_gain_m;
+  const climbing = climbingLabel(a);
+  if (climbing) facts.climbing = climbing;
   const workout = WORKOUT_TAGS[a.workout_type ?? -1]?.[0];
   if (workout) facts.workout = workout;
   if (a.trainer) facts.indoor = true;
@@ -2037,92 +2142,90 @@ function facetNoul(instructions: string, yes: string, no: string): JevNoul {
   return { type: "noul", instructions, criteria: { true: yes, false: no } };
 }
 
-// Speculative intent questions. They share state with the membership noul and
-// cannot see each other. Code discards the ones it does not use.
-function intentFacetQuestions(now?: Date): Record<string, JevNoul> {
-  const year = chicagoClock(now).getFullYear();
-  const yes = "The query asks for this.";
-  const no = "The query does not ask for this.";
-  const questions: Record<string, JevNoul> = {
-    is_easy: facetNoul(
-      "Using only search_query and vocab, the user wants primary_stimulus easy. Not an easy pace inside a fastest query.",
-      yes,
-      no,
-    ),
-    is_intervals: facetNoul(
-      "Using only search_query and vocab, the user wants interval workouts, repeats, reps, fartlek, or speed play. vocab.synonyms maps fartlek, speed play, and speedwork onto intervals. Do not invent a new primary_stimulus. Interval is a workout kind, never a place.",
-      "The query asks for intervals or a vocab synonym of intervals.",
-      "The query does not ask for interval work.",
-    ),
-    is_quality: facetNoul(
-      "Using only search_query and vocab, the user wants quality sessions and is not specifically asking for intervals.",
-      yes,
-      no,
-    ),
-    is_long: facetNoul(
-      "Using only search_query and vocab, the user wants long-run stimulus, not the single longest activity.",
-      yes,
-      no,
-    ),
-    is_race: facetNoul("Using only search_query and vocab, the user wants races.", yes, no),
-    is_recovery: facetNoul("Using only search_query and vocab, the user wants recovery stimulus.", yes, no),
-    is_probe: facetNoul("Using only search_query and vocab, the user wants probe stimulus.", yes, no),
-    is_hills: facetNoul(
-      "Using only search_query and vocab, the user wants hills stimulus, not the hilliest activity.",
-      yes,
-      no,
-    ),
-    is_tempo: facetNoul("Using only search_query and vocab, the user wants tempo.", yes, no),
-    is_marathon_pace: facetNoul("Using only search_query and vocab, the user wants marathon pace.", yes, no),
-    is_fastest: facetNoul("Using only search_query and vocab, the user wants the fastest pace or shortest time.", yes, no),
-    is_longest: facetNoul("Using only search_query and vocab, the user wants the longest distance.", yes, no),
-    is_run: facetNoul("Using only search_query and vocab, the user restricts modality to run.", yes, no),
-    is_ride: facetNoul("Using only search_query and vocab, the user restricts modality to bike or ride.", yes, no),
+type JevChoice = {
+  type: "choice";
+  instructions: string;
+  criteria: Record<string, string | null>;
+};
+
+type JevQuestion = JevNoul | JevChoice;
+
+// Speculative intent questions. They share state with the membership noul and cannot
+// see each other. Pick-one facets are Choices with a no-match option, so Jev compares
+// the options instead of answering each yes/no alone. Code discards what it does not use.
+function intentFacetQuestions(now?: Date): Record<string, JevQuestion> {
+  const years: Record<string, string | null> = {};
+  for (const year of facetYears(now)) years[String(year)] = null;
+  years.none = "The query does not name a calendar year.";
+  return {
+    stimulus: {
+      type: "choice",
+      instructions:
+        "Using only search_query and vocab, which kind of workout does the user ask for? Do not invent a new primary_stimulus. Interval is a workout kind, never a place.",
+      criteria: { ...STIMULUS_CHOICE_OPTIONS },
+    },
+    superlative: {
+      type: "choice",
+      instructions: "Using only search_query and vocab, does the user ask for the single fastest or the single longest activity?",
+      criteria: {
+        fastest: "The fastest pace or the shortest time.",
+        longest: "The longest distance.",
+        none: "Neither. The query does not ask for a fastest or longest activity.",
+      },
+    },
+    year: {
+      type: "choice",
+      instructions: "Using only search_query, which calendar year does the user restrict to?",
+      criteria: years,
+    },
+    distance: {
+      type: "choice",
+      instructions: "Using only search_query, which race distance does the user ask for?",
+      criteria: {
+        "5k": "5 kilometres.",
+        "10k": "10 kilometres.",
+        half: "Half marathon.",
+        marathon: "Marathon.",
+        none: "The query does not name a race distance.",
+      },
+    },
+    sport: {
+      type: "choice",
+      instructions: "Using only search_query and vocab, which sport does the user restrict to?",
+      criteria: {
+        run: "Runs only.",
+        ride: "Bike rides only.",
+        any: "The query does not restrict the sport.",
+      },
+    },
     place_chicago: facetNoul(
       "Using only search_query and vocab, the user names Chicago (Chi, Chitown, or Windy City) as the place.",
-      yes,
-      no,
+      "The query asks for this.",
+      "The query does not ask for this.",
     ),
-    // Discarded in code: a yes does not name which place or which dates.
-    has_place: facetNoul(
-      "Using only search_query, the user names a place. A workout word such as interval is not a place.",
-      yes,
-      no,
-    ),
-    has_date_window: facetNoul(
-      "Using only search_query, the user restricts dates. Code computes the window.",
-      yes,
-      no,
-    ),
-    band_5k: facetNoul("Using only search_query, the user asks for a 5k distance.", yes, no),
-    band_10k: facetNoul("Using only search_query, the user asks for a 10k distance.", yes, no),
-    band_half: facetNoul("Using only search_query, the user asks for a half marathon distance.", yes, no),
-    band_marathon: facetNoul("Using only search_query, the user asks for a marathon distance.", yes, no),
   };
-  for (let y = year - 6; y <= year; y++) {
-    questions[`year_${y}`] = facetNoul(
-      `Using only search_query, the user refers to calendar year ${y}.`,
-      yes,
-      no,
-    );
-  }
-  return questions;
 }
 
-export type JevAnswerMap = Record<string, { noul?: number }>;
+export type JevAnswerMap = Record<string, { type?: string; noul?: number; choice?: string; confidence?: number }>;
 
 export type JevCompanions = Record<number, { stimulus?: number; place?: number }>;
 
-/** Membership keys are a{id}. a{id}s / a{id}p are companion nouls. Everything else is an intent facet. */
+/** Membership keys are a{id}. a{id}s / a{id}p are companion nouls. Named keys are intent facets. */
 export function splitJevAnswers(answers: JevAnswerMap): {
   scores: Record<number, number>;
-  facets: Record<string, number>;
+  facets: IntentFacets;
   companions: JevCompanions;
 } {
   const scores: Record<number, number> = {};
-  const facets: Record<string, number> = {};
+  const facets: IntentFacets = {};
   const companions: JevCompanions = {};
   for (const [key, answer] of Object.entries(answers)) {
+    if ((FACET_CHOICE_KEYS as readonly string[]).includes(key)) {
+      if (typeof answer?.choice === "string" && typeof answer.confidence === "number") {
+        facets[key as (typeof FACET_CHOICE_KEYS)[number]] = { choice: answer.choice, confidence: answer.confidence };
+      }
+      continue;
+    }
     if (typeof answer?.noul !== "number") continue;
     const membership = /^a(\d+)$/.exec(key);
     const stimulus = /^a(\d+)s$/.exec(key);
@@ -2134,7 +2237,7 @@ export function splitJevAnswers(answers: JevAnswerMap): {
     } else if (place) {
       const id = Number(place[1]);
       companions[id] = { ...companions[id], place: answer.noul };
-    } else facets[key] = answer.noul;
+    } else if (key === "place_chicago") facets.place_chicago = answer.noul;
   }
   return { scores, facets, companions };
 }
@@ -2145,8 +2248,16 @@ function metricKind(c: IntentClassification): boolean {
     || kind === "highest_hr" || kind === "highest_power" || kind === "mmp_power";
 }
 
-/** One membership proposition, with the settled filters written into the yes/no boundary. */
-function membershipCriteria(query: string, c: IntentClassification): { true: string; false: string } {
+/**
+ * One membership proposition, with the settled filters written into the yes/no boundary.
+ * When every activity carries an offline standout Score, "best" is ordered by that Score
+ * and the noul only judges fit, so the standout wording is left out.
+ */
+function membershipCriteria(
+  query: string,
+  c: IntentClassification,
+  standoutGraded = false,
+): { true: string; false: string } {
   const must: string[] = [];
   if (c.stimulus?.intervals) must.push("an interval workout, including fartlek or speed play");
   else if (c.stimulus?.primary) must.push(`primary stimulus ${c.stimulus.primary}`);
@@ -2159,7 +2270,7 @@ function membershipCriteria(query: string, c: IntentClassification): { true: str
   const tokens = tokenize(query);
   const raceTokens = tokens.filter((token) => RACE_DISTANCE_TOKENS.has(token));
   const raceNamed = raceTokens.length > 0 && !metricKind(c);
-  const best = tokens.includes("best") && !metricKind(c);
+  const best = tokens.includes("best") && !metricKind(c) && !standoutGraded;
   const hilly = tokens.some((token) => token === "hilly" || token === "hill") && c.stimulus?.primary !== "hills";
 
   const yes = ["This activity matches the query under how_to_judge."];
@@ -2177,8 +2288,8 @@ function membershipCriteria(query: string, c: IntentClassification): { true: str
     no.push("An ordinary recent easy or quality run is not a standout.");
   }
   if (hilly) {
-    yes.push("Hilly means substantial climbing for that sport.");
-    no.push("A flat activity is not hilly.");
+    yes.push("Hilly means the climbing field is hilly or mountainous.");
+    no.push("A flat or rolling activity is not hilly.");
   }
   return { true: yes.join(" "), false: no.join(" ") };
 }
@@ -2219,7 +2330,7 @@ export function buildJevRequest(
   activities: Activity[],
   now?: Date,
   settled?: unknown,
-  options: { includeFacets?: boolean } = {},
+  options: { includeFacets?: boolean; removed?: readonly IntentPartKey[] } = {},
 ): {
   state: {
     search_query: string;
@@ -2228,11 +2339,12 @@ export function buildJevRequest(
     how_to_judge: string;
     activities: Record<string, ActivityFacts>;
   };
-  questions: Record<string, JevNoul>;
+  questions: Record<string, JevQuestion>;
 } {
   const base = classifyIntent(query, now);
-  const interpreted = resolveInterpretation(query, settled, now);
-  const criteria = membershipCriteria(query, interpreted);
+  const interpreted = withoutParts(resolveInterpretation(query, settled, now), options.removed ?? []);
+  const standoutGraded = activities.length > 0 && activities.every((activity) => activity.standout !== undefined);
+  const criteria = membershipCriteria(query, interpreted, standoutGraded);
   const includeFacets = options.includeFacets ?? needsIntentFacets(base);
   // Code-parsed stimulus and place are hard filters, so every shortlisted activity already fits them.
   // Companions only earn their questions for a value Jev filled in.
@@ -2242,7 +2354,7 @@ export function buildJevRequest(
     place: base.place ? null : interpreted.place,
   };
   const packed: Record<string, ActivityFacts> = {};
-  const questions: Record<string, JevNoul> = includeFacets ? { ...intentFacetQuestions(now) } : {};
+  const questions: Record<string, JevQuestion> = includeFacets ? { ...intentFacetQuestions(now) } : {};
   for (const activity of activities) {
     const key = `a${activity.id}`;
     packed[key] = activityFacts(activity, now);
@@ -2316,6 +2428,76 @@ export function describeActivity(a: Activity, now?: Date): string {
   const notes = rankingDescription(a.description);
   if (notes) parts.push(notes);
   return parts.filter(Boolean).join(", ");
+}
+
+export type RankGrade = {
+  /** Shown in the status line: "by standout", "by climbing". */
+  label: string;
+  value: (activity: Activity) => number | undefined;
+};
+
+/**
+ * A graded dimension for an unlocked list, when the query asks for a degree rather than a
+ * yes/no: "best" orders by the offline standout Score, "hilly" by climbing per km in code.
+ */
+export function rankGradeFor(
+  query: string,
+  c: IntentClassification | null,
+  standoutGraded: boolean,
+): RankGrade | null {
+  if (!c || metricKind(c)) return null;
+  const tokens = tokenize(query);
+  // Until scripts/grade-activities.mjs has run, "best" stays with the membership noul.
+  if (tokens.includes("best")) return standoutGraded ? { label: "standout", value: (activity) => activity.standout } : null;
+  if (tokens.some((token) => token === "hilly" || token === "hill") && c.stimulus?.primary !== "hills") {
+    return { label: "climbing", value: climbPerKm };
+  }
+  return null;
+}
+
+export type ActivityGrades = {
+  /** Model that produced the grades. A new model regrades everything. */
+  model: string | null;
+  grades: Record<string, { standout: number }>;
+};
+
+/** Attach offline grades to the snapshot. Activities without a grade are left as they are. */
+export function withGrades(activities: Activity[], file: ActivityGrades): Activity[] {
+  return activities.map((activity) => {
+    const grade = file.grades[String(activity.id)];
+    return grade ? { ...activity, standout: grade.standout } : activity;
+  });
+}
+
+// Levels describe a single session so each one can be judged on its own, one activity
+// per request. Whether it was a personal best is a comparison, so it is left out.
+export const STANDOUT_LEVELS = [
+  "Routine: an easy, recovery, commute, or ordinary training session.",
+  "Solid: a workout or long run that looks like planned training.",
+  "Notable: a hard workout, a key long run, or a tune-up race.",
+  "Standout: a goal race or a milestone effort the athlete would want to find again.",
+];
+
+type JevScore = { type: "score"; instructions: string; criteria: string[] };
+
+/** One offline Score request for one activity. Query-independent, so it is asked once and stored. */
+export function buildGradeRequest(a: Activity): { state: { activity: ActivityFacts }; questions: { standout: JevScore } } {
+  const { days_ago: _daysAgo, ...facts } = activityFacts(a);
+  return {
+    state: { activity: facts },
+    questions: {
+      standout: {
+        type: "score",
+        instructions: "As a single session, how much does `activity` stand out in this athlete's training?",
+        criteria: STANDOUT_LEVELS,
+      },
+    },
+  };
+}
+
+export function readStandout(answers: Record<string, { type?: string; score?: number }> | undefined): number | null {
+  const score = answers?.standout?.score;
+  return typeof score === "number" && Number.isFinite(score) ? score : null;
 }
 
 export function formatDuration(seconds: number): string {
