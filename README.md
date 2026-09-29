@@ -76,13 +76,15 @@ python3 scripts/derive_weekly_hours.py
      it. Without a key the function returns 503 and the page quietly stays on
      keyword + fuzzy.
 
-`src/activities.json` is gitignored and built before every deploy from the
-Strava activities file grokbot keeps in the private `Splee9/spencer-brain` repo.
-The fetch keeps public activities only and maps them with the same rules as the
-direct Strava export (`scripts/strava-activity.mjs`):
+`src/activities.json` is gitignored and built before every deploy from
+`data/public/strava-activities.json`, the public Strava activities export grokbot
+keeps in the private `Splee9/spencer-brain` repo. (It has to be a tracked file:
+the vault's `raw/metrics.db` and `raw/exports/` are gitignored.) The fetch keeps
+public activities only and maps them with the same rules as the direct Strava
+export (`scripts/strava-activity.mjs`):
 
 ```bash
-BRAIN_GITHUB_TOKEN=... BRAIN_ACTIVITIES_PATH=... node scripts/fetch-activities.mjs
+BRAIN_GITHUB_TOKEN=... node scripts/fetch-activities.mjs   # BRAIN_ACTIVITIES_PATH overrides the path
 ```
 
 Without `BRAIN_GITHUB_TOKEN` it keeps an existing local file. To build that file
@@ -107,7 +109,7 @@ Environment variables (Netlify → Site configuration → Environment variables)
 | Variable             | Purpose                                                              |
 | -------------------- | -------------------------------------------------------------------- |
 | `BRAIN_GITHUB_TOKEN` | Fine-grained GitHub token, Contents: read on `Splee9/spencer-brain`. |
-| `BRAIN_ACTIVITIES_PATH` | Path of the Strava activities file inside spencer-brain.         |
+| `BRAIN_ACTIVITIES_PATH` | Optional; defaults to `data/public/strava-activities.json`.      |
 | `OPENROUTER_API_KEY` | Jev via OpenRouter's Decisions API (`typesafe/jev-1.13`).            |
 | `TYPESAFE_API_KEY`   | Alternative: Jev direct from TypeSafe. Used only if no OpenRouter key. |
 | `JEV_MODEL`          | Optional model override.                                             |
