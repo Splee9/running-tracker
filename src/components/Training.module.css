@@ -74,6 +74,27 @@
   gap: 8px;
 }
 
+.rangeControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-bottom: 18px;
+}
+
+.controlLabel {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.rangeControls .controlLabel {
+  margin-bottom: 0;
+}
+
 /* on/off switch — same weight as the chips so the controls read as one row */
 .switch {
   display: inline-flex;
