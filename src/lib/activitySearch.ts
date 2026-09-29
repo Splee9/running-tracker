@@ -17,6 +17,13 @@ export type Activity = {
   hard_lap_count?: number;
   has_intervals?: boolean;
   interval_score?: number;
+  // v3 enrichment (optional, backward compatible)
+  average_heartrate?: number;
+  max_heartrate?: number;
+  average_speed?: number; // m/s
+  max_speed?: number; // m/s
+  average_watts?: number;
+  weighted_average_watts?: number;
 };
 
 export type MatchKind = "keyword" | "fuzzy";
@@ -105,6 +112,17 @@ function derivedTags(a: Activity): string[] {
   if (a.modifiers) tags.push(...a.modifiers);
   if (a.place) tags.push(...tokenize(a.place));
   if (a.has_intervals) tags.push("intervals", "reps", "repeats");
+  // v3 enrichment tags: HR zones, power zones
+  if (a.average_heartrate) {
+    tags.push("hr", "heartrate", "heart rate");
+    if (a.average_heartrate >= 170) tags.push("high hr", "hard effort");
+    else if (a.average_heartrate >= 150) tags.push("moderate hr");
+  }
+  if (a.average_watts || a.weighted_average_watts) {
+    tags.push("power", "watts");
+    const watts = a.weighted_average_watts ?? a.average_watts ?? 0;
+    if (watts >= 250) tags.push("high power");
+  }
   return tags;
 }
 
@@ -254,7 +272,7 @@ export type DateWindow = {
 };
 
 export type SuperlativeIntent = {
-  kind: "longest" | "fastest" | "most_intervals" | "hilliest";
+  kind: "longest" | "fastest" | "most_intervals" | "hilliest" | "highest_hr" | "highest_power";
   sport?: "run" | "ride";
 } | {
   kind: "place_filter";
@@ -328,6 +346,32 @@ function detectSuperlativeIntent(query: string): IntentClassification {
       const climbIdx = tokens.findIndex(t => t === "climbing");
       consumedIndices.add(climbIdx);
     }
+  }
+
+  // Detect highest HR (e.g., "highest heart rate", "highest hr", "highest average hr")
+  const highestIdx = tokens.findIndex(t => ["highest", "max"].includes(t));
+  const hrIdx = tokens.findIndex(t => ["hr", "heartrate", "heart"].includes(t));
+  const avgIdx = tokens.findIndex(t => ["avg", "average"].includes(t));
+  if (highestIdx >= 0 && hrIdx >= 0) {
+    intent = { kind: "highest_hr" };
+    consumedIndices.add(highestIdx);
+    consumedIndices.add(hrIdx);
+    if (avgIdx >= 0) consumedIndices.add(avgIdx);
+    // Also consume "rate" if it follows "heart"
+    const rateIdx = tokens.findIndex(t => t === "rate");
+    if (rateIdx >= 0 && rateIdx === hrIdx + 1) consumedIndices.add(rateIdx);
+  }
+
+  // Detect highest power (e.g., "highest power", "highest watts", "highest average watts")
+  const powerIdx = tokens.findIndex(t => ["power", "watts", "watt"].includes(t));
+  if (highestIdx >= 0 && powerIdx >= 0) {
+    intent = { kind: "highest_power" };
+    consumedIndices.add(highestIdx);
+    consumedIndices.add(powerIdx);
+    if (avgIdx >= 0) consumedIndices.add(avgIdx);
+    // Also consume "average" or "weighted" before power/watts
+    const weightedIdx = tokens.findIndex(t => t === "weighted");
+    if (weightedIdx >= 0) consumedIndices.add(weightedIdx);
   }
 
   // Detect place filters (e.g., "Chicago races")
@@ -557,6 +601,22 @@ function applySuperlativeSorting(
     });
   } else if (intent.kind === "hilliest") {
     sorted.sort((a, b) => b.activity.elevation_gain_m - a.activity.elevation_gain_m);
+  } else if (intent.kind === "highest_hr") {
+    // Sort by average heart rate (desc), filter out activities without HR data
+    const withHr = sorted.filter(h => h.activity.average_heartrate !== undefined);
+    withHr.sort((a, b) => (b.activity.average_heartrate ?? 0) - (a.activity.average_heartrate ?? 0));
+    return withHr.slice(0, limit);
+  } else if (intent.kind === "highest_power") {
+    // Sort by weighted average watts (or average watts if weighted not available), filter out activities without power data
+    const withPower = sorted.filter(h => 
+      h.activity.average_watts !== undefined || h.activity.weighted_average_watts !== undefined
+    );
+    withPower.sort((a, b) => {
+      const powerA = a.activity.weighted_average_watts ?? a.activity.average_watts ?? 0;
+      const powerB = b.activity.weighted_average_watts ?? b.activity.average_watts ?? 0;
+      return powerB - powerA;
+    });
+    return withPower.slice(0, limit);
   }
 
   return sorted.slice(0, limit);
@@ -585,6 +645,20 @@ export function describeActivity(a: Activity): string {
       ? `${a.hard_lap_count} hard laps`
       : "intervals";
     parts.push(intervalDesc);
+  }
+  // v3 enrichment for Jev
+  if (a.average_heartrate) {
+    const hrDesc = a.max_heartrate 
+      ? `${Math.round(a.average_heartrate)} bpm avg (max ${Math.round(a.max_heartrate)})`
+      : `${Math.round(a.average_heartrate)} bpm avg`;
+    parts.push(hrDesc);
+  }
+  if (a.average_watts || a.weighted_average_watts) {
+    const watts = Math.round(a.weighted_average_watts ?? a.average_watts ?? 0);
+    const powerDesc = a.weighted_average_watts 
+      ? `${watts}W weighted avg`
+      : `${watts}W avg`;
+    parts.push(powerDesc);
   }
   return parts.filter(Boolean).join(", ");
 }
