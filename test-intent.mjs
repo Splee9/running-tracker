@@ -1,7 +1,7 @@
 // Intent, distance-band sort, and describeActivity checks.
 // Run: node --experimental-strip-types test-intent.mjs
 
-import { activityFacts, applyJevIntent, buildIndex, buildJevRequest, classifyIntent, describeActivity, describeIntent, planShortlist, searchActivities, splitJevAnswers } from "./src/lib/activitySearch.ts";
+import { activityFacts, applyJevIntent, buildIndex, buildJevRequest, classifyIntent, describeActivity, describeIntent, MEMBERSHIP_DEMOTE_BELOW, planShortlist, rerankUnlockedHits, resolveInterpretation, searchActivities, settledIntentPayload, splitJevAnswers } from "./src/lib/activitySearch.ts";
 import { toActivity } from "./scripts/strava-activity.mjs";
 
 const testClock = new Date("2026-09-29T12:00:00-05:00");
@@ -66,6 +66,11 @@ const activities = [
   act({ id: 55, name: "Old repeats", start_date_local: "2023-06-02T08:00:00", distance_m: 8000, moving_time_s: 2400, primary_stimulus: "quality", modifiers: ["intervals"], hard_lap_count: 6 }),
   act({ id: 56, name: "Interval City", start_date_local: "2024-03-02T08:00:00", distance_m: 5000, moving_time_s: 1800, place: "Interval", primary_stimulus: "easy" }),
   act({ id: 57, name: "Cruise", start_date_local: "2024-09-02T08:00:00", distance_m: 10000, moving_time_s: 3000, primary_stimulus: "quality", stimulus_cluster: "quality_tempo", modifiers: ["tempo"], hard_lap_count: 4, has_intervals: true }),
+  // Race-name keyword fixtures. Distances stay off the marathon and longest heads.
+  act({ id: 60, name: "Chicago Marathon", start_date_local: "2024-10-13T08:00:00", distance_m: 8000, moving_time_s: 20000, place: "Chicago", primary_stimulus: "race", workout_type: 1 }),
+  act({ id: 61, name: "Marathon pace", start_date_local: "2026-08-01T08:00:00", distance_m: 16000, moving_time_s: 4800, place: "Chicago", primary_stimulus: "quality", modifiers: ["marathon_pace"] }),
+  act({ id: 63, name: "Shamrock Shuffle", start_date_local: "2026-03-22T08:00:00", distance_m: 10000, moving_time_s: 4200, primary_stimulus: "race", workout_type: 1 }),
+  act({ id: 64, name: "run commute", start_date_local: "2026-09-02T08:00:00", distance_m: 10000, moving_time_s: 3600, primary_stimulus: "easy", modifiers: ["commute"] }),
 ];
 
 const index = buildIndex(activities);
@@ -291,6 +296,76 @@ check("Longest run in Chicago branches", branches("Longest run in Chicago") === 
 check("Speedy runs last month branches", branches("Speedy runs last month") === "metric,date-list", branches("Speedy runs last month"));
 check("Runs last week branches", branches("Runs last week") === "date-list", branches("Runs last week"));
 check("plain 10k this year stays a keyword branch", branches("10k this year") === "keyword", branches("10k this year"));
+
+const chicagoMarathon = ids("Chicago Marathon");
+check(
+  "Chicago Marathon promotes the race-labeled name over a recent pace session",
+  chicagoMarathon[0] === 60 && chicagoMarathon.indexOf(60) < chicagoMarathon.indexOf(61),
+  `got [${chicagoMarathon.join(", ")}]`,
+);
+const plainTenk = ids("10k this year");
+check(
+  "10k this year promotes a race-labeled 10k over a recent commute",
+  plainTenk.indexOf(63) !== -1 && plainTenk.indexOf(63) < plainTenk.indexOf(64),
+  `got [${plainTenk.join(", ")}]`,
+);
+
+const easyWeekHits = searchActivities(index, "easy runs last week", 50, testClock);
+check(
+  "easy runs last week stays a locked code sort",
+  easyWeekHits.length > 0 && easyWeekHits.every((hit) => hit.locked !== false),
+  easyWeekHits.map((hit) => hit.locked).join(","),
+);
+const fastestChicagoHits = searchActivities(index, "fastest run in Chicago", 50, testClock);
+check(
+  "fastest run in Chicago stays locked",
+  fastestChicagoHits.length > 0 && fastestChicagoHits.every((hit) => hit.locked !== false),
+  `locked flags ${fastestChicagoHits.map((hit) => hit.locked).join(",")}`,
+);
+
+const fartlekFilledHits = searchActivities(
+  index,
+  "fartlek",
+  50,
+  testClock,
+  applyJevIntent(classifyIntent("fartlek", testClock), { is_intervals: 0.91, is_quality: 0.2, is_easy: 0.05 }),
+);
+check(
+  "fartlek fill is an unlocked interval shortlist",
+  fartlekFilledHits.length > 0 &&
+    fartlekFilledHits.every((hit) => hit.locked === false) &&
+    fartlekFilledHits.some((hit) => hit.activity.id === 41) &&
+    !fartlekFilledHits.some((hit) => hit.activity.id === 40),
+  fartlekFilledHits.map((hit) => `${hit.activity.id}:${hit.locked}`).join(","),
+);
+
+function bareHit(id, locked) {
+  return { activity: { id }, locked, score: 1, kind: "keyword", matched: [] };
+}
+const reranked = rerankUnlockedHits(
+  [bareHit(1, true), bareHit(2, true), bareHit(3, false), bareHit(4, false), bareHit(5, false)],
+  { 1: 0.1, 2: 0.99, 3: 0.2, 4: 0.9, 5: 0.4 },
+);
+check(
+  "unlocked rows sort by membership noul and a weak yes is demoted",
+  reranked.map((hit) => hit.activity.id).join(",") === "1,2,4,5,3" && MEMBERSHIP_DEMOTE_BELOW === 0.3,
+  reranked.map((hit) => hit.activity.id).join(","),
+);
+const tied = rerankUnlockedHits(
+  [bareHit(3, false), bareHit(4, false)],
+  { 3: 0.8, 4: 0.8 },
+  { 3: { stimulus: 0.2 }, 4: { stimulus: 0.9, place: 0.9 } },
+);
+check("companion nouls only break a membership tie", tied[0].activity.id === 4, String(tied[0].activity.id));
+const lockedOnly = rerankUnlockedHits(
+  [bareHit(9, true), bareHit(8, true)],
+  { 9: 0.1, 8: 0.99 },
+);
+check(
+  "a locked list does not reorder when membership would",
+  lockedOnly.map((hit) => hit.activity.id).join(",") === "9,8",
+  lockedOnly.map((hit) => hit.activity.id).join(","),
+);
 check("easy runs last week branches", branches("easy runs last week") === "date-list", branches("easy runs last week"));
 check("interval workouts 2024 branches", branches("interval workouts 2024") === "date-list", branches("interval workouts 2024"));
 check("hilly ride stays a keyword branch", branches("hilly ride") === "keyword", branches("hilly ride"));
@@ -365,13 +440,21 @@ check(
 
 const split = splitJevAnswers({
   a31: { noul: 0.8 },
+  a31s: { noul: 0.7 },
+  a31p: { noul: 0.6 },
   is_intervals: { noul: 0.91 },
   is_easy: { noul: 0.2 },
   has_place: { noul: 0.4 },
 });
 check(
   "Jev answers split into membership scores and intent facets",
-  split.scores[31] === 0.8 && split.facets.is_intervals === 0.91 && split.facets.is_easy === 0.2 && split.scores.is_intervals === undefined,
+  split.scores[31] === 0.8 &&
+    split.facets.is_intervals === 0.91 &&
+    split.facets.is_easy === 0.2 &&
+    split.scores.is_intervals === undefined &&
+    split.facets.a31s === undefined &&
+    split.companions[31]?.stimulus === 0.7 &&
+    split.companions[31]?.place === 0.6,
   JSON.stringify(split),
 );
 
@@ -495,6 +578,77 @@ check(
     packed.state.vocab.stimulus_cluster.includes("quality_intervals") &&
     packed.questions.a31?.type === "noul",
   Object.keys(packed.questions).sort().join(","),
+);
+check(
+  "interval facet treats fartlek as the existing intervals predicate",
+  packed.questions.is_intervals.instructions.includes("fartlek") &&
+    packed.state.vocab.synonyms.fartlek === "intervals" &&
+    !packed.state.vocab.primary_stimulus.includes("fartlek"),
+  packed.questions.is_intervals.instructions,
+);
+
+const fartlekSettled = applyJevIntent(classifyIntent("fartlek", testClock), {
+  is_intervals: 0.91,
+  is_quality: 0.2,
+  is_easy: 0.05,
+});
+const fartlekPacked = buildJevRequest(
+  "fartlek",
+  [act({ id: 41, name: "Easy Run", start_date_local: "2026-09-26T08:00:00", distance_m: 10000, moving_time_s: 3000, primary_stimulus: "quality", modifiers: ["intervals"] })],
+  testClock,
+  settledIntentPayload(fartlekSettled),
+);
+check(
+  "settled intervals land in the membership criteria",
+  fartlekPacked.state.interpreted_query.includes("intervals") &&
+    fartlekPacked.questions.a41.criteria.true.includes("interval workout") &&
+    fartlekPacked.questions.a41s?.type === "noul" &&
+    fartlekPacked.questions.a41p === undefined,
+  fartlekPacked.questions.a41.criteria.true,
+);
+const refused = resolveInterpretation(
+  "easy runs last week",
+  { stimulus: { intervals: true, modifiers: [] }, kind: "fastest", place: "not a city" },
+  testClock,
+);
+check(
+  "a deterministic parse ignores a client gap-fill",
+  refused.stimulus?.primary === "easy" && refused.intent?.kind === "list" && refused.place == null,
+  JSON.stringify({ stimulus: refused.stimulus, kind: refused.intent?.kind, place: refused.place }),
+);
+const bestPacked = buildJevRequest(
+  "best run in Chicago",
+  [act({ id: 21, name: "September Chicago fast", start_date_local: "2026-09-10T08:00:00", distance_m: 8000, moving_time_s: 2000, place: "Chicago" })],
+  testClock,
+);
+check(
+  "best in Chicago conditions membership on place and a standout",
+  bestPacked.questions.a21.criteria.true.includes("in chicago") &&
+    bestPacked.questions.a21.criteria.true.includes("standout") &&
+    bestPacked.questions.a21p?.type === "noul",
+  bestPacked.questions.a21.criteria.true,
+);
+const racePacked = buildJevRequest(
+  "Chicago Marathon",
+  [act({ id: 60, name: "Chicago Marathon", start_date_local: "2024-10-13T08:00:00", distance_m: 8000, moving_time_s: 20000, place: "Chicago", primary_stimulus: "race" })],
+  testClock,
+);
+check(
+  "a race-name keyword asks membership for a race-labeled activity",
+  racePacked.questions.a60.criteria.true.includes("race-labeled") &&
+    racePacked.questions.a60.criteria.false.includes("quality session"),
+  racePacked.questions.a60.criteria.true,
+);
+const pacePacked = buildJevRequest(
+  "fastest run in Chicago",
+  [act({ id: 19, name: "August Chicago tempo", start_date_local: "2026-08-10T08:00:00", distance_m: 10000, moving_time_s: 2400, place: "Chicago" })],
+  testClock,
+);
+check(
+  "a locked pace query does not take the race-name membership rubric",
+  pacePacked.questions.a19.criteria.true.includes("in chicago") &&
+    !pacePacked.questions.a19.criteria.true.includes("race-labeled"),
+  pacePacked.questions.a19.criteria.true,
 );
 
 console.log("\nexport mapping:\n");

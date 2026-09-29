@@ -36,6 +36,16 @@ export const HARD_MODIFIERS = [
   "return_to_run",
 ] as const;
 
+/**
+ * Words the log does not store as their own stimulus. They map onto an existing
+ * predicate. Jev still has to be confident before code applies the fill.
+ */
+export const STIMULUS_SYNONYMS = {
+  fartlek: "intervals",
+  "speed play": "intervals",
+  speedwork: "intervals",
+} as const;
+
 /** Closed vocab sent to Jev with the raw query. Branching stays in code. */
 export const STIMULUS_VOCAB = {
   primary_stimulus: [...PRIMARY_STIMULI],
@@ -43,6 +53,7 @@ export const STIMULUS_VOCAB = {
   stimulus_cluster: [...STIMULUS_CLUSTERS],
   modality: ["run", "bike"],
   places: ["chicago"],
+  synonyms: { ...STIMULUS_SYNONYMS },
 };
 
 /** A Jev facet becomes a hard filter only at or above this. Below it, the answer is discarded. */

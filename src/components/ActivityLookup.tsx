@@ -10,10 +10,14 @@ import {
   intentHardKey,
   isRide,
   isRun,
+  MEMBERSHIP_DEMOTE_BELOW,
+  rerankUnlockedHits,
   searchActivities,
+  settledIntentPayload,
   sportLabel,
   type Activity,
   type IntentClassification,
+  type MembershipCompanions,
   type SearchHit,
 } from "../lib/activitySearch";
 import { stimulusSummary } from "../lib/stimulus";
@@ -24,13 +28,12 @@ type Units = "mi" | "km";
 type JevState =
   | { status: "idle" }
   | { status: "loading"; query: string }
-  | { status: "done"; query: string; scores: Record<number, number> }
+  | { status: "done"; query: string; scores: Record<number, number>; companions: MembershipCompanions }
   | { status: "error"; query: string };
 
 const JEV_ENDPOINT = "/.netlify/functions/jev-rerank";
 const JEV_CANDIDATES = 25;
 const JEV_DEBOUNCE_MS = 300;
-const JEV_CONFIDENCE_FLOOR = 0.55; // Only reorder when max score >= this threshold
 const PAGE_SIZE = 50;
 
 const activities = snapshot.activities as Activity[];
@@ -130,7 +133,11 @@ export function ActivityLookup() {
       fetch(JEV_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: trimmed, ids: candidateIds }),
+        body: JSON.stringify({
+          query: trimmed,
+          ids: candidateIds,
+          settled: intentClassification ? settledIntentPayload(intentClassification) : undefined,
+        }),
         signal: controller.signal,
       })
         .then((r) => {
@@ -140,7 +147,11 @@ export function ActivityLookup() {
           }
           return r.ok ? r.json() : Promise.reject(r.status);
         })
-        .then((data: { scores?: Record<number, number>; facets?: Record<string, number> }) => {
+        .then((data: {
+          scores?: Record<number, number>;
+          facets?: Record<string, number>;
+          companions?: MembershipCompanions;
+        }) => {
           const code = classifyIntent(trimmed);
           const merged = applyJevIntent(code, data.facets);
           // A facet that changes the hard filters needs a new shortlist before membership
@@ -149,7 +160,12 @@ export function ActivityLookup() {
             setFacetOverride({ query: trimmed, classification: merged });
             return;
           }
-          setJev({ status: "done", query: trimmed, scores: data.scores ?? {} });
+          setJev({
+            status: "done",
+            query: trimmed,
+            scores: data.scores ?? {},
+            companions: data.companions ?? {},
+          });
         })
         .catch(() => {
           if (!controller.signal.aborted) setJev({ status: "error", query: trimmed });
@@ -160,16 +176,10 @@ export function ActivityLookup() {
       controller.abort();
     };
     // candidateKey stands in for candidateIds so identical shortlists don't refetch.
-  }, [shouldScoreWithJev, trimmed, candidateKey, hardKey]);
+  }, [shouldScoreWithJev, trimmed, candidateKey, hardKey, intentClassification]);
 
   const jevScores = jev.status === "done" && jev.query === trimmed ? jev.scores : null;
-
-  // Check if Jev confidence is below floor (for badge dimming)
-  const jevLowConfidence = useMemo(() => {
-    if (!jevScores) return false;
-    const maxScore = Math.max(...Object.values(jevScores));
-    return maxScore < JEV_CONFIDENCE_FLOOR;
-  }, [jevScores]);
+  const jevCompanions = jev.status === "done" && jev.query === trimmed ? jev.companions : undefined;
 
   const results = useMemo(() => {
     if (!trimmed) {
@@ -178,21 +188,9 @@ export function ActivityLookup() {
         .map((activity): SearchHit => ({ activity, score: 0, kind: "keyword", matched: [] }));
     }
     if (!jevScores) return localHits;
-
-    // Metric and list branches stay in branch order. Jev reorders only the keyword branch.
-    const open = localHits.filter((h) => h.locked === false);
-    if (open.length === 0) return localHits;
-
-    const maxScore = Math.max(...Object.values(jevScores));
-    if (maxScore < JEV_CONFIDENCE_FLOOR) return localHits;
-
-    const locked = localHits.filter((h) => h.locked !== false);
-    const scored = open
-      .filter((h) => jevScores[h.activity.id] !== undefined)
-      .sort((a, b) => jevScores[b.activity.id] - jevScores[a.activity.id]);
-    const unscored = open.filter((h) => jevScores[h.activity.id] === undefined);
-    return [...locked, ...scored, ...unscored];
-  }, [trimmed, sport, localHits, jevScores]);
+    // Locked metric and date rows stay in code order. Unlocked rows sort by membership noul.
+    return rerankUnlockedHits(localHits, jevScores, jevCompanions);
+  }, [trimmed, sport, localHits, jevScores, jevCompanions]);
 
   useEffect(() => setVisible(PAGE_SIZE), [trimmed, sport]);
 
@@ -268,17 +266,14 @@ export function ActivityLookup() {
       else if (candidateIds.length > 0) status += " · scoring with Jev";
     }
   } else {
-    // Semantic search with optional Jev. A metric branch in the fan-out stays
-    // locked; Jev only reorders the keyword branch.
+    // A metric branch in the fan-out stays locked. Unlocked rows sort by membership noul.
+    const unlocked = results.some((hit) => hit.locked === false);
     const jevNote = !jevAvailable
       ? ""
       : jevScores
-        ? (() => {
-            const maxScore = Math.max(...Object.values(jevScores));
-            return maxScore >= JEV_CONFIDENCE_FLOOR
-              ? ` · keyword branch reranked by Jev`
-              : ` · Jev confidence low, not reordering`;
-          })()
+        ? unlocked
+          ? " · reranked by Jev membership"
+          : " · Jev scored"
         : jev.status === "error"
           ? " · Jev unavailable"
           : " · Jev reranking…";
@@ -305,7 +300,8 @@ export function ActivityLookup() {
           Search every logged activity by name, stimulus, place, or workout type. Easy, intervals, and
           the other stimulus words filter on labels. Keyword and fuzzy matching cover the rest. <b>Jev</b>{" "}
           asks those intent questions in parallel, then scores the shortlist. Metric searches such as
-          "longest run" or "fastest 10k" keep that order; other searches rerank when Jev is confident.
+          "longest run" or "fastest 10k" keep that order. Keyword, best, and synonym searches sort by
+          Jev's membership score.
         </motion.p>
       </header>
 
@@ -374,8 +370,11 @@ export function ActivityLookup() {
                 units={units}
                 showMatch={Boolean(trimmed)}
                 jevScore={jevScores?.[hit.activity.id]}
-                jevLowConfidence={jevLowConfidence}
-                metricOrder={Boolean(intentClassification?.isDeterministic)}
+                demoted={
+                  jevScores?.[hit.activity.id] !== undefined
+                  && (jevScores?.[hit.activity.id] ?? 1) < MEMBERSHIP_DEMOTE_BELOW
+                }
+                metricOrder={hit.locked !== false}
               />
             ))}
           </ul>
@@ -405,14 +404,14 @@ function ActivityRow({
   units,
   showMatch,
   jevScore,
-  jevLowConfidence,
+  demoted,
   metricOrder,
 }: {
   hit: SearchHit;
   units: Units;
   showMatch: boolean;
   jevScore?: number;
-  jevLowConfidence?: boolean;
+  demoted?: boolean;
   metricOrder?: boolean;
 }) {
   const a = hit.activity;
@@ -525,14 +524,14 @@ function ActivityRow({
                       : jevScore >= 0.4
                         ? "var(--status-warn)"
                         : "var(--status-neutral)",
-                  opacity: jevLowConfidence ? 0.5 : 1
+                  opacity: demoted && !metricOrder ? 0.5 : 1
                 }}
                 title={
                   metricOrder
-                    ? "Jev match score. This list stays in metric order."
-                    : jevLowConfidence
-                      ? "Jev's calibrated probability (low confidence - not used for ranking)"
-                      : "Jev's calibrated probability that this activity matches your search"
+                    ? "Jev membership score. This list stays in code order."
+                    : demoted
+                      ? "Weak membership score. Ranked after stronger matches."
+                      : "Jev membership score. This list is sorted by this probability."
                 }
               >
                 Jev {Math.round(jevScore * 100)}%

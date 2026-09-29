@@ -55,7 +55,11 @@ export type SearchHit = {
   matched: string[];
   /** Which fan-out branch first claimed this activity. */
   branch?: ShortlistBranchId;
-  /** Metric and list branches stay in their own order. Jev may reorder keyword hits. */
+  /**
+   * Metric, place-longest, and a code-settled list stay in code order.
+   * Keyword hits, and a list that exists only because a soft synonym was filled,
+   * are unlocked: membership noul is their order.
+   */
   locked?: boolean;
 };
 
@@ -604,6 +608,8 @@ import {
   matchesPrimary,
   matchesStimulus,
   parseStimulusTokens,
+  HARD_MODIFIERS,
+  PRIMARY_STIMULI,
   STIMULUS_PLACE_WORDS,
   STIMULUS_VOCAB,
   stimulusFromFacets,
@@ -611,6 +617,7 @@ import {
   winningDistanceBand,
   winningYear,
   JEV_INTENT_CONFIDENCE,
+  type PrimaryStimulus,
   type StimulusConstraint,
 } from "./stimulus.ts";
 
@@ -1238,6 +1245,160 @@ export function applyJevIntent(
   return next;
 }
 
+export type SettledIntentPayload = {
+  stimulus?: { intervals?: boolean; primary?: string; modifiers?: string[] } | null;
+  place?: string | null;
+  dateWindow?: { start?: string; end?: string } | null;
+  sport?: "run" | "ride" | null;
+  kind?: string | null;
+};
+
+/** What the browser already settled, so the next packed call can condition membership. */
+export function settledIntentPayload(c: IntentClassification): SettledIntentPayload {
+  const sport = c.intent && "sport" in c.intent ? c.intent.sport ?? null : null;
+  return {
+    stimulus: c.stimulus
+      ? {
+          intervals: c.stimulus.intervals,
+          primary: c.stimulus.primary,
+          modifiers: [...c.stimulus.modifiers],
+        }
+      : null,
+    place: c.place,
+    dateWindow: c.dateWindow ? { start: c.dateWindow.start, end: c.dateWindow.end } : null,
+    sport,
+    kind: c.intent?.kind ?? null,
+  };
+}
+
+function validGapStimulus(raw: unknown): StimulusConstraint | null {
+  if (!raw || typeof raw !== "object") return null;
+  const stimulus = raw as { intervals?: unknown; primary?: unknown; modifiers?: unknown };
+  const intervals = stimulus.intervals === true;
+  const primary = typeof stimulus.primary === "string" && (PRIMARY_STIMULI as readonly string[]).includes(stimulus.primary)
+    ? stimulus.primary as PrimaryStimulus
+    : undefined;
+  const modifiers = Array.isArray(stimulus.modifiers)
+    ? stimulus.modifiers.filter((mod): mod is string =>
+        typeof mod === "string" && (HARD_MODIFIERS as readonly string[]).includes(mod))
+    : [];
+  if (!intervals && !primary && modifiers.length === 0) return null;
+  if (intervals) return { intervals: true, modifiers };
+  return { intervals: false, primary, modifiers };
+}
+
+function validGapYear(raw: unknown, now?: Date): DateWindow | null {
+  if (!raw || typeof raw !== "object") return null;
+  const start = (raw as { start?: unknown }).start;
+  const end = (raw as { end?: unknown }).end;
+  if (typeof start !== "string" || typeof end !== "string") return null;
+  const match = /^(\d{4})-01-01$/.exec(start);
+  if (!match || end !== `${match[1]}-12-31`) return null;
+  const year = Number(match[1]);
+  const current = chicagoClock(now).getFullYear();
+  if (year < current - 6 || year > current + 1) return null;
+  return { start, end };
+}
+
+function validGapPlace(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const canonical = canonicalPlaceName(raw);
+  if (!canonical || isBlockedPlaceName(canonical) || !isKnownPlaceTokens(tokenize(canonical))) return null;
+  return canonical;
+}
+
+type ParsedGap = {
+  stimulus: StimulusConstraint | null;
+  place: string | null;
+  dateWindow: DateWindow | null;
+  sport: "run" | "ride" | null;
+  kind: "fastest" | "longest" | null;
+};
+
+function parseSettledPayload(raw: unknown, now?: Date): ParsedGap | null {
+  if (!raw || typeof raw !== "object") return null;
+  const body = raw as Record<string, unknown>;
+  const stimulus = validGapStimulus(body.stimulus);
+  const place = validGapPlace(body.place);
+  const dateWindow = validGapYear(body.dateWindow, now);
+  const sport = body.sport === "run" || body.sport === "ride" ? body.sport : null;
+  const kind = body.kind === "fastest" || body.kind === "longest" ? body.kind : null;
+  if (!stimulus && !place && !dateWindow && !sport && !kind) return null;
+  return { stimulus, place, dateWindow, sport, kind };
+}
+
+/**
+ * Use a client gap-fill on the next Jev call. A deterministic code parse is kept.
+ * Only vocab values can land: known stimuli, a full calendar year, Chicago, fastest, longest.
+ */
+export function resolveInterpretation(query: string, settled: unknown, now?: Date): IntentClassification {
+  const base = classifyIntent(query, now);
+  if (base.isDeterministic && !(base.place && isBlockedPlaceName(base.place))) return base;
+  const gap = parseSettledPayload(settled, now);
+  if (!gap) return base;
+
+  let next = base;
+  const edit = (): IntentClassification => {
+    if (next !== base) return next;
+    next = {
+      ...base,
+      intent: base.intent ? { ...base.intent } : null,
+      stimulus: base.stimulus
+        ? { intervals: base.stimulus.intervals, primary: base.stimulus.primary, modifiers: [...base.stimulus.modifiers] }
+        : null,
+    };
+    return next;
+  };
+
+  if (base.place && isBlockedPlaceName(base.place)) {
+    const edited = edit();
+    edited.place = null;
+    if (edited.intent?.kind === "place_filter") {
+      edited.intent = { kind: "list", sport: edited.intent.sport };
+    }
+  }
+  if (base.isDeterministic) return next;
+
+  if (!base.stimulus && gap.stimulus) {
+    const edited = edit();
+    edited.stimulus = {
+      intervals: gap.stimulus.intervals,
+      primary: gap.stimulus.primary,
+      modifiers: [...gap.stimulus.modifiers],
+    };
+    if (!edited.intent) {
+      edited.intent = { kind: "list", sport: sportFromRemaining(edited.remainingTokens) };
+    }
+  }
+
+  if ((!base.intent || base.intent.kind === "list") && (gap.kind === "fastest" || gap.kind === "longest")) {
+    const edited = edit();
+    const existing = edited.intent && "sport" in edited.intent ? edited.intent.sport : undefined;
+    edited.intent = {
+      kind: gap.kind,
+      sport: existing ?? sportFromRemaining(edited.remainingTokens),
+    };
+  }
+
+  if (!base.dateWindow && gap.dateWindow && (next.stimulus || next.intent)) {
+    const edited = edit();
+    edited.dateWindow = gap.dateWindow;
+    if (!edited.intent) edited.intent = { kind: "list", sport: sportFromRemaining(edited.remainingTokens) };
+  }
+
+  if (!base.place && gap.place) {
+    const edited = edit();
+    edited.place = gap.place;
+  }
+
+  if (next.stimulus && next.intent && "sport" in next.intent && !next.intent.sport && gap.sport) {
+    const edited = edit();
+    if (edited.intent && "sport" in edited.intent) edited.intent.sport = gap.sport;
+  }
+
+  return next;
+}
+
 // Short gloss for Jev so "speedy", "last month", and "in Chicago" are explicit.
 export function describeIntent(c: IntentClassification): string {
   const bits: string[] = [];
@@ -1493,6 +1654,22 @@ function applyBranchFilters(index: IndexedActivity[], branch: ShortlistBranch): 
   return candidates;
 }
 
+const RACE_DISTANCE_TOKENS = new Set(["5k", "10k", "half", "marathon"]);
+
+// Named-race keywords ("Chicago Marathon", "10k this year") were ranking recent
+// training miles first because keyword score ties break on recency. A race-labeled
+// activity whose name is that race, or any race when the only leftover token is the
+// distance, sorts ahead of those miles. Membership re-rank can still reorder after.
+function raceNameBoost(activity: Activity, tokens: string[]): number {
+  const raceTokens = tokens.filter((token) => RACE_DISTANCE_TOKENS.has(token));
+  if (raceTokens.length === 0 || !matchesPrimary(activity, "race")) return 0;
+  const name = new Set(tokenize(activity.name));
+  const named = raceTokens.every((token) => name.has(token));
+  const distanceOnly = tokens.every((token) => RACE_DISTANCE_TOKENS.has(token));
+  if (named || distanceOnly) return 2;
+  return 0;
+}
+
 function keywordHits(candidates: IndexedActivity[], tokens: string[]): SearchHit[] {
   const full: SearchHit[] = [];
   const partial: SearchHit[] = [];
@@ -1514,7 +1691,7 @@ function keywordHits(candidates: IndexedActivity[], tokens: string[]): SearchHit
     const hit: SearchHit = {
       activity,
       // low_confidence sinks the hit. It does not remove it.
-      score: total / tokens.length - 0.2 * labelConfidence(activity),
+      score: total / tokens.length - 0.2 * labelConfidence(activity) + raceNameBoost(activity, tokens),
       kind: anyFuzzy ? "fuzzy" : "keyword",
       matched,
     };
@@ -1557,7 +1734,12 @@ export function searchActivities(
   const merged: SearchHit[] = [];
   for (const branch of branches) {
     if (merged.length >= limit) break;
-    const locked = branch.id !== "keyword";
+    // A code-settled list stays locked. A list opened by a soft leftover
+    // ("fartlek" filled as intervals) stays unlocked so membership can order it.
+    const softFill = !classification.isDeterministic && classification.remainingTokens.length > 0;
+    const locked = branch.id === "metric"
+      || branch.id === "place-longest"
+      || (!softFill && branch.id !== "keyword");
     for (const hit of runShortlistBranch(index, branch, limit)) {
       if (seen.has(hit.activity.id)) continue;
       seen.add(hit.activity.id);
@@ -1566,6 +1748,49 @@ export function searchActivities(
     }
   }
   return merged;
+}
+
+/**
+ * Cookbook re-rank floor. A noul below this is a weak yes (Jev 1.13 sits near
+ * 0.26–0.40 when the proposition is unclear). Demote those unlocked rows behind
+ * stronger yeses. Do not drop them: an all-weak shortlist should still show,
+ * in noul order. Locked rows are not passed through this sort.
+ * https://docs.typesafe.ai/cookbooks/rerank_typesafe
+ */
+export const MEMBERSHIP_DEMOTE_BELOW = 0.3;
+
+export type MembershipCompanions = Record<number, { stimulus?: number; place?: number } | undefined>;
+
+/**
+ * Unlocked shortlist order is the membership noul, highest first.
+ * Stimulus-fit and place-fit companions only break ties. Locked rows stay
+ * in the code order they already have, ahead of the re-ranked tail.
+ */
+export function rerankUnlockedHits<T extends { activity: { id: number }; locked?: boolean }>(
+  hits: T[],
+  scores: Record<number, number>,
+  companions?: MembershipCompanions,
+): T[] {
+  const open = hits.filter((hit) => hit.locked === false);
+  if (open.length === 0) return hits;
+  const locked = hits.filter((hit) => hit.locked !== false);
+  const scored = open.filter((hit) => typeof scores[hit.activity.id] === "number");
+  const unscored = open.filter((hit) => typeof scores[hit.activity.id] !== "number");
+  const tie = (id: number) => {
+    const extra = companions?.[id];
+    if (!extra) return 0;
+    return (extra.stimulus ?? 0) + (extra.place ?? 0);
+  };
+  scored.sort((a, b) => {
+    const left = scores[a.activity.id];
+    const right = scores[b.activity.id];
+    const demoteLeft = left < MEMBERSHIP_DEMOTE_BELOW ? 1 : 0;
+    const demoteRight = right < MEMBERSHIP_DEMOTE_BELOW ? 1 : 0;
+    if (demoteLeft !== demoteRight) return demoteLeft - demoteRight;
+    if (right !== left) return right - left;
+    return tie(b.activity.id) - tie(a.activity.id);
+  });
+  return [...locked, ...scored, ...unscored];
 }
 
 function applySuperlativeSorting(
@@ -1807,9 +2032,9 @@ function intentFacetQuestions(now?: Date): Record<string, JevNoul> {
       no,
     ),
     is_intervals: facetNoul(
-      "Using only search_query and vocab, the user wants interval workouts, repeats, or reps. Interval is a workout kind, never a place.",
-      yes,
-      no,
+      "Using only search_query and vocab, the user wants interval workouts, repeats, reps, fartlek, or speed play. vocab.synonyms maps fartlek, speed play, and speedwork onto intervals. Do not invent a new primary_stimulus. Interval is a workout kind, never a place.",
+      "The query asks for intervals or a vocab synonym of intervals.",
+      "The query does not ask for interval work.",
     ),
     is_quality: facetNoul(
       "Using only search_query and vocab, the user wants quality sessions and is not specifically asking for intervals.",
@@ -1868,24 +2093,107 @@ function intentFacetQuestions(now?: Date): Record<string, JevNoul> {
 
 export type JevAnswerMap = Record<string, { noul?: number }>;
 
-/** Membership keys are a{id}. Every other noul is an intent facet. */
+export type JevCompanions = Record<number, { stimulus?: number; place?: number }>;
+
+/** Membership keys are a{id}. a{id}s / a{id}p are companion nouls. Everything else is an intent facet. */
 export function splitJevAnswers(answers: JevAnswerMap): {
   scores: Record<number, number>;
   facets: Record<string, number>;
+  companions: JevCompanions;
 } {
   const scores: Record<number, number> = {};
   const facets: Record<string, number> = {};
+  const companions: JevCompanions = {};
   for (const [key, answer] of Object.entries(answers)) {
     if (typeof answer?.noul !== "number") continue;
     const membership = /^a(\d+)$/.exec(key);
+    const stimulus = /^a(\d+)s$/.exec(key);
+    const place = /^a(\d+)p$/.exec(key);
     if (membership) scores[Number(membership[1])] = answer.noul;
-    else facets[key] = answer.noul;
+    else if (stimulus) {
+      const id = Number(stimulus[1]);
+      companions[id] = { ...companions[id], stimulus: answer.noul };
+    } else if (place) {
+      const id = Number(place[1]);
+      companions[id] = { ...companions[id], place: answer.noul };
+    } else facets[key] = answer.noul;
   }
-  return { scores, facets };
+  return { scores, facets, companions };
 }
 
-/** One shared state. Intent facets and per-activity membership noul run in parallel. */
-export function buildJevRequest(query: string, activities: Activity[], now?: Date): {
+function metricKind(c: IntentClassification): boolean {
+  const kind = c.intent?.kind;
+  return kind === "fastest" || kind === "longest" || kind === "most_intervals" || kind === "hilliest"
+    || kind === "highest_hr" || kind === "highest_power" || kind === "mmp_power";
+}
+
+/** One membership proposition, with the settled filters written into the yes/no boundary. */
+function membershipCriteria(query: string, c: IntentClassification): { true: string; false: string } {
+  const must: string[] = [];
+  if (c.stimulus?.intervals) must.push("an interval workout, including fartlek or speed play");
+  else if (c.stimulus?.primary) must.push(`primary stimulus ${c.stimulus.primary}`);
+  if (c.stimulus && c.stimulus.modifiers.length > 0) must.push(`modifier ${c.stimulus.modifiers.join(" and ")}`);
+  if (c.place) must.push(`in ${c.place}`);
+  if (c.weekday) must.push(`on ${c.weekday}`);
+  if (c.dateWindow) must.push(`dated ${c.dateWindow.start} through ${c.dateWindow.end}`);
+  if (c.intent && "sport" in c.intent && c.intent.sport) must.push(`${c.intent.sport}s only`);
+
+  const tokens = tokenize(query);
+  const raceTokens = tokens.filter((token) => RACE_DISTANCE_TOKENS.has(token));
+  const raceNamed = raceTokens.length > 0 && !metricKind(c);
+  const best = tokens.includes("best") && !metricKind(c);
+  const hilly = tokens.some((token) => token === "hilly" || token === "hill") && c.stimulus?.primary !== "hills";
+
+  const yes = ["This activity matches the query under how_to_judge."];
+  const no = ["A required part of the query does not fit this activity."];
+  if (must.length > 0) {
+    yes.push(`It satisfies: ${must.join("; ")}.`);
+    no.push(`It misses: ${must.join("; ")}.`);
+  }
+  if (raceNamed) {
+    yes.push("A race-labeled activity whose name is that race, or a race at that distance, is a yes.");
+    no.push("A training run, commute, or quality session that only shares the city or a nearby distance is not the race.");
+  }
+  if (best) {
+    yes.push("Best means a standout effort: a race, a notably fast run, or a memorable long run. The newest easy run is not automatically best.");
+    no.push("An ordinary recent easy or quality run is not a standout.");
+  }
+  if (hilly) {
+    yes.push("Hilly means substantial climbing for that sport.");
+    no.push("A flat activity is not hilly.");
+  }
+  return { true: yes.join(" "), false: no.join(" ") };
+}
+
+function companionQuestions(activity: Activity, c: IntentClassification): Record<string, JevNoul> {
+  const questions: Record<string, JevNoul> = {};
+  const key = `a${activity.id}`;
+  if (c.stimulus) {
+    const label = stimulusSummary(c.stimulus) || "the settled stimulus";
+    questions[`${key}s`] = {
+      type: "noul",
+      instructions: `Does activities.${key} fit the settled stimulus (${label})? Ignore every other activity.`,
+      criteria: {
+        true: `The activity's stimulus, cluster, or modifiers agree with ${label}.`,
+        false: "The activity is a different kind of session.",
+      },
+    };
+  }
+  if (c.place) {
+    questions[`${key}p`] = {
+      type: "noul",
+      instructions: `Does activities.${key} take place in ${c.place}? Ignore every other activity.`,
+      criteria: {
+        true: "The place field or the activity name matches that place.",
+        false: "The activity is somewhere else.",
+      },
+    };
+  }
+  return questions;
+}
+
+/** One shared state. Intent facets, membership, and optional companion nouls run in parallel. */
+export function buildJevRequest(query: string, activities: Activity[], now?: Date, settled?: unknown): {
   state: {
     search_query: string;
     vocab: typeof STIMULUS_VOCAB;
@@ -1895,6 +2203,8 @@ export function buildJevRequest(query: string, activities: Activity[], now?: Dat
   };
   questions: Record<string, JevNoul>;
 } {
+  const interpreted = resolveInterpretation(query, settled, now);
+  const criteria = membershipCriteria(query, interpreted);
   const packed: Record<string, ActivityFacts> = {};
   const questions: Record<string, JevNoul> = { ...intentFacetQuestions(now) };
   for (const activity of activities) {
@@ -1903,17 +2213,15 @@ export function buildJevRequest(query: string, activities: Activity[], now?: Dat
     questions[key] = {
       type: "noul",
       instructions: `Does activities.${key} match interpreted_query? Apply how_to_judge. Ignore every other activity. Ignore the intent facet questions.`,
-      criteria: {
-        true: "This activity fits interpreted_query under how_to_judge.",
-        false: "A required part of interpreted_query does not fit this activity.",
-      },
+      criteria,
     };
+    Object.assign(questions, companionQuestions(activity, interpreted));
   }
   return {
     state: {
       search_query: query,
       vocab: STIMULUS_VOCAB,
-      interpreted_query: describeIntent(classifyIntent(query, now)),
+      interpreted_query: describeIntent(interpreted),
       how_to_judge: HOW_TO_JUDGE,
       activities: packed,
     },
