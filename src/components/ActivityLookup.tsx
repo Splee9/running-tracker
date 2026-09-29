@@ -177,6 +177,19 @@ export function ActivityLookup() {
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by power`;
       } else if (intent.kind === "place_filter") {
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · filtered by place${intent.filterType ? ` and ${intent.filterType}` : ""}`;
+      } else if (intent.kind === "mmp_power") {
+        const durationLabels: Record<string, string> = {
+          best_watts_5s: "5s",
+          best_watts_1m: "1min",
+          best_watts_5m: "5min",
+          best_watts_20m: "20min",
+          best_watts_60m: "60min",
+        };
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by ${durationLabels[intent.field]} power`;
+      } else if (intent.kind === "highest_power") {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by average power`;
+      } else if (intent.kind === "list") {
+        status = `${results.length.toLocaleString()} activit${results.length === 1 ? "y" : "ies"} · most recent first`;
       } else {
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · deterministic sort`;
       }
@@ -343,6 +356,12 @@ function ActivityRow({
   if (a.has_intervals) {
     const intervalLabel = a.hard_lap_count ? `${a.hard_lap_count} hard laps` : "intervals";
     enrichmentChips.push(intervalLabel);
+  }
+  // Add power data for rides
+  if (isRide(a)) {
+    if (a.best_watts_20m) enrichmentChips.push(`${a.best_watts_20m}W 20min`);
+    else if (a.weighted_average_watts) enrichmentChips.push(`${a.weighted_average_watts}W avg`);
+    else if (a.average_watts) enrichmentChips.push(`${a.average_watts}W avg`);
   }
 
   // v3 metrics: HR and power
