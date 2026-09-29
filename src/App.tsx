@@ -4,6 +4,7 @@ import { Nav } from "./components/Nav";
 import { Home } from "./components/Home";
 import { Miles } from "./components/Miles";
 import { NotFound } from "./components/NotFound";
+import { NOT_FOUND_TITLE, PAGES } from "./lib/pages";
 import { usePathname } from "./lib/router";
 
 // The weekly series is ~370 KB of JSON; keep it out of the home page bundle.
@@ -17,19 +18,11 @@ const ChicagoTracker = lazy(() =>
   import("./components/Chicago/ChicagoTracker").then((m) => ({ default: m.ChicagoTracker })),
 );
 
-const TITLES: Record<string, string> = {
-  "/": "Spencer Lee — Projects",
-  "/miles": "Miles — a running log",
-  "/training": "Training variability — Miles",
-  "/training/chicago": "Chicago Marathon 2026 — Training tracker",
-  "/activity-lookup": "Activity lookup — Miles",
-};
-
 export default function App() {
   const path = usePathname();
 
   useEffect(() => {
-    document.title = TITLES[path] ?? "Not found — Spencer Lee";
+    document.title = PAGES[path]?.title ?? NOT_FOUND_TITLE;
   }, [path]);
 
   return (
