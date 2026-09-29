@@ -93,7 +93,7 @@ function readParams() {
     units: (params.get("u") === "km" ? "km" : "mi") as Units,
     order: (USER_ORDERS.find((o) => o.key === params.get("sort"))?.key ?? "match") as UserOrder,
     removed: parseRemovedParts(params.get("drop")?.split(",") ?? []),
-    // Match kind, branch, and Jev scores are for tuning. ?debug=1 shows them on each row.
+    // Match kind and branch are for tuning. ?debug=1 shows them on each row.
     debug: params.has("debug"),
   };
 }
@@ -442,7 +442,7 @@ export function ActivityLookup() {
                 hit={hit}
                 units={units}
                 showMatch={debug && Boolean(trimmed)}
-                jevScore={jevScores?.[hit.activity.id]}
+                jevScore={trimmed ? jevScores?.[hit.activity.id] : undefined}
                 demoted={
                   jevScores?.[hit.activity.id] !== undefined
                   && (jevScores?.[hit.activity.id] ?? 1) < MEMBERSHIP_DEMOTE_BELOW
@@ -576,11 +576,13 @@ function ActivityRow({
             ))}
           </span>
         </span>
-        {showMatch && (
+        {(showMatch || jevScore !== undefined) && (
           <span className={styles.badges}>
-            <span className={`${styles.badge} ${hit.kind === "keyword" ? styles.badgeKeyword : ""}`}>
-              {hit.branch && hit.branch !== hit.kind ? `${hit.kind} · ${hit.branch}` : hit.kind}
-            </span>
+            {showMatch && (
+              <span className={`${styles.badge} ${hit.kind === "keyword" ? styles.badgeKeyword : ""}`}>
+                {hit.branch && hit.branch !== hit.kind ? `${hit.kind} · ${hit.branch}` : hit.kind}
+              </span>
+            )}
             {jevScore !== undefined && (
               <span
                 className={[

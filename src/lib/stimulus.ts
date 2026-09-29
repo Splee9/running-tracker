@@ -34,6 +34,9 @@ export const HARD_MODIFIERS = [
   "brick",
   "long_duration",
   "return_to_run",
+  "treadmill",
+  "trail",
+  "progression",
 ] as const;
 
 /**
@@ -115,6 +118,10 @@ export const STIMULUS_PLACE_WORDS = new Set([
   "outdoor",
   "indoor",
   "brick",
+  "treadmill",
+  "trail",
+  "progression",
+  "progressive",
   "long",
   "race",
   "races",
@@ -204,6 +211,10 @@ const SINGLE: Record<string, (acc: Accumulator) => void> = {
   outdoor: (acc) => addModifier(acc, "outdoor"),
   indoor: (acc) => addModifier(acc, "indoor"),
   brick: (acc) => addModifier(acc, "brick"),
+  treadmill: (acc) => addModifier(acc, "treadmill"),
+  trail: (acc) => addModifier(acc, "trail"),
+  progression: (acc) => addModifier(acc, "progression"),
+  progressive: (acc) => addModifier(acc, "progression"),
   long: (acc) => { acc.primary = acc.primary ?? "long"; },
   race: (acc) => { acc.primary = acc.primary ?? "race"; },
   races: (acc) => { acc.primary = acc.primary ?? "race"; },

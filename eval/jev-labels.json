@@ -31,5 +31,22 @@
   { "query": "marathon pace workout", "relevant": [20337062894, 20242944126, 20220304888] },
   { "query": "Zwift race", "relevant": [17976977544, 17368214715, 17333088837, 13294963601, 13266998229, 13233760993, 8845073491, 8776888705, 8371620211, 8313445595, 8282426686, 6364679799] },
   { "query": "M22 race", "relevant": [18904017698, 18904010069, 18904009955, 14796922439, 14796922460, 14796922405] },
-  { "query": "biggest ride this summer", "relevant": [18719071109] }
+  { "query": "biggest ride this summer", "relevant": [18719071109] },
+  { "query": "Build Me Up", "relevant": [4834715209, 4824359740, 4806304187, 4790401606, 4786458676, 4774663766, 4764578620, 2944702130, 2942781374, 2938518925] },
+  { "query": "Zwift Academy", "relevant": [6352596112, 6333578419, 6327865988, 6304865385, 6299085489, 6274243342, 6265076980, 6256144570, 6243360625, 6233188291, 6227085709, 6219695846, 6216926751, 6200576035] },
+  { "query": "Crit City", "relevant": [6364679799, 4973530971, 4579771564, 4448063661] },
+  { "query": "sweet spot rides", "relevant": [18196341881, 17777852850, 17612507062, 17529640728, 17449898470, 17294730215, 17271550392, 17216453427, 17193389070, 17138504726, 17121928036] },
+  { "query": "Indy Marathon", "relevant": [16395507671] },
+  { "query": "Chicago half", "relevant": [9201339766] },
+  { "query": "Wisconsin Marathon", "relevant": [14365806243] },
+  { "query": "Welland duathlon", "relevant": [5979694534, 5979694509, 5979694472] },
+  { "query": "longest trail run", "relevant": [7561109562] },
+  { "query": "longest progression run", "relevant": [12110887435] },
+  { "query": "longest commute", "relevant": [18695286140] },
+  { "query": "first half marathon", "relevant": [9201339766] },
+  { "query": "first 10k", "relevant": [2560820902] },
+  { "query": "first race of 2025", "relevant": [13266998229] },
+  { "query": "longest ride in June", "relevant": [19088008553] },
+  { "query": "longest run in July", "relevant": [19364555854] },
+  { "query": "hilliest ride in March", "relevant": [17612507062] }
 ]

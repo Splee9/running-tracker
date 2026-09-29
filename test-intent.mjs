@@ -1014,6 +1014,58 @@ check("marathon PR reads as the fastest marathon", marathonPr.intent?.kind === "
 const barePr = classifyIntent("PR", testClock);
 check("a bare PR stays a name search", barePr.intent === null && JSON.stringify(barePr.remainingTokens) === '["pr"]', JSON.stringify(barePr));
 
+console.log("\nweak spots from the held-out eval:\n");
+
+const august = classifyIntent("longest run in August", testClock);
+check(
+  "a bare month is its most recent occurrence, not a place",
+  august.place === null && august.dateWindow?.start === "2026-08-01" && august.dateWindow?.end === "2026-08-31",
+  JSON.stringify(august),
+);
+const december = classifyIntent("longest ride in December", testClock);
+check("a month after the current one is last year's", december.dateWindow?.start === "2025-12-01", JSON.stringify(december.dateWindow));
+check("may is a month only after a date preposition", classifyIntent("runs I may do", testClock).dateWindow === null);
+
+const weakIndex = buildIndex([
+  act({ id: 201, name: "Morning Treadmill Run", start_date_local: "2023-12-19T08:00:00", distance_m: 19300, moving_time_s: 5640, primary_stimulus: "quality", modifiers: ["treadmill", "indoor"] }),
+  act({ id: 202, name: "Long Run", start_date_local: "2024-01-06T08:00:00", distance_m: 32300, moving_time_s: 8820, primary_stimulus: "long", modifiers: ["outdoor"] }),
+  act({ id: 203, name: "Morning Run", start_date_local: "2020-06-26T08:00:00", distance_m: 21000, moving_time_s: 6300, primary_stimulus: "easy", modifiers: ["outdoor"] }),
+  act({ id: 204, name: "Chicago half", start_date_local: "2023-06-04T08:00:00", distance_m: 21200, moving_time_s: 5238, primary_stimulus: "race", modifiers: ["outdoor"] }),
+  act({ id: 205, name: "Milwaukee Lakefront half", start_date_local: "2023-10-01T08:00:00", distance_m: 21100, moving_time_s: 5192, primary_stimulus: "race", modifiers: ["outdoor"] }),
+  act({ id: 206, name: "Madison Marathon", start_date_local: "2023-11-12T08:00:00", distance_m: 42000, moving_time_s: 10667, primary_stimulus: "race", modifiers: ["outdoor"] }),
+  act({ id: 207, name: "FTP Builder - Foundation", sport_type: "VirtualRide", start_date_local: "2020-02-26T08:00:00", distance_m: 30500, moving_time_s: 4200, primary_stimulus: "quality", modifiers: ["indoor"] }),
+  ...Array.from({ length: 30 }, (_, i) =>
+    act({ id: 300 + i, name: "Quality Session", start_date_local: `2026-0${1 + (i % 8)}-${String(10 + (i % 18)).padStart(2, "0")}T08:00:00`, distance_m: 15000, moving_time_s: 4500, primary_stimulus: "quality", modifiers: ["intervals"] })),
+]);
+const weakIds = (query, c = classifyIntent(query, testClock)) =>
+  searchActivities(weakIndex, query, 50, testClock, c).map((hit) => hit.activity.id);
+
+const treadmill = classifyIntent("longest treadmill run", testClock);
+check(
+  "treadmill is a label filter under a metric sort",
+  treadmill.stimulus?.modifiers.includes("treadmill") && treadmill.isDeterministic && weakIds("longest treadmill run", treadmill)[0] === 201,
+  JSON.stringify({ stimulus: treadmill.stimulus, ids: weakIds("longest treadmill run", treadmill) }),
+);
+
+const firstHalf = classifyIntent("first half marathon", testClock);
+check(
+  "first half marathon is the oldest race at that distance, not a training run that reached it",
+  firstHalf.intent?.kind === "earliest" && firstHalf.stimulus?.primary === "race" && JSON.stringify(weakIds("first half marathon", firstHalf)) === "[204,205]",
+  JSON.stringify({ c: firstHalf, ids: weakIds("first half marathon", firstHalf) }),
+);
+check("my first marathon reads as the earliest marathon", weakIds("my first marathon")[0] === 206, JSON.stringify(weakIds("my first marathon")));
+
+const ftpFilled = applyJevIntent(classifyIntent("FTP builder", testClock), { stimulus: pick("quality", 0.53) });
+check(
+  "a guessed stimulus list does not crowd name matches out of the first rows",
+  weakIds("FTP builder", ftpFilled)[0] === 207,
+  JSON.stringify(weakIds("FTP builder", ftpFilled).slice(0, 5)),
+);
+const madisonFilled = applyJevIntent(classifyIntent("Madison Marathon", testClock), { stimulus: pick("race", 0.7) });
+check("a named race comes first even when Jev guesses race", weakIds("Madison Marathon", madisonFilled)[0] === 206, JSON.stringify(weakIds("Madison Marathon", madisonFilled).slice(0, 5)));
+const plural = searchActivities(weakIndex, "marathons", 50, testClock);
+check("a plural name match is not fuzzy", plural[0]?.activity.id === 206 && plural[0]?.kind === "keyword", JSON.stringify(plural.slice(0, 2).map((hit) => [hit.activity.id, hit.kind])));
+
 const shamrock = toActivity({ id: 120, name: "Shamrock Shuffle 8km", sport_type: "Run", start_date_local: "2025-03-23T08:00:00Z", place: "Washington DC", place_source: "name" });
 check("toActivity corrects the Shamrock Shuffle to Chicago", shamrock.place === "Chicago", JSON.stringify(shamrock));
 const zwift = toActivity({ id: 121, name: "Zwift - Easy Ride in New York", sport_type: "VirtualRide", start_date_local: "2025-01-01T08:00:00Z", place: "New York", place_source: "name" });

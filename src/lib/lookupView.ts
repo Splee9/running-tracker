@@ -42,9 +42,10 @@ const SORT_NAMES: Record<string, string> = {
   hilliest: "Hilliest",
   highest_hr: "Highest heart rate",
   highest_power: "Highest power",
+  earliest: "First",
 };
 
-const METRIC_KINDS = new Set(["fastest", "longest", "most_intervals", "hilliest", "highest_hr", "highest_power", "mmp_power"]);
+const METRIC_KINDS = new Set(["fastest", "longest", "most_intervals", "hilliest", "highest_hr", "highest_power", "mmp_power", "earliest"]);
 
 function capitalize(word: string): string {
   return word.replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
@@ -125,6 +126,8 @@ function sortPhrase(c: IntentClassification): string | null {
       return "by interval intensity";
     case "hilliest":
       return "by elevation";
+    case "earliest":
+      return "oldest first";
     case "highest_hr":
       return "by heart rate";
     case "highest_power":
