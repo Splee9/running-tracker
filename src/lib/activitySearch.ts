@@ -8,6 +8,15 @@ export type Activity = {
   elevation_gain_m: number;
   workout_type: number | null;
   trainer: boolean;
+  // v2 enrichment (optional, backward compatible)
+  primary_stimulus?: string;
+  modifiers?: string[];
+  place?: string;
+  place_source?: "name" | "gps";
+  lap_count?: number;
+  hard_lap_count?: number;
+  has_intervals?: boolean;
+  interval_score?: number;
 };
 
 export type MatchKind = "keyword" | "fuzzy";
@@ -91,6 +100,11 @@ function derivedTags(a: Activity): string[] {
     if (mPerKm >= 15) tags.push("hilly", "hills", "climbing");
     else if (mPerKm < 4) tags.push("flat");
   }
+  // v2 enrichment tags
+  if (a.primary_stimulus) tags.push(a.primary_stimulus);
+  if (a.modifiers) tags.push(...a.modifiers);
+  if (a.place) tags.push(...tokenize(a.place));
+  if (a.has_intervals) tags.push("intervals", "reps", "repeats");
   return tags;
 }
 
@@ -101,6 +115,113 @@ function tokenize(text: string): string[] {
     .replace(/[\u0300-\u036f]/g, "")
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
+}
+
+export type SuperlativeIntent = {
+  kind: "longest" | "fastest" | "most_intervals" | "hilliest";
+  sport?: "run" | "ride";
+} | {
+  kind: "place_filter";
+  place: string;
+  filterType?: "race" | "workout";
+} | null;
+
+export type IntentClassification = {
+  intent: SuperlativeIntent;
+  remainingTokens: string[];
+  isDeterministic: boolean;
+};
+
+function detectSuperlativeIntent(query: string): IntentClassification {
+  const tokens = tokenize(query);
+  let intent: SuperlativeIntent = null;
+  let consumedIndices = new Set<number>();
+
+  // Detect longest/farthest
+  const longestIdx = tokens.findIndex(t => ["longest", "farthest"].includes(t));
+  if (longestIdx >= 0) {
+    intent = { kind: "longest" };
+    consumedIndices.add(longestIdx);
+    // Check for sport (e.g., "longest run")
+    const sportIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
+    if (sportIdx >= 0) {
+      intent.sport = "run";
+      consumedIndices.add(sportIdx);
+    }
+    const bikeIdx = tokens.findIndex(t => ["ride", "rides", "bike", "cycling"].includes(t));
+    if (bikeIdx >= 0) {
+      intent.sport = "ride";
+      consumedIndices.add(bikeIdx);
+    }
+  }
+
+  // Detect most intervals/reps
+  const mostIdx = tokens.findIndex(t => t === "most");
+  const intervalIdx = tokens.findIndex(t => ["intervals", "reps", "repeats"].includes(t));
+  if (mostIdx >= 0 && intervalIdx >= 0) {
+    intent = { kind: "most_intervals" };
+    consumedIndices.add(mostIdx);
+    consumedIndices.add(intervalIdx);
+  }
+
+  // Detect fastest
+  const fastestIdx = tokens.findIndex(t => ["fastest", "quickest"].includes(t));
+  if (fastestIdx >= 0) {
+    intent = { kind: "fastest" };
+    consumedIndices.add(fastestIdx);
+    const sportIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
+    if (sportIdx >= 0) {
+      intent.sport = "run";
+      consumedIndices.add(sportIdx);
+    }
+  }
+
+  // Detect hilliest/most climbing
+  const hilliestIdx = tokens.findIndex(t => ["hilliest", "climbing"].includes(t));
+  const mostClimbingIdx = mostIdx >= 0 && tokens.findIndex(t => t === "climbing") >= 0;
+  if (hilliestIdx >= 0 || mostClimbingIdx) {
+    intent = { kind: "hilliest" };
+    if (hilliestIdx >= 0) consumedIndices.add(hilliestIdx);
+    if (mostClimbingIdx) {
+      consumedIndices.add(mostIdx);
+      const climbIdx = tokens.findIndex(t => t === "climbing");
+      consumedIndices.add(climbIdx);
+    }
+  }
+
+  // Detect place filters (e.g., "Chicago races")
+  const raceIdx = tokens.findIndex(t => ["race", "races"].includes(t));
+  const workoutIdx = tokens.findIndex(t => ["workout", "workouts", "session", "sessions"].includes(t));
+  
+  // If we have remaining tokens that could be place names
+  const remainingAfterSuperlative = tokens.filter((_, i) => !consumedIndices.has(i));
+  if (remainingAfterSuperlative.length > 0 && (raceIdx >= 0 || workoutIdx >= 0)) {
+    // Try to extract place: anything that's not race/workout
+    const placeTokens = remainingAfterSuperlative.filter(t => 
+      !["race", "races", "workout", "workouts", "session", "sessions", "run", "runs", "running", "ride", "rides", "bike", "cycling"].includes(t)
+    );
+    if (placeTokens.length > 0) {
+      const place = placeTokens.join(" ");
+      const filterType = raceIdx >= 0 ? "race" as const : workoutIdx >= 0 ? "workout" as const : undefined;
+      intent = { kind: "place_filter", place, filterType };
+      consumedIndices.add(raceIdx >= 0 ? raceIdx : workoutIdx);
+      // Consume place tokens
+      placeTokens.forEach(pt => {
+        const idx = tokens.indexOf(pt);
+        if (idx >= 0) consumedIndices.add(idx);
+      });
+    }
+  }
+
+  const remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
+  // Deterministic if we have an intent and no remaining semantic tokens
+  // (pure superlative or pure place filter)
+  const isDeterministic = intent !== null && remainingTokens.length === 0;
+  return { intent, remainingTokens, isDeterministic };
+}
+
+export function classifyIntent(query: string): IntentClassification {
+  return detectSuperlativeIntent(query);
 }
 
 export function buildIndex(activities: Activity[]): IndexedActivity[] {
@@ -161,12 +282,59 @@ export function searchActivities(
   query: string,
   limit = 200,
 ): SearchHit[] {
-  const tokens = Array.from(new Set(tokenize(query)));
+  const { intent, remainingTokens, isDeterministic } = detectSuperlativeIntent(query);
+  const tokens = Array.from(new Set(remainingTokens.length > 0 ? remainingTokens : tokenize(query)));
+
+  let candidates: IndexedActivity[] = index;
+
+  // Apply intent-based filtering
+  if (intent) {
+    if (intent.kind === "place_filter") {
+      const placeLower = intent.place.toLowerCase();
+      candidates = candidates.filter(({ activity }) => {
+        const placeMatch = activity.place?.toLowerCase().includes(placeLower);
+        if (!placeMatch) return false;
+        
+        // Additional filter type checks
+        if (intent.filterType === "race") {
+          return activity.primary_stimulus === "race" || 
+                 activity.workout_type === 1 || 
+                 activity.workout_type === 11 ||
+                 activity.name.toLowerCase().includes("race");
+        }
+        if (intent.filterType === "workout") {
+          return activity.workout_type === 3 || activity.workout_type === 12;
+        }
+        return true;
+      });
+    } else if (intent.kind === "longest" && intent.sport) {
+      candidates = candidates.filter(({ activity }) => 
+        intent.sport === "run" ? isRun(activity) : isRide(activity)
+      );
+    } else if (intent.kind === "fastest" && intent.sport) {
+      candidates = candidates.filter(({ activity }) => 
+        intent.sport === "run" ? isRun(activity) : isRide(activity)
+      );
+    }
+  }
+
+  if (isDeterministic) {
+    // Deterministic intent: no keyword matching, just apply metric/filter sorting
+    const hits = candidates.map(({ activity }): SearchHit => ({
+      activity,
+      score: 1,
+      kind: "keyword",
+      matched: [],
+    }));
+    return applySuperlativeSorting(hits, intent, limit);
+  }
+
+  // Regular keyword/fuzzy search with optional superlative sorting
   if (tokens.length === 0) return [];
 
   const full: SearchHit[] = [];
   const partial: SearchHit[] = [];
-  for (const { activity, words } of index) {
+  for (const { activity, words } of candidates) {
     let total = 0;
     let hitCount = 0;
     let anyFuzzy = false;
@@ -195,7 +363,54 @@ export function searchActivities(
     b.score - a.score || b.activity.start_date_local.localeCompare(a.activity.start_date_local);
   full.sort(byScore);
   partial.sort(byScore);
-  return (full.length >= 10 ? full : [...full, ...partial]).slice(0, limit);
+  const results = (full.length >= 10 ? full : [...full, ...partial]);
+  
+  // Apply superlative sorting if intent exists
+  if (intent && intent.kind !== "place_filter") {
+    return applySuperlativeSorting(results, intent, limit);
+  }
+
+  return results.slice(0, limit);
+}
+
+function applySuperlativeSorting(
+  hits: SearchHit[],
+  intent: SuperlativeIntent,
+  limit: number,
+): SearchHit[] {
+  if (!intent || intent.kind === "place_filter") return hits.slice(0, limit);
+
+  const sorted = [...hits];
+  
+  if (intent.kind === "longest") {
+    sorted.sort((a, b) => b.activity.distance_m - a.activity.distance_m);
+  } else if (intent.kind === "fastest") {
+    // Sort by pace (ascending time per distance for runs with sufficient distance)
+    sorted.sort((a, b) => {
+      const paceA = a.activity.distance_m > 0 ? a.activity.moving_time_s / a.activity.distance_m : Infinity;
+      const paceB = b.activity.distance_m > 0 ? b.activity.moving_time_s / b.activity.distance_m : Infinity;
+      return paceA - paceB;
+    });
+  } else if (intent.kind === "most_intervals") {
+    // Sort by interval_score (desc), then hard_lap_count (desc), then has_intervals
+    sorted.sort((a, b) => {
+      const scoreA = a.activity.interval_score ?? 0;
+      const scoreB = b.activity.interval_score ?? 0;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      
+      const lapsA = a.activity.hard_lap_count ?? 0;
+      const lapsB = b.activity.hard_lap_count ?? 0;
+      if (lapsB !== lapsA) return lapsB - lapsA;
+      
+      const hasA = a.activity.has_intervals ? 1 : 0;
+      const hasB = b.activity.has_intervals ? 1 : 0;
+      return hasB - hasA;
+    });
+  } else if (intent.kind === "hilliest") {
+    sorted.sort((a, b) => b.activity.elevation_gain_m - a.activity.elevation_gain_m);
+  }
+
+  return sorted.slice(0, limit);
 }
 
 export function describeActivity(a: Activity): string {
@@ -210,6 +425,18 @@ export function describeActivity(a: Activity): string {
     ...(WORKOUT_TAGS[a.workout_type ?? -1]?.slice(0, 1) ?? []),
     a.trainer ? "indoor" : "",
   ];
+  // v2 enrichment for Jev
+  if (a.primary_stimulus) parts.push(a.primary_stimulus);
+  if (a.modifiers && a.modifiers.length > 0) {
+    parts.push(a.modifiers.slice(0, 3).join(", "));
+  }
+  if (a.place) parts.push(a.place);
+  if (a.has_intervals) {
+    const intervalDesc = a.hard_lap_count 
+      ? `${a.hard_lap_count} hard laps`
+      : "intervals";
+    parts.push(intervalDesc);
+  }
   return parts.filter(Boolean).join(", ");
 }
 

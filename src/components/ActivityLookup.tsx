@@ -4,6 +4,7 @@ import { Chip } from "./Chip";
 import snapshot from "../activities.json";
 import {
   buildIndex,
+  classifyIntent,
   formatDuration,
   isRide,
   isRun,
@@ -37,7 +38,7 @@ const SPORT_FILTERS: { key: SportFilter; label: string }[] = [
   { key: "other", label: "Other" },
 ];
 
-const EXAMPLES = ["quality session", "long run", "threshold", "hilly ride", "zwift", "race 2024"];
+const EXAMPLES = ["longest run", "most intervals", "Chicago races", "quality session", "hilly ride", "zwift"];
 
 const rise = {
   hidden: { opacity: 0, y: 16 },
@@ -78,6 +79,11 @@ export function ActivityLookup() {
 
   const trimmed = query.trim();
 
+  const intentClassification = useMemo(() => {
+    if (!trimmed) return null;
+    return classifyIntent(trimmed);
+  }, [trimmed]);
+
   const localHits: SearchHit[] = useMemo(() => {
     if (!trimmed) return [];
     return searchActivities(index, trimmed, 500).filter((h) => matchesSport(h.activity, sport));
@@ -89,8 +95,11 @@ export function ActivityLookup() {
   );
   const candidateKey = candidateIds.join(",");
 
+  // Skip Jev for deterministic intents (pure superlatives and place filters)
+  const shouldUseJev = jevAvailable && !intentClassification?.isDeterministic;
+
   useEffect(() => {
-    if (!jevAvailable || !trimmed || candidateIds.length === 0) {
+    if (!shouldUseJev || !trimmed || candidateIds.length === 0) {
       setJev({ status: "idle" });
       return;
     }
@@ -122,7 +131,7 @@ export function ActivityLookup() {
       controller.abort();
     };
     // candidateKey stands in for candidateIds so identical shortlists don't refetch.
-  }, [jevAvailable, trimmed, candidateKey]);
+  }, [shouldUseJev, trimmed, candidateKey]);
 
   const jevScores = jev.status === "done" && jev.query === trimmed ? jev.scores : null;
 
@@ -132,22 +141,46 @@ export function ActivityLookup() {
         .filter((a) => matchesSport(a, sport))
         .map((activity): SearchHit => ({ activity, score: 0, kind: "keyword", matched: [] }));
     }
-    if (!jevScores) return localHits;
+    // For deterministic intents, don't apply Jev reranking - use local search order
+    if (intentClassification?.isDeterministic || !jevScores) return localHits;
     const reranked = localHits
       .filter((h) => jevScores[h.activity.id] !== undefined)
       .sort((a, b) => jevScores[b.activity.id] - jevScores[a.activity.id]);
     const rest = localHits.filter((h) => jevScores[h.activity.id] === undefined);
     return [...reranked, ...rest];
-  }, [trimmed, sport, localHits, jevScores]);
+  }, [trimmed, sport, localHits, jevScores, intentClassification]);
 
   useEffect(() => setVisible(PAGE_SIZE), [trimmed, sport]);
 
   const shown = results.slice(0, visible);
 
   let status: string;
-  if (!trimmed) status = `${results.length.toLocaleString()} activities · most recent first`;
-  else if (results.length === 0) status = `No activities match “${trimmed}”`;
-  else {
+  if (!trimmed) {
+    status = `${results.length.toLocaleString()} activities · most recent first`;
+  } else if (results.length === 0) {
+    status = `No activities match "${trimmed}"`;
+  } else if (intentClassification?.isDeterministic) {
+    // Deterministic intent status
+    const intent = intentClassification.intent;
+    if (intent) {
+      if (intent.kind === "longest") {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by distance`;
+      } else if (intent.kind === "fastest") {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by pace`;
+      } else if (intent.kind === "most_intervals") {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by interval intensity`;
+      } else if (intent.kind === "hilliest") {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by elevation`;
+      } else if (intent.kind === "place_filter") {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · filtered by place${intent.filterType ? ` and ${intent.filterType}` : ""}`;
+      } else {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · deterministic sort`;
+      }
+    } else {
+      status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}`;
+    }
+  } else {
+    // Semantic search with optional Jev
     const jevNote = !jevAvailable
       ? ""
       : jevScores
@@ -168,8 +201,10 @@ export function ActivityLookup() {
           Find any session.
         </motion.h1>
         <motion.p className={styles.intro} variants={rise} custom={2} initial="hidden" animate="show">
-          Search every logged activity. Keyword and fuzzy matching run as you type; then{" "}
-          <b>Jev</b> reranks the shortlist by what you meant, not just what you typed.
+          Search every logged activity by name, stimulus, place, or workout type. Keyword and fuzzy
+          matching run as you type; then <b>Jev</b> reranks the shortlist by what you meant, not
+          just what you typed. Try superlatives like "longest run" or "most intervals", or combine
+          place with type like "Chicago races".
         </motion.p>
       </header>
 
@@ -254,8 +289,8 @@ export function ActivityLookup() {
 
       <footer className={styles.footer}>
         <p>
-          Public activities only, rebuilt from the Strava log. Names, dates, distance, time and
-          elevation — no routes, locations or heart-rate data.
+          Public activities only, rebuilt from the Strava log. Names, dates, distance, time,
+          elevation, stimulus, place and intervals — no routes, polylines or heart-rate data.
         </p>
       </footer>
     </div>
@@ -283,6 +318,17 @@ function ActivityRow({
     pace = isRun(a)
       ? `${formatDuration(Math.round(a.moving_time_s / dist))} /${units}`
       : `${(dist / (a.moving_time_s / 3600)).toFixed(1)} ${units === "mi" ? "mph" : "km/h"}`;
+  }
+
+  // Build enrichment chips
+  const enrichmentChips: string[] = [];
+  if (a.place) enrichmentChips.push(a.place);
+  if (a.primary_stimulus && !["other", "easy"].includes(a.primary_stimulus)) {
+    enrichmentChips.push(a.primary_stimulus);
+  }
+  if (a.has_intervals) {
+    const intervalLabel = a.hard_lap_count ? `${a.hard_lap_count} hard laps` : "intervals";
+    enrichmentChips.push(intervalLabel);
   }
 
   return (
@@ -315,6 +361,11 @@ function ActivityRow({
                 {elev.toLocaleString()} {units === "mi" ? "ft" : "m"}
               </span>
             )}
+            {enrichmentChips.map((chip, i) => (
+              <span key={i} style={{ opacity: 0.7, fontStyle: "italic" }}>
+                {chip}
+              </span>
+            ))}
           </span>
         </span>
         {showMatch && (
