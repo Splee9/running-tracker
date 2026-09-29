@@ -2,11 +2,11 @@
 //   → { scores: { [id]: p }, facets: { [question]: p } }
 // One packed Jev call. State is the query, the closed stimulus vocab, and the
 // shortlist. Intent facets and per-activity membership noul run in parallel.
-// Code applies a facet only when it fills a gap. Membership does not reorder
-// locked branches.
+// Code applies a facet only when it fills a gap. Membership re-ranks unlocked
+// branches on the client. Locked metric and date order stay in code.
 
 import snapshot from "../../src/activities.json" with { type: "json" };
-import { buildJevRequest, splitJevAnswers, type Activity } from "../../src/lib/activitySearch.ts";
+import { buildJevRequest, splitJevAnswers, type Activity, type JevCompanions } from "../../src/lib/activitySearch.ts";
 
 const MAX_CANDIDATES = 25;
 const MAX_QUERY_LENGTH = 120;
@@ -46,8 +46,10 @@ function getProvider(): Provider | null {
 
 const byId = new Map((snapshot.activities as Activity[]).map((a) => [a.id, a]));
 
+type CachedJudgment = { membership: number; stimulus?: number; place?: number };
+
 // Per-instance state: good enough to blunt abuse and repeat typing, not a global limit.
-const cache = new Map<string, number>();
+const cache = new Map<string, CachedJudgment>();
 const CACHE_MAX = 5_000;
 const hits = new Map<string, { count: number; start: number }>();
 
@@ -55,7 +57,7 @@ function cacheKey(model: string, query: string, id: number) {
   return `${model}\u0000${query}\u0000${id}`;
 }
 
-function remember(key: string, value: number) {
+function remember(key: string, value: CachedJudgment) {
   if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value as string);
   cache.set(key, value);
 }
@@ -98,7 +100,7 @@ export default async (req: Request, context: { ip?: string }) => {
   if (!provider) return json({ error: "Jev is not configured" }, 503);
   if (rateLimited(context.ip ?? "unknown")) return json({ error: "Too many requests" }, 429);
 
-  const body = (await req.json().catch(() => null)) as { query?: unknown; ids?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { query?: unknown; ids?: unknown; settled?: unknown } | null;
   const query = typeof body?.query === "string" ? body.query.trim().toLowerCase() : "";
   const ids = Array.isArray(body?.ids) ? body.ids : [];
   if (
@@ -111,24 +113,31 @@ export default async (req: Request, context: { ip?: string }) => {
   }
 
   const scores: Record<number, number> = {};
+  const companions: JevCompanions = {};
   const pending: Activity[] = [];
   for (const id of ids as number[]) {
     const activity = byId.get(id);
     if (!activity) continue;
     const cached = cache.get(cacheKey(provider.model, query, id));
-    if (cached !== undefined) scores[id] = cached;
-    else pending.push(activity);
+    if (cached !== undefined) {
+      scores[id] = cached.membership;
+      if (cached.stimulus !== undefined || cached.place !== undefined) {
+        companions[id] = {};
+        if (cached.stimulus !== undefined) companions[id].stimulus = cached.stimulus;
+        if (cached.place !== undefined) companions[id].place = cached.place;
+      }
+    } else pending.push(activity);
   }
 
   const facetKey = `${provider.model}\u0000${query}\u0000facets`;
   const cachedFacets = facetCache.get(facetKey);
-  if (pending.length === 0 && cachedFacets) return json({ scores, facets: cachedFacets });
+  if (pending.length === 0 && cachedFacets) return json({ scores, facets: cachedFacets, companions });
 
   const started = Date.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const packed = buildJevRequest(query, pending);
+    const packed = buildJevRequest(query, pending, undefined, body?.settled);
     const res = await fetch(provider.url, {
       method: "POST",
       headers: {
@@ -155,8 +164,14 @@ export default async (req: Request, context: { ip?: string }) => {
     const split = splitJevAnswers(data.answers ?? {});
     for (const [id, score] of Object.entries(split.scores)) {
       const numeric = Number(id);
+      const companion = split.companions[numeric];
       scores[numeric] = score;
-      remember(cacheKey(provider.model, query, numeric), score);
+      if (companion) companions[numeric] = companion;
+      remember(cacheKey(provider.model, query, numeric), {
+        membership: score,
+        stimulus: companion?.stimulus,
+        place: companion?.place,
+      });
     }
     rememberFacets(facetKey, split.facets);
     console.log(JSON.stringify({
@@ -180,5 +195,5 @@ export default async (req: Request, context: { ip?: string }) => {
   } finally {
     clearTimeout(timer);
   }
-  return json({ scores, facets: facetCache.get(facetKey) ?? {} });
+  return json({ scores, facets: facetCache.get(facetKey) ?? {}, companions });
 };

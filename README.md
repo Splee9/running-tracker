@@ -84,10 +84,19 @@ python3 scripts/derive_weekly_hours.py
      does not name a stimulus keeps the previous metric, place, and date behavior.
   3. **Jev**, 300 ms after typing stops: one request asks parallel intent
      questions (easy, intervals, quality, place, year, fastest, longest) and a
-     membership score per shortlisted activity. A high-confidence answer fills
-     a gap in an incomplete parse. A parse the code already settled is not
-     replaced. Membership reorders only the keyword branch. Without a key the
-     function returns 503 and the page stays on the local shortlist.
+     membership noul per shortlisted activity. A high-confidence answer fills
+     a gap in an incomplete parse (`fartlek` can land as intervals; no new
+     stimulus labels). A parse the code already settled is not replaced.
+     Unlocked branches — keyword, fuzzy, "best", and a synonym fill that still
+     has leftover words — then sort by that membership noul, highest first
+     ([re-ranking cookbook](https://docs.typesafe.ai/cookbooks/rerank_typesafe)).
+     A noul under 0.3 is demoted behind stronger yeses and kept. Stimulus-fit
+     and place-fit nouls share the same call and only break ties. Locked
+     branches (pace, distance, time, heart rate, power, and a code-settled
+     date or place list) stay in code order. Race-name keywords such as
+     "Chicago Marathon" boost a race-labeled name match before that re-rank.
+     Without a key the function returns 503 and the page stays on the local
+     shortlist.
 
 `src/activities.json` is gitignored and built before every deploy from
 `data/public/strava-activities.json`, the public Strava activities export grokbot
