@@ -172,7 +172,6 @@ function parseDateWindow(tokens: string[]): { window: DateWindow | null; consume
     consumedIndices.add(monthIdx);
     const year = today.getFullYear();
     const month = today.getMonth() + 1;
-    const lastDay = new Date(year, month, 0).getDate();
     return {
       window: { 
         start: `${year}-${String(month).padStart(2, '0')}-01`, 
