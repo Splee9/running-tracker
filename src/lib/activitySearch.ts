@@ -371,6 +371,8 @@ export type DateWindow = {
 export type SuperlativeIntent = {
   kind: "longest" | "fastest" | "most_intervals" | "hilliest" | "highest_hr";
   sport?: "run" | "ride";
+  distanceBand?: "5k" | "10k" | "half" | "marathon";
+  place?: string;
 } | {
   kind: "place_filter";
   place: string;
@@ -516,6 +518,43 @@ function detectSuperlativeIntent(query: string): IntentClassification {
         intent.sport = "ride";
         consumedIndices.add(bikeIdx);
       }
+      
+      // Detect distance band (5k, 10k, half, marathon)
+      const distanceBandIdx = tokens.findIndex(t => 
+        ["5k", "5km", "10k", "10km", "half", "marathon"].includes(t)
+      );
+      if (distanceBandIdx >= 0) {
+        const token = tokens[distanceBandIdx];
+        if (token === "5k" || token === "5km") {
+          intent.distanceBand = "5k";
+        } else if (token === "10k" || token === "10km") {
+          intent.distanceBand = "10k";
+        } else if (token === "half") {
+          intent.distanceBand = "half";
+          // Also consume "marathon" if it follows "half"
+          const marathonIdx = tokens.indexOf("marathon");
+          if (marathonIdx >= 0) {
+            consumedIndices.add(marathonIdx);
+          }
+        } else if (token === "marathon") {
+          intent.distanceBand = "marathon";
+        }
+        consumedIndices.add(distanceBandIdx);
+      }
+      
+      // Extract place tokens (after consuming superlative, sport, and distance band)
+      const placeTokens = tokens.filter((t, i) => 
+        !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+      );
+      if (placeTokens.length > 0) {
+        intent.place = placeTokens.join(" ");
+        // Consume place tokens and prepositions
+        tokens.forEach((t, i) => {
+          if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+            consumedIndices.add(i);
+          }
+        });
+      }
     }
   }
 
@@ -527,12 +566,25 @@ function detectSuperlativeIntent(query: string): IntentClassification {
       intent = { kind: "most_intervals" };
       consumedIndices.add(mostIdx);
       consumedIndices.add(intervalIdx);
+      
+      // Extract place tokens
+      const placeTokens = tokens.filter((t, i) => 
+        !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+      );
+      if (placeTokens.length > 0) {
+        intent.place = placeTokens.join(" ");
+        tokens.forEach((t, i) => {
+          if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+            consumedIndices.add(i);
+          }
+        });
+      }
     }
   }
 
   // Detect fastest
   if (!intent) {
-    const fastestIdx = tokens.findIndex(t => ["fastest", "quickest"].includes(t));
+    const fastestIdx = tokens.findIndex(t => ["fastest", "quickest", "best"].includes(t));
     if (fastestIdx >= 0) {
       intent = { kind: "fastest" };
       consumedIndices.add(fastestIdx);
@@ -540,6 +592,49 @@ function detectSuperlativeIntent(query: string): IntentClassification {
       if (sportIdx >= 0) {
         intent.sport = "run";
         consumedIndices.add(sportIdx);
+      }
+      
+      // Detect distance band (5k, 10k, half, marathon)
+      const distanceBandIdx = tokens.findIndex(t => 
+        ["5k", "5km", "10k", "10km", "half", "marathon"].includes(t)
+      );
+      if (distanceBandIdx >= 0) {
+        const token = tokens[distanceBandIdx];
+        if (token === "5k" || token === "5km") {
+          intent.distanceBand = "5k";
+        } else if (token === "10k" || token === "10km") {
+          intent.distanceBand = "10k";
+        } else if (token === "half") {
+          intent.distanceBand = "half";
+          // Also consume "marathon" if it follows "half"
+          const marathonIdx = tokens.indexOf("marathon");
+          if (marathonIdx >= 0) {
+            consumedIndices.add(marathonIdx);
+          }
+        } else if (token === "marathon") {
+          intent.distanceBand = "marathon";
+        }
+        consumedIndices.add(distanceBandIdx);
+      }
+      
+      // Consume common filler words like "time", "pace", "pr", "record"
+      const timeIdx = tokens.findIndex(t => ["time", "pace", "pr", "record"].includes(t));
+      if (timeIdx >= 0) {
+        consumedIndices.add(timeIdx);
+      }
+      
+      // Extract place tokens (after consuming superlative, sport, distance band, and filler words)
+      const placeTokens = tokens.filter((t, i) => 
+        !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+      );
+      if (placeTokens.length > 0) {
+        intent.place = placeTokens.join(" ");
+        // Consume place tokens and prepositions
+        tokens.forEach((t, i) => {
+          if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+            consumedIndices.add(i);
+          }
+        });
       }
     }
   }
@@ -557,6 +652,19 @@ function detectSuperlativeIntent(query: string): IntentClassification {
         const climbIdx = tokens.findIndex(t => t === "climbing");
         consumedIndices.add(climbIdx);
       }
+      
+      // Extract place tokens
+      const placeTokens = tokens.filter((t, i) => 
+        !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+      );
+      if (placeTokens.length > 0) {
+        intent.place = placeTokens.join(" ");
+        tokens.forEach((t, i) => {
+          if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+            consumedIndices.add(i);
+          }
+        });
+      }
     }
   }
 
@@ -572,6 +680,19 @@ function detectSuperlativeIntent(query: string): IntentClassification {
     // Also consume "rate" if it follows "heart"
     const rateIdx = tokens.findIndex(t => t === "rate");
     if (rateIdx >= 0 && rateIdx === hrIdx + 1) consumedIndices.add(rateIdx);
+    
+    // Extract place tokens
+    const placeTokens = tokens.filter((t, i) => 
+      !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+    );
+    if (placeTokens.length > 0) {
+      intent.place = placeTokens.join(" ");
+      tokens.forEach((t, i) => {
+        if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+          consumedIndices.add(i);
+        }
+      });
+    }
   }
 
   // Detect highest power (e.g., "highest power", "highest watts", "highest average watts")
@@ -755,14 +876,84 @@ export function searchActivities(
       candidates = candidates.filter(({ activity }) => 
         isRide(activity) && (activity.average_watts != null || activity.weighted_average_watts != null)
       );
-    } else if (intent.kind === "longest" && intent.sport) {
-      candidates = candidates.filter(({ activity }) => 
-        intent.sport === "run" ? isRun(activity) : isRide(activity)
-      );
-    } else if (intent.kind === "fastest" && intent.sport) {
-      candidates = candidates.filter(({ activity }) => 
-        intent.sport === "run" ? isRun(activity) : isRide(activity)
-      );
+    } else if (intent.kind === "longest") {
+      // Filter by sport if specified
+      if (intent.sport) {
+        candidates = candidates.filter(({ activity }) => 
+          intent.sport === "run" ? isRun(activity) : isRide(activity)
+        );
+      }
+      // Filter by distance band if specified
+      if (intent.distanceBand) {
+        candidates = candidates.filter(({ activity }) => {
+          const km = activity.distance_m / 1000;
+          const near = (target: number, tol: number) => Math.abs(km - target) <= tol;
+          
+          if (intent.distanceBand === "5k") {
+            return near(5, 0.3);
+          } else if (intent.distanceBand === "10k") {
+            return near(10, 0.4);
+          } else if (intent.distanceBand === "half") {
+            return near(21.1, 0.6);
+          } else if (intent.distanceBand === "marathon") {
+            return near(42.2, 1);
+          }
+          return true;
+        });
+      }
+      // Filter by place if specified
+      if (intent.place) {
+        const placeLower = intent.place.toLowerCase();
+        candidates = candidates.filter(({ activity }) => {
+          const placeMatch = activity.place?.toLowerCase().includes(placeLower);
+          const nameMatch = activity.name.toLowerCase().includes(placeLower);
+          return placeMatch || nameMatch;
+        });
+      }
+    } else if (intent.kind === "fastest") {
+      // Filter by sport if specified
+      if (intent.sport) {
+        candidates = candidates.filter(({ activity }) => 
+          intent.sport === "run" ? isRun(activity) : isRide(activity)
+        );
+      }
+      // Filter by distance band if specified
+      if (intent.distanceBand) {
+        candidates = candidates.filter(({ activity }) => {
+          const km = activity.distance_m / 1000;
+          const near = (target: number, tol: number) => Math.abs(km - target) <= tol;
+          
+          if (intent.distanceBand === "5k") {
+            return near(5, 0.3);
+          } else if (intent.distanceBand === "10k") {
+            return near(10, 0.4);
+          } else if (intent.distanceBand === "half") {
+            return near(21.1, 0.6);
+          } else if (intent.distanceBand === "marathon") {
+            return near(42.2, 1);
+          }
+          return true;
+        });
+      }
+      // Filter by place if specified
+      if (intent.place) {
+        const placeLower = intent.place.toLowerCase();
+        candidates = candidates.filter(({ activity }) => {
+          const placeMatch = activity.place?.toLowerCase().includes(placeLower);
+          const nameMatch = activity.name.toLowerCase().includes(placeLower);
+          return placeMatch || nameMatch;
+        });
+      }
+    } else if (intent.kind === "most_intervals" || intent.kind === "hilliest" || intent.kind === "highest_hr") {
+      // Apply place filtering for other superlatives
+      if (intent.place) {
+        const placeLower = intent.place.toLowerCase();
+        candidates = candidates.filter(({ activity }) => {
+          const placeMatch = activity.place?.toLowerCase().includes(placeLower);
+          const nameMatch = activity.name.toLowerCase().includes(placeLower);
+          return placeMatch || nameMatch;
+        });
+      }
     } else if (intent.kind === "list") {
       // Filter by sport if specified
       if (intent.sport) {
