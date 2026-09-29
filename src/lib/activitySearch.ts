@@ -1150,10 +1150,12 @@ export function intentHardKey(c: IntentClassification): string {
  */
 export function applyJevIntent(
   base: IntentClassification,
-  facets: Record<string, number> | undefined,
+  answers: Record<string, number> | undefined,
 ): IntentClassification {
-  if (!facets || Object.keys(facets).length === 0) return base;
+  const facets = answers ?? {};
   const blocked = base.place != null && isBlockedPlaceName(base.place);
+  // A blocked place is cleared in code, so it must not wait on facets a deterministic query no longer asks.
+  if (!blocked && Object.keys(facets).length === 0) return base;
   if (base.isDeterministic && !blocked) return base;
 
   let next = base;
@@ -1243,6 +1245,22 @@ export function applyJevIntent(
   }
 
   return next;
+}
+
+/** applyJevIntent discards every facet for a deterministic parse, so only an open parse asks them. */
+export function needsIntentFacets(c: IntentClassification): boolean {
+  return !c.isDeterministic;
+}
+
+/**
+ * Server cache scope for membership. The criteria depend on the interpreted query,
+ * and activity facts carry days_ago, so neither the raw query nor a stale day may share an entry.
+ */
+export function jevCacheScope(query: string, settled: unknown, now?: Date): { day: string; interpreted: string } {
+  return {
+    day: formatISODate(chicagoClock(now)),
+    interpreted: describeIntent(resolveInterpretation(query, settled, now)),
+  };
 }
 
 export type SettledIntentPayload = {
@@ -2192,8 +2210,17 @@ function companionQuestions(activity: Activity, c: IntentClassification): Record
   return questions;
 }
 
-/** One shared state. Intent facets, membership, and optional companion nouls run in parallel. */
-export function buildJevRequest(query: string, activities: Activity[], now?: Date, settled?: unknown): {
+/**
+ * One shared state. Intent facets, membership, and optional companion nouls run in parallel.
+ * Facets are left out when code already settled the parse or the caller has them cached.
+ */
+export function buildJevRequest(
+  query: string,
+  activities: Activity[],
+  now?: Date,
+  settled?: unknown,
+  options: { includeFacets?: boolean } = {},
+): {
   state: {
     search_query: string;
     vocab: typeof STIMULUS_VOCAB;
@@ -2203,10 +2230,19 @@ export function buildJevRequest(query: string, activities: Activity[], now?: Dat
   };
   questions: Record<string, JevNoul>;
 } {
+  const base = classifyIntent(query, now);
   const interpreted = resolveInterpretation(query, settled, now);
   const criteria = membershipCriteria(query, interpreted);
+  const includeFacets = options.includeFacets ?? needsIntentFacets(base);
+  // Code-parsed stimulus and place are hard filters, so every shortlisted activity already fits them.
+  // Companions only earn their questions for a value Jev filled in.
+  const filled: IntentClassification = {
+    ...interpreted,
+    stimulus: base.stimulus ? null : interpreted.stimulus,
+    place: base.place ? null : interpreted.place,
+  };
   const packed: Record<string, ActivityFacts> = {};
-  const questions: Record<string, JevNoul> = { ...intentFacetQuestions(now) };
+  const questions: Record<string, JevNoul> = includeFacets ? { ...intentFacetQuestions(now) } : {};
   for (const activity of activities) {
     const key = `a${activity.id}`;
     packed[key] = activityFacts(activity, now);
@@ -2215,7 +2251,7 @@ export function buildJevRequest(query: string, activities: Activity[], now?: Dat
       instructions: `Does activities.${key} match interpreted_query? Apply how_to_judge. Ignore every other activity. Ignore the intent facet questions.`,
       criteria,
     };
-    Object.assign(questions, companionQuestions(activity, interpreted));
+    Object.assign(questions, companionQuestions(activity, filled));
   }
   return {
     state: {

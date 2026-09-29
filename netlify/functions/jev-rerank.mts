@@ -6,7 +6,15 @@
 // branches on the client. Locked metric and date order stay in code.
 
 import snapshot from "../../src/activities.json" with { type: "json" };
-import { buildJevRequest, splitJevAnswers, type Activity, type JevCompanions } from "../../src/lib/activitySearch.ts";
+import {
+  buildJevRequest,
+  classifyIntent,
+  jevCacheScope,
+  needsIntentFacets,
+  splitJevAnswers,
+  type Activity,
+  type JevCompanions,
+} from "../../src/lib/activitySearch.ts";
 
 const MAX_CANDIDATES = 25;
 const MAX_QUERY_LENGTH = 120;
@@ -53,8 +61,10 @@ const cache = new Map<string, CachedJudgment>();
 const CACHE_MAX = 5_000;
 const hits = new Map<string, { count: number; start: number }>();
 
-function cacheKey(model: string, query: string, id: number) {
-  return `${model}\u0000${query}\u0000${id}`;
+// Membership criteria follow the interpreted query, and facts carry days_ago.
+// The same raw query under a new interpretation or a new day is a different question.
+function cacheKey(model: string, day: string, interpreted: string, query: string, id: number) {
+  return `${model}\u0000${day}\u0000${interpreted}\u0000${query}\u0000${id}`;
 }
 
 function remember(key: string, value: CachedJudgment) {
@@ -112,13 +122,15 @@ export default async (req: Request, context: { ip?: string }) => {
     return json({ error: "Invalid request" }, 400);
   }
 
+  const { day, interpreted } = jevCacheScope(query, body?.settled);
+  const needFacets = needsIntentFacets(classifyIntent(query));
   const scores: Record<number, number> = {};
   const companions: JevCompanions = {};
   const pending: Activity[] = [];
   for (const id of ids as number[]) {
     const activity = byId.get(id);
     if (!activity) continue;
-    const cached = cache.get(cacheKey(provider.model, query, id));
+    const cached = cache.get(cacheKey(provider.model, day, interpreted, query, id));
     if (cached !== undefined) {
       scores[id] = cached.membership;
       if (cached.stimulus !== undefined || cached.place !== undefined) {
@@ -129,15 +141,17 @@ export default async (req: Request, context: { ip?: string }) => {
     } else pending.push(activity);
   }
 
-  const facetKey = `${provider.model}\u0000${query}\u0000facets`;
+  // Facet questions name calendar years, so the day is part of their key too.
+  const facetKey = `${provider.model}\u0000${day}\u0000${query}\u0000facets`;
   const cachedFacets = facetCache.get(facetKey);
-  if (pending.length === 0 && cachedFacets) return json({ scores, facets: cachedFacets, companions });
+  const askFacets = needFacets && !cachedFacets;
+  if (pending.length === 0 && !askFacets) return json({ scores, facets: cachedFacets ?? {}, companions });
 
   const started = Date.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const packed = buildJevRequest(query, pending, undefined, body?.settled);
+    const packed = buildJevRequest(query, pending, undefined, body?.settled, { includeFacets: askFacets });
     const res = await fetch(provider.url, {
       method: "POST",
       headers: {
@@ -167,13 +181,13 @@ export default async (req: Request, context: { ip?: string }) => {
       const companion = split.companions[numeric];
       scores[numeric] = score;
       if (companion) companions[numeric] = companion;
-      remember(cacheKey(provider.model, query, numeric), {
+      remember(cacheKey(provider.model, day, interpreted, query, numeric), {
         membership: score,
         stimulus: companion?.stimulus,
         place: companion?.place,
       });
     }
-    rememberFacets(facetKey, split.facets);
+    if (askFacets) rememberFacets(facetKey, split.facets);
     console.log(JSON.stringify({
       msg: "jev.decision",
       model: data.model ?? provider.model,
@@ -182,6 +196,8 @@ export default async (req: Request, context: { ip?: string }) => {
       query,
       scores,
       facets: split.facets,
+      facets_asked: askFacets,
+      questions: Object.keys(packed.questions).length,
     }));
   } catch (err) {
     const aborted = controller.signal.aborted;

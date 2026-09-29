@@ -1,7 +1,7 @@
 // Intent, distance-band sort, and describeActivity checks.
 // Run: node --experimental-strip-types test-intent.mjs
 
-import { activityFacts, applyJevIntent, buildIndex, buildJevRequest, classifyIntent, describeActivity, describeIntent, MEMBERSHIP_DEMOTE_BELOW, planShortlist, rerankUnlockedHits, resolveInterpretation, searchActivities, settledIntentPayload, splitJevAnswers } from "./src/lib/activitySearch.ts";
+import { activityFacts, applyJevIntent, buildIndex, buildJevRequest, classifyIntent, describeActivity, describeIntent, jevCacheScope, MEMBERSHIP_DEMOTE_BELOW, needsIntentFacets, planShortlist, rerankUnlockedHits, resolveInterpretation, searchActivities, settledIntentPayload, splitJevAnswers } from "./src/lib/activitySearch.ts";
 import { toActivity } from "./scripts/strava-activity.mjs";
 
 const testClock = new Date("2026-09-29T12:00:00-05:00");
@@ -567,24 +567,76 @@ check(
   JSON.stringify({ interpreted: packed.state.interpreted_query, q: packed.questions.a31 }),
 );
 check(
-  "Jev request asks intent facets in parallel with membership",
-  packed.questions.is_intervals?.type === "noul" &&
-    packed.questions.is_easy?.type === "noul" &&
-    packed.questions.is_fastest?.type === "noul" &&
-    packed.questions.has_place?.type === "noul" &&
-    packed.questions.year_2024?.type === "noul" &&
-    packed.questions.band_10k?.type === "noul" &&
-    packed.state.vocab.primary_stimulus.includes("easy") &&
-    packed.state.vocab.stimulus_cluster.includes("quality_intervals") &&
-    packed.questions.a31?.type === "noul",
+  "a deterministic parse asks no intent facets",
+  !needsIntentFacets(classifyIntent("longest run on a Tuesday", testClock)) &&
+    Object.keys(packed.questions).sort().join(",") === "a30,a31",
   Object.keys(packed.questions).sort().join(","),
+);
+const openPacked = buildJevRequest(
+  "hilly ride",
+  [act({ id: 32, name: "gravel climb", sport_type: "Ride", start_date_local: "2026-09-01T08:00:00", distance_m: 60000, moving_time_s: 9000 })],
+  testClock,
+);
+check(
+  "an open parse asks intent facets in parallel with membership",
+  needsIntentFacets(classifyIntent("hilly ride", testClock)) &&
+    openPacked.questions.is_intervals?.type === "noul" &&
+    openPacked.questions.is_easy?.type === "noul" &&
+    openPacked.questions.is_fastest?.type === "noul" &&
+    openPacked.questions.has_place?.type === "noul" &&
+    openPacked.questions.year_2024?.type === "noul" &&
+    openPacked.questions.band_10k?.type === "noul" &&
+    openPacked.state.vocab.primary_stimulus.includes("easy") &&
+    openPacked.state.vocab.stimulus_cluster.includes("quality_intervals") &&
+    openPacked.questions.a32?.type === "noul",
+  Object.keys(openPacked.questions).sort().join(","),
+);
+const cachedFacetsPacked = buildJevRequest(
+  "hilly ride",
+  [act({ id: 32, name: "gravel climb", sport_type: "Ride", start_date_local: "2026-09-01T08:00:00", distance_m: 60000, moving_time_s: 9000 })],
+  testClock,
+  undefined,
+  { includeFacets: false },
+);
+check(
+  "cached facets are not asked again",
+  Object.keys(cachedFacetsPacked.questions).join(",") === "a32",
+  Object.keys(cachedFacetsPacked.questions).join(","),
 );
 check(
   "interval facet treats fartlek as the existing intervals predicate",
-  packed.questions.is_intervals.instructions.includes("fartlek") &&
-    packed.state.vocab.synonyms.fartlek === "intervals" &&
-    !packed.state.vocab.primary_stimulus.includes("fartlek"),
-  packed.questions.is_intervals.instructions,
+  openPacked.questions.is_intervals.instructions.includes("fartlek") &&
+    openPacked.state.vocab.synonyms.fartlek === "intervals" &&
+    !openPacked.state.vocab.primary_stimulus.includes("fartlek"),
+  openPacked.questions.is_intervals.instructions,
+);
+const blockedBase = { ...classifyIntent("fastest run in Chicago", testClock), place: "intervals" };
+const blockedCleared = applyJevIntent(blockedBase, {});
+check(
+  "a blocked place clears without waiting on facets",
+  blockedBase.isDeterministic && blockedCleared.place == null,
+  String(blockedCleared.place),
+);
+const hillyOpen = classifyIntent("hilly ride", testClock);
+check(
+  "empty or missing facets leave an open parse unchanged",
+  applyJevIntent(hillyOpen, {}) === hillyOpen && applyJevIntent(hillyOpen, undefined) === hillyOpen,
+  "",
+);
+const fartlekOpen = classifyIntent("fartlek", testClock);
+const scopeBefore = jevCacheScope("fartlek", settledIntentPayload(fartlekOpen), testClock);
+const scopeAfter = jevCacheScope(
+  "fartlek",
+  settledIntentPayload(applyJevIntent(fartlekOpen, { is_intervals: 0.91 })),
+  testClock,
+);
+const scopeTomorrow = jevCacheScope("fartlek", settledIntentPayload(fartlekOpen), new Date("2026-09-30T12:00:00-05:00"));
+check(
+  "membership cache scope changes with the interpretation and the day",
+  scopeBefore.interpreted !== scopeAfter.interpreted &&
+    scopeBefore.day === "2026-09-29" &&
+    scopeTomorrow.day === "2026-09-30",
+  JSON.stringify({ scopeBefore, scopeAfter, scopeTomorrow }),
 );
 
 const fartlekSettled = applyJevIntent(classifyIntent("fartlek", testClock), {
@@ -624,9 +676,13 @@ const bestPacked = buildJevRequest(
 check(
   "best in Chicago conditions membership on place and a standout",
   bestPacked.questions.a21.criteria.true.includes("in chicago") &&
-    bestPacked.questions.a21.criteria.true.includes("standout") &&
-    bestPacked.questions.a21p?.type === "noul",
+    bestPacked.questions.a21.criteria.true.includes("standout"),
   bestPacked.questions.a21.criteria.true,
+);
+check(
+  "a code-parsed place needs no place companion",
+  bestPacked.questions.a21p === undefined,
+  Object.keys(bestPacked.questions).filter((key) => key.startsWith("a21")).join(","),
 );
 const racePacked = buildJevRequest(
   "Chicago Marathon",
