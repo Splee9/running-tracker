@@ -1066,6 +1066,50 @@ check("a named race comes first even when Jev guesses race", weakIds("Madison Ma
 const plural = searchActivities(weakIndex, "marathons", 50, testClock);
 check("a plural name match is not fuzzy", plural[0]?.activity.id === 206 && plural[0]?.kind === "keyword", JSON.stringify(plural.slice(0, 2).map((hit) => [hit.activity.id, hit.kind])));
 
+console.log("\npublic-activities-v5 fields:\n");
+
+const enriched = toActivity({
+  id: 130, name: "Morning Run", sport_type: "Run", start_date_local: "2026-03-26T08:00:00Z",
+  place_enriched: { city: "Champagny-en-Vanoise", region: "Auvergne-Rhône-Alpes", country: "France", lat: 45.4 },
+  race: { event_name: "Indy Marathon", distance: "m", official_distance_m: 42195, result_time_s: 9959, is_pr: true },
+  workout_structure: "8×400m",
+  gear: ["Adidas EVO SL Green", ""],
+  with: { athlete_count: 3 },
+});
+check(
+  "toActivity keeps place names, race, laps, gear, and group size, and nothing else",
+  JSON.stringify(enriched.place_enriched) === '{"city":"Champagny-en-Vanoise","region":"Auvergne-Rhône-Alpes","country":"France"}' &&
+    enriched.race?.distance === "marathon" && enriched.race?.is_pr === true &&
+    enriched.workout_structure === "8×400m" &&
+    JSON.stringify(enriched.gear) === '["Adidas EVO SL Green"]' &&
+    enriched.athlete_count === 3,
+  JSON.stringify(enriched),
+);
+const virtualEnriched = toActivity({ id: 131, name: "Zwift", sport_type: "VirtualRide", start_date_local: "2026-01-01T08:00:00Z", place_enriched: { city: "New York" } });
+check("toActivity drops enriched places from virtual sessions", !("place_enriched" in virtualEnriched), JSON.stringify(virtualEnriched));
+
+const v5Index = buildIndex([
+  act({ id: 140, name: "Morning Run", start_date_local: "2026-03-26T08:00:00", distance_m: 11000, moving_time_s: 3400, primary_stimulus: "quality", place_enriched: { city: "Champagny-en-Vanoise", region: "Auvergne-Rhône-Alpes", country: "France" } }),
+  act({ id: 141, name: "Afternoon Ski", sport_type: "AlpineSki", start_date_local: "2024-01-18T08:00:00", distance_m: 28000, moving_time_s: 3900, primary_stimulus: "other", place_enriched: { city: "Keystone", region: "Colorado", country: "United States" } }),
+  act({ id: 142, name: "Morning Run", start_date_local: "2025-06-01T08:00:00", distance_m: 9000, moving_time_s: 2900, primary_stimulus: "easy", place_enriched: { city: "Barcelona", region: "Catalunya", country: "España" } }),
+  act({ id: 143, name: "Quality Session", start_date_local: "2026-08-24T08:00:00", distance_m: 16000, moving_time_s: 4000, primary_stimulus: "quality", modifiers: ["intervals"], workout_structure: "8×400m" }),
+  act({ id: 144, name: "Easy Run", start_date_local: "2026-08-25T08:00:00", distance_m: 12000, moving_time_s: 3900, primary_stimulus: "easy", gear: ["Adidas EVO SL Green"] }),
+  act({ id: 145, name: "Morning Run", start_date_local: "2026-08-26T08:00:00", distance_m: 12000, moving_time_s: 3900, primary_stimulus: "easy" }),
+]);
+const v5Ids = (query) => searchActivities(v5Index, query, 50, testClock).map((hit) => hit.activity.id);
+check("a region finds a run named Morning Run", JSON.stringify(v5Ids("runs in France")) === "[140]", JSON.stringify(v5Ids("runs in France")));
+check("a US state finds a ski day", JSON.stringify(v5Ids("skiing in Colorado")) === "[141]", JSON.stringify(v5Ids("skiing in Colorado")));
+check("Spain finds España", JSON.stringify(v5Ids("runs in Spain")) === "[142]", JSON.stringify(v5Ids("runs in Spain")));
+check("400m repeats finds an 8×400m session", v5Ids("400m repeats")[0] === 143, JSON.stringify(v5Ids("400m repeats")));
+check("8x400 finds an 8×400m session", v5Ids("8x400m")[0] === 143, JSON.stringify(v5Ids("8x400m")));
+check("a shoe name finds the runs in it", JSON.stringify(v5Ids("EVO SL green")) === "[144]", JSON.stringify(v5Ids("EVO SL green")));
+const v5Facts = activityFacts(act({ id: 146, name: "Indy Marathon", start_date_local: "2025-11-08T08:00:00", distance_m: 42500, moving_time_s: 9959, place: "Indianapolis", place_enriched: { city: "Indianapolis", region: "Indiana", country: "United States" }, race: { distance: "marathon", result_time_s: 9959, is_pr: true }, workout_structure: "4×1mi", gear: ["Saucony Endorphin Pro 4"], athlete_count: 2 }), testClock);
+check(
+  "Jev sees the place, race result, laps, gear, and group size",
+  v5Facts.place === "Indianapolis, Indiana, United States" && v5Facts.race === "marathon race, 2:45:59, current PR" && v5Facts.laps === "4×1mi" && v5Facts.gear === "Saucony Endorphin Pro 4" && v5Facts.group_size === 2,
+  JSON.stringify(v5Facts),
+);
+
 const shamrock = toActivity({ id: 120, name: "Shamrock Shuffle 8km", sport_type: "Run", start_date_local: "2025-03-23T08:00:00Z", place: "Washington DC", place_source: "name" });
 check("toActivity corrects the Shamrock Shuffle to Chicago", shamrock.place === "Chicago", JSON.stringify(shamrock));
 const zwift = toActivity({ id: 121, name: "Zwift - Easy Ride in New York", sport_type: "VirtualRide", start_date_local: "2025-01-01T08:00:00Z", place: "New York", place_source: "name" });

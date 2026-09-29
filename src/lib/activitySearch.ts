@@ -37,6 +37,16 @@ export type Activity = {
   best_watts_60m?: number;
   // Public Strava description. Used only when ranking (Jev); never shown on cards.
   description?: string;
+  // public-activities-v5 enrichment (optional). Names only, never coordinates.
+  /** Reverse-geocoded from the outdoor GPS start. */
+  place_enriched?: { city?: string; region?: string; country?: string };
+  /** Official-distance races only. result_time_s is moving time; is_pr is the current best at that distance. */
+  race?: { event_name?: string; distance?: string; official_distance_m?: number; result_time_s?: number; is_pr?: boolean };
+  /** Lap summary such as "8×400m". */
+  workout_structure?: string;
+  gear?: string[];
+  /** Strava athlete count, when more than one person was on the activity. */
+  athlete_count?: number;
   /** Offline Jev Score, 0 (routine) to 3 (standout). From src/activity-grades.json; see scripts/grade-activities.mjs. */
   standout?: number;
 };
@@ -257,7 +267,19 @@ function derivedTags(a: Activity): string[] {
   if (a.primary_stimulus) tags.push(a.primary_stimulus);
   if (a.modifiers) tags.push(...a.modifiers);
   if (a.stimulus_cluster) tags.push(...tokenize(a.stimulus_cluster));
-  if (a.place) tags.push(...tokenize(a.place));
+  tags.push(...tokenize(placeText(a)));
+  if (a.race) {
+    tags.push("race");
+    if (a.race.distance) tags.push(a.race.distance);
+    if (a.race.is_pr) tags.push("pr", "pb");
+  }
+  if (a.workout_structure) {
+    // "8×400m" is also typed "8x400m", "8 x 400m", or just "400m repeats".
+    const structure = a.workout_structure.replace(/×/g, "x");
+    tags.push(structure, ...tokenize(structure.replace(/x/g, " ")));
+  }
+  if (a.gear) tags.push(...a.gear.flatMap((name) => tokenize(name)));
+  if (a.athlete_count && a.athlete_count > 1) tags.push("group");
   if (a.has_intervals) tags.push("intervals", "reps", "repeats");
   // v3 enrichment tags: HR zones, power zones
   if (a.average_heartrate) {
@@ -799,8 +821,26 @@ function parseWeekday(
   return { weekday: weekdayIndex.get(tokens[idx]) ?? null, consumedIndices };
 }
 
+// English names for the export's local-language places, so "in Spain" finds España.
+const PLACE_NAME_ALIASES: Record<string, string> = {
+  "espana": "spain",
+  "catalunya": "catalonia",
+  "united states": "usa united states america",
+};
+
+function placeText(activity: Activity): string {
+  const enriched = activity.place_enriched;
+  const parts = [activity.place, enriched?.city, enriched?.region, enriched?.country].filter(Boolean) as string[];
+  const text = parts.join(" ");
+  const folded = tokenize(text).join(" ");
+  const aliases = Object.entries(PLACE_NAME_ALIASES)
+    .filter(([name]) => ` ${folded} `.includes(` ${name} `))
+    .map(([, alias]) => alias);
+  return [text, ...aliases].join(" ");
+}
+
 function activityMatchesPlace(activity: Activity, place: string): boolean {
-  return textHasPlace(`${activity.place ?? ""} ${activity.name}`, place);
+  return textHasPlace(`${placeText(activity)} ${activity.name}`, place);
 }
 
 function sportOfToken(token: string): Sport | undefined {
@@ -2178,6 +2218,10 @@ export type ActivityFacts = {
   low_confidence?: true;
   modifiers?: string[];
   place?: string;
+  race?: string;
+  laps?: string;
+  gear?: string;
+  group_size?: number;
   intervals?: string;
   heart_rate?: string;
   power?: string;
@@ -2219,7 +2263,17 @@ export function activityFacts(a: Activity, now?: Date): ActivityFacts {
   if (a.modality) facts.modality = a.modality;
   if (a.low_confidence || a.primary_stimulus === "low_confidence") facts.low_confidence = true;
   if (a.modifiers && a.modifiers.length > 0) facts.modifiers = a.modifiers.slice(0, 3);
-  if (a.place) facts.place = a.place;
+  const places = [a.place, a.place_enriched?.city, a.place_enriched?.region, a.place_enriched?.country].filter(Boolean);
+  if (places.length > 0) facts.place = [...new Set(places)].join(", ");
+  if (a.race) {
+    const bits = [a.race.distance ? `${a.race.distance} race` : "race"];
+    if (a.race.result_time_s) bits.push(formatDuration(Math.round(a.race.result_time_s)));
+    if (a.race.is_pr) bits.push("current PR");
+    facts.race = bits.join(", ");
+  }
+  if (a.workout_structure) facts.laps = a.workout_structure;
+  if (a.gear && a.gear.length > 0) facts.gear = a.gear.join(", ");
+  if (a.athlete_count && a.athlete_count > 1) facts.group_size = a.athlete_count;
   if (a.has_intervals) facts.intervals = a.hard_lap_count ? `${a.hard_lap_count} hard laps` : "intervals";
   if (a.average_heartrate) {
     facts.heart_rate = a.max_heartrate

@@ -35,6 +35,7 @@ export function toActivity(a) {
   // v2 enrichment (omit undefined fields to keep backward compatibility)
   if (a.primary_stimulus !== undefined) base.primary_stimulus = a.primary_stimulus;
   if (Array.isArray(a.modifiers) && a.modifiers.length > 0) base.modifiers = a.modifiers;
+  const virtual = Boolean(a.trainer) || (base.sport_type ?? "").startsWith("Virtual");
   const place = placeFor(a, base.sport_type ?? "");
   if (place != null) {
     base.place = place;
@@ -65,5 +66,46 @@ export function toActivity(a) {
   if (typeof a.description === "string" && a.description.trim()) {
     base.description = a.description.trim();
   }
+  // public-activities-v5 enrichment. Only names and numbers: the export already drops
+  // coordinates and gear ids, and these copies keep it that way.
+  const placeEnriched = virtual ? null : placeNames(a.place_enriched);
+  if (placeEnriched) base.place_enriched = placeEnriched;
+  const race = raceResult(a.race);
+  if (race) base.race = race;
+  if (typeof a.workout_structure === "string" && a.workout_structure.trim()) {
+    base.workout_structure = a.workout_structure.trim();
+  }
+  if (Array.isArray(a.gear)) {
+    const gear = a.gear.filter((g) => typeof g === "string" && g.trim()).map((g) => g.trim());
+    if (gear.length > 0) base.gear = gear;
+  }
+  const count = a.with?.athlete_count;
+  if (Number.isInteger(count) && count > 1) base.athlete_count = count;
   return base;
+}
+
+function placeNames(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const out = {};
+  for (const key of ["city", "region", "country"]) {
+    if (typeof raw[key] === "string" && raw[key].trim()) out[key] = raw[key].trim();
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+// The export writes short codes for some official distances.
+const RACE_DISTANCE_CODES = { m: "marathon", hm: "half" };
+
+function raceResult(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const out = {};
+  if (typeof raw.event_name === "string" && raw.event_name.trim()) out.event_name = raw.event_name.trim();
+  if (typeof raw.distance === "string" && raw.distance.trim()) {
+    const code = raw.distance.trim().toLowerCase();
+    out.distance = RACE_DISTANCE_CODES[code] ?? code;
+  }
+  if (Number.isFinite(raw.official_distance_m)) out.official_distance_m = raw.official_distance_m;
+  if (Number.isFinite(raw.result_time_s)) out.result_time_s = raw.result_time_s;
+  if (typeof raw.is_pr === "boolean") out.is_pr = raw.is_pr;
+  return Object.keys(out).length > 0 ? out : null;
 }
