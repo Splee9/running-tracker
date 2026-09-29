@@ -35,7 +35,8 @@ src/
   App.tsx                 routes (/ and /training) + home section composition
   data.json               aggregate stats (generated; do not hand-edit)
   training-variability.json  weekly training-variability series (generated)
-  activities.json         public activity list for /activity-lookup (generated)
+  activities.json         public activity list for /activity-lookup (built from
+                          spencer-brain at deploy time; gitignored)
   components/             Hero, YearChart, CumulativeJourney, Comparisons, Footer,
                           Training + TvChart (the /training page)
   hooks/usePointer.ts     spring-smoothed cursor tracking
@@ -75,8 +76,18 @@ python3 scripts/derive_weekly_hours.py
      it. Without a key the function returns 503 and the page quietly stays on
      keyword + fuzzy.
 
-Regenerate `src/activities.json` (incremental by default — usually one Strava
-request; `--full` re-downloads everything and waits out 429s):
+`src/activities.json` is gitignored and built before every deploy from the
+Strava activities file grokbot keeps in the private `Splee9/spencer-brain` repo.
+The fetch keeps public activities only and maps them with the same rules as the
+direct Strava export (`scripts/strava-activity.mjs`):
+
+```bash
+BRAIN_GITHUB_TOKEN=... BRAIN_ACTIVITIES_PATH=... node scripts/fetch-activities.mjs
+```
+
+Without `BRAIN_GITHUB_TOKEN` it keeps an existing local file. To build that file
+straight from Strava instead (incremental by default; `--full` re-downloads
+everything and waits out 429s):
 
 ```bash
 STRAVA_ACCESS_TOKEN=... node scripts/export-activities.mjs [--full]
@@ -87,13 +98,16 @@ library. `netlify.toml` rewrites every path to `index.html` so deep links load.
 
 ## Deploy
 
-Netlify builds from source on every push (see `netlify.toml`): `npm run build`,
-publishing `dist/`. No manual upload step.
+Netlify builds from source on every push (see `netlify.toml`):
+`node scripts/fetch-activities.mjs && npm run build`, publishing `dist/`. No
+manual upload step. A daily build hook picks up grokbot's activity updates.
 
 Environment variables (Netlify → Site configuration → Environment variables):
 
 | Variable             | Purpose                                                              |
 | -------------------- | -------------------------------------------------------------------- |
+| `BRAIN_GITHUB_TOKEN` | Fine-grained GitHub token, Contents: read on `Splee9/spencer-brain`. |
+| `BRAIN_ACTIVITIES_PATH` | Path of the Strava activities file inside spencer-brain.         |
 | `OPENROUTER_API_KEY` | Jev via OpenRouter's Decisions API (`typesafe/jev-1.13`).            |
 | `TYPESAFE_API_KEY`   | Alternative: Jev direct from TypeSafe. Used only if no OpenRouter key. |
 | `JEV_MODEL`          | Optional model override.                                             |
