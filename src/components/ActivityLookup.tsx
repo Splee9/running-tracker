@@ -9,6 +9,7 @@ import {
   isRide,
   isRun,
   searchActivities,
+  selectJevCandidates,
   sportLabel,
   type Activity,
   type SearchHit,
@@ -91,13 +92,13 @@ export function ActivityLookup() {
   }, [trimmed, sport]);
 
   const candidateIds = useMemo(
-    () => localHits.slice(0, JEV_CANDIDATES).map((h) => h.activity.id),
-    [localHits],
+    () => selectJevCandidates(localHits, intentClassification, JEV_CANDIDATES),
+    [localHits, intentClassification],
   );
   const candidateKey = candidateIds.join(",");
 
-  // Score every shortlist, including deterministic metric and place queries.
-  // Those keep localHits order; only semantic queries may reorder.
+  // Score every shortlist. Metric and date lists keep their order.
+  // Place-scoped fastest/longest may be reordered when Jev is confident.
   const shouldScoreWithJev = jevAvailable;
 
   useEffect(() => {
@@ -150,8 +151,10 @@ export function ActivityLookup() {
         .filter((a) => matchesSport(a, sport))
         .map((activity): SearchHit => ({ activity, score: 0, kind: "keyword", matched: [] }));
     }
-    // Deterministic metric and place order stays put even when Jev scores are in.
-    if (intentClassification?.isDeterministic || !jevScores) return localHits;
+    // Metric and date order stays put. Place-scoped fastest/longest lets Jev
+    // reorder once a score clears the floor, because city text is often missing.
+    const jevCanReorder = Boolean(intentClassification?.jevRanks);
+    if ((intentClassification?.isDeterministic && !jevCanReorder) || !jevScores) return localHits;
     
     // Check if any Jev score meets the confidence floor
     const maxScore = Math.max(...Object.values(jevScores));
@@ -160,6 +163,18 @@ export function ActivityLookup() {
     if (!shouldReorder) {
       // Below confidence floor: keep keyword/fuzzy order, Jev badges shown but muted
       return localHits;
+    }
+
+    // Place queries: only lift hits Jev is sure about. Everything else keeps
+    // place-then-distance order, so a low score cannot bury a Chicago run
+    // that did not fit in the scoring window.
+    if (jevCanReorder) {
+      const strong = localHits
+        .filter((h) => jevScores[h.activity.id] >= JEV_CONFIDENCE_FLOOR)
+        .sort((a, b) => jevScores[b.activity.id] - jevScores[a.activity.id]);
+      const strongIds = new Set(strong.map((h) => h.activity.id));
+      const rest = localHits.filter((h) => !strongIds.has(h.activity.id));
+      return [...strong, ...rest];
     }
     
     // Above confidence floor: apply Jev reranking
@@ -219,7 +234,16 @@ export function ActivityLookup() {
       status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}`;
     }
     if (jevAvailable) {
-      if (jevScores) status += " · Jev scored";
+      if (intentClassification.jevRanks) {
+        if (jevScores) {
+          const maxScore = Math.max(...Object.values(jevScores));
+          status +=
+            maxScore >= JEV_CONFIDENCE_FLOOR
+              ? ` · top ${Math.min(results.length, JEV_CANDIDATES)} reranked by Jev`
+              : " · Jev confidence low, not reordering";
+        } else if (jev.status === "error" && jev.query === trimmed) status += " · Jev unavailable";
+        else if (candidateIds.length > 0) status += " · Jev reranking…";
+      } else if (jevScores) status += " · Jev scored";
       else if (jev.status === "error" && jev.query === trimmed) status += " · Jev unavailable";
       else if (candidateIds.length > 0) status += " · scoring with Jev";
     }

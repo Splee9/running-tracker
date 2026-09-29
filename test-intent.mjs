@@ -1,7 +1,7 @@
 // Intent, distance-band sort, and describeActivity checks.
 // Run: node --experimental-strip-types test-intent.mjs
 
-import { buildIndex, classifyIntent, describeActivity, describeIntent, searchActivities } from "./src/lib/activitySearch.ts";
+import { buildIndex, classifyIntent, describeActivity, describeIntent, searchActivities, selectJevCandidates } from "./src/lib/activitySearch.ts";
 import { toActivity } from "./scripts/strava-activity.mjs";
 
 const testClock = new Date("2026-09-29T12:00:00-05:00");
@@ -93,12 +93,13 @@ const classTests = [
   ["fastest 50k", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: "numeric", label: "50 km" }],
   ["longest run last year", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: { start: "2025-01-01", end: "2025-12-31" }, band: null }],
   ["10k this year", { isDeterministic: false, kind: null, dateWindow: { start: "2026-01-01", end: "2026-09-29" }, band: null }],
-  ["Fastest run in Chicago", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, place: "chicago" }],
-  ["Longest run in Chicago", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: null, band: null, place: "chicago" }],
-  ["Speedy runs last month", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: { start: "2026-08-01", end: "2026-08-31" }, band: null, place: null }],
-  ["Runs last week", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-09-21", end: "2026-09-27" }, band: null, place: null }],
-  ["fast runs near Chicago", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, place: "chicago" }],
-  ["quickest run in Chicago last month", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: { start: "2026-08-01", end: "2026-08-31" }, band: null, place: "chicago" }],
+  ["Fastest run in Chicago", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, place: "chicago", jevRanks: true }],
+  ["Longest run in Chicago", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: null, band: null, place: "chicago", jevRanks: true }],
+  ["Speedy runs last month", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: { start: "2026-08-29", end: "2026-09-29" }, band: null, place: null, jevRanks: false }],
+  ["Runs last month", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-08-29", end: "2026-09-29" }, band: null, place: null, jevRanks: false }],
+  ["Runs last week", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-09-21", end: "2026-09-27" }, band: null, place: null, jevRanks: false }],
+  ["fast runs near Chicago", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, place: "chicago", jevRanks: true }],
+  ["quickest run in Chicago last month", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: { start: "2026-08-29", end: "2026-09-29" }, band: null, place: "chicago", jevRanks: true }],
   ["runs in Chicago last week", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-09-21", end: "2026-09-27" }, band: null, place: "chicago" }],
 ];
 
@@ -113,6 +114,7 @@ for (const [query, expected] of classTests) {
   if (expected.band !== undefined && (result.distanceBand?.kind ?? null) !== expected.band) pass = false;
   if (expected.label !== undefined && result.distanceBand?.label !== expected.label) pass = false;
   if (expected.place !== undefined && result.place !== expected.place) pass = false;
+  if (expected.jevRanks !== undefined && result.jevRanks !== expected.jevRanks) pass = false;
   const detail = pass
     ? ""
     : `got deterministic=${result.isDeterministic} kind=${result.intent?.kind ?? "null"} sport=${result.intent?.sport ?? "-"} band=${result.distanceBand?.kind ?? "null"} label=${result.distanceBand?.label ?? "-"} place=${result.place ?? "null"} window=${result.dateWindow ? `${result.dateWindow.start}..${result.dateWindow.end}` : "null"} remaining=${result.remainingTokens.join(",")}`;
@@ -122,7 +124,7 @@ for (const [query, expected] of classTests) {
 const speedyGloss = describeIntent(classifyIntent("Speedy runs last month", testClock));
 check(
   "Jev gloss for speedy runs last month",
-  speedyGloss.includes("fastest pace") && speedyGloss.includes("runs only") && speedyGloss.includes("2026-08-01") && speedyGloss.includes("2026-08-31"),
+  speedyGloss.includes("fastest pace") && speedyGloss.includes("runs only") && speedyGloss.includes("2026-08-29") && speedyGloss.includes("2026-09-29"),
   speedyGloss,
 );
 const chicagoGloss = describeIntent(classifyIntent("Fastest run in Chicago", testClock));
@@ -173,10 +175,49 @@ check(
 
 order("fastest 10k chicago keeps time order inside the keyword set", "fastest 10k chicago", [19, 15, 16], [2, 6, 22]);
 order("fastest 50k stays on runs and sorts by time", "fastest 50k", [17, 8], [18]);
-order("fastest run in Chicago ignores other cities and strides", "fastest run in Chicago", [19], [22, 25, 7]);
-order("longest run in Chicago sorts by distance", "longest run in Chicago", [26], [7, 17, 22]);
-order("speedy runs last month is pace within August", "speedy runs last month", [22, 19], [21, 25, 6]);
+order("fastest run in Chicago leads with the quickest Chicago run", "fastest run in Chicago", [19], [25]);
+const chicagoFast = ids("fastest run in Chicago");
+check(
+  "fastest run in Chicago keeps other cities behind place matches",
+  chicagoFast.indexOf(19) < chicagoFast.indexOf(22),
+  `got [${chicagoFast.join(", ")}]`,
+);
+const chicagoLong = ids("longest run in Chicago");
+check(
+  "longest run in Chicago leads with the longest Chicago run and still lists longer runs elsewhere",
+  chicagoLong[0] === 26 && chicagoLong.indexOf(7) > 0 && chicagoLong.indexOf(17) > chicagoLong.indexOf(26),
+  `got [${chicagoLong.join(", ")}]`,
+);
+order("speedy runs last month is pace within the trailing month", "speedy runs last month", [21, 24], [22, 19, 25]);
+order("runs last month is the trailing month, newest first", "runs last month", [27, 23, 24, 21], [17, 19, 22]);
 order("runs last week is the previous week, newest first", "runs last week", [27, 23], [24, 21]);
+
+const chicagoHeavy = [];
+for (let i = 0; i < 30; i++) {
+  chicagoHeavy.push(act({
+    id: 1000 + i,
+    name: "Chicago easy",
+    start_date_local: "2026-06-01T08:00:00",
+    distance_m: 8000 + i * 100,
+    moving_time_s: 3000,
+    place: "Chicago",
+  }));
+}
+chicagoHeavy.push(act({
+  id: 2000,
+  name: "Morning Run",
+  start_date_local: "2026-06-02T08:00:00",
+  distance_m: 40000,
+  moving_time_s: 14000,
+  place: "Lincoln Park",
+}));
+const heavyHits = searchActivities(buildIndex(chicagoHeavy), "longest run in Chicago", 500, testClock);
+const jevIds = selectJevCandidates(heavyHits, classifyIntent("longest run in Chicago", testClock), 25);
+check(
+  "Jev still sees a long run whose place is only a neighborhood",
+  heavyHits[0]?.activity.place === "Chicago" && jevIds.includes(2000) && jevIds.some((id) => id >= 1000 && id < 1030),
+  `head=${heavyHits[0]?.activity.id} jev=[${jevIds.join(", ")}]`,
+);
 
 console.log("\ndescribeActivity:\n");
 

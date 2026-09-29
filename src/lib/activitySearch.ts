@@ -419,16 +419,17 @@ function parseDateWindow(tokens: string[], now?: Date): { window: DateWindow | n
     };
   }
   
-  // "last month" / "past month" = the previous calendar month, not a rolling 30 days.
+  // "last month" matches "last 1 month": the trailing month through today,
+  // not the previous calendar month (which hid every run since the 1st).
   const monthLead = ["last", "previous", "past"];
   const monthLeadIdx = tokens.findIndex((t, i) => monthLead.includes(t) && tokens[i + 1] === "month");
   if (monthLeadIdx >= 0) {
     consumedIndices.add(monthLeadIdx);
     consumedIndices.add(monthLeadIdx + 1);
-    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const end = new Date(today.getFullYear(), today.getMonth(), 0);
+    const start = new Date(today);
+    start.setMonth(start.getMonth() - 1);
     return {
-      window: { start: formatDate(start), end: formatDate(end) },
+      window: { start: formatDate(start), end: formatDate(today) },
       consumedIndices,
     };
   }
@@ -531,6 +532,12 @@ export type IntentClassification = {
   place: string | null;
   remainingTokens: string[];
   isDeterministic: boolean;
+  /**
+   * Place-scoped fastest/longest queries. Metric order is the fallback;
+   * Jev may reorder the shortlist because place text is often a neighborhood
+   * or missing from the name.
+   */
+  jevRanks: boolean;
 };
 
 const SPEED_WORDS = ["fastest", "quickest", "speedy", "fast", "quick", "swift", "rapid"];
@@ -564,6 +571,46 @@ function activityMatchesPlace(activity: Activity, place: string): boolean {
   if (words.length === 0) return false;
   const hay = `${activity.place ?? ""} ${activity.name}`.toLowerCase();
   return words.every((word) => hay.includes(word));
+}
+
+/** Metric order within each group, place hits before the rest. */
+function placeMatchesFirst(hits: SearchHit[], place: string): SearchHit[] {
+  const matched: SearchHit[] = [];
+  const rest: SearchHit[] = [];
+  for (const hit of hits) {
+    (activityMatchesPlace(hit.activity, place) ? matched : rest).push(hit);
+  }
+  return [...matched, ...rest];
+}
+
+/**
+ * Ids sent to Jev. Place-scoped fastest/longest reserve half the window for
+ * place hits and half for the metric leaders, so a long run tagged only as a
+ * neighborhood still gets scored.
+ */
+export function selectJevCandidates(
+  hits: SearchHit[],
+  classification: IntentClassification | null,
+  limit = 25,
+): number[] {
+  const place = classification?.place;
+  if (!classification?.jevRanks || !place || hits.length <= limit) {
+    return hits.slice(0, limit).map((hit) => hit.activity.id);
+  }
+  const matched = hits.filter((hit) => activityMatchesPlace(hit.activity, place));
+  const unmatched = hits.filter((hit) => !activityMatchesPlace(hit.activity, place));
+  const ids: number[] = [];
+  const seen = new Set<number>();
+  const push = (hit: SearchHit) => {
+    if (seen.has(hit.activity.id) || ids.length >= limit) return;
+    seen.add(hit.activity.id);
+    ids.push(hit.activity.id);
+  };
+  const placeSlots = Math.min(matched.length, Math.floor(limit / 2));
+  for (let i = 0; i < placeSlots; i++) push(matched[i]);
+  for (const hit of unmatched) push(hit);
+  for (const hit of matched) push(hit);
+  return ids;
 }
 
 function detectSuperlativeIntent(query: string, now?: Date): IntentClassification {
@@ -855,7 +902,11 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   const remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
   // Deterministic if we have an intent and no remaining semantic tokens
   const isDeterministic = intent !== null && remainingTokens.length === 0;
-  return { intent, dateWindow, distanceBand, place, remainingTokens, isDeterministic };
+  const jevRanks =
+    isDeterministic &&
+    place !== null &&
+    (intent?.kind === "longest" || intent?.kind === "fastest");
+  return { intent, dateWindow, distanceBand, place, remainingTokens, isDeterministic, jevRanks };
 }
 
 export function classifyIntent(query: string, now?: Date): IntentClassification {
@@ -946,7 +997,7 @@ export function searchActivities(
   limit = 200,
   now?: Date,
 ): SearchHit[] {
-  const { intent, dateWindow, remainingTokens, isDeterministic, distanceBand, place } = detectSuperlativeIntent(query, now);
+  const { intent, dateWindow, remainingTokens, isDeterministic, distanceBand, place, jevRanks } = detectSuperlativeIntent(query, now);
   const tokens = Array.from(new Set(remainingTokens.length > 0 ? remainingTokens : tokenize(query)));
 
   let candidates: IndexedActivity[] = index;
@@ -1007,7 +1058,10 @@ export function searchActivities(
     }
   }
 
-  if (place) {
+  // Place-scoped fastest/longest keeps non-matches so Jev can recover a long
+  // Chicago run whose place field is a neighborhood or blank. Other place
+  // queries still require a place or name hit.
+  if (place && !jevRanks) {
     candidates = candidates.filter(({ activity }) => activityMatchesPlace(activity, place));
   }
 
@@ -1033,7 +1087,9 @@ export function searchActivities(
       kind: "keyword",
       matched: [],
     }));
-    return applySuperlativeSorting(hits, intent, limit, distanceBand);
+    const sorted = applySuperlativeSorting(hits, intent, limit, distanceBand);
+    if (jevRanks && place) return placeMatchesFirst(sorted, place);
+    return sorted;
   }
 
   // Regular keyword/fuzzy search with optional superlative sorting
