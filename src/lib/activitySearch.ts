@@ -1296,25 +1296,149 @@ function daysAgoLabel(activityDate: string, now?: Date): string {
   return `${diff} days ago`;
 }
 
-function runPacePerMile(a: Activity): string {
-  if (!isRun(a) || a.distance_m <= 0 || a.moving_time_s <= 0) return "";
+function weekdayName(a: Activity): string {
+  const name = WEEKDAYS[localStart(a).getDay()];
+  if (!name) return "";
+  return name.replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function runPaceParts(a: Activity): { text: string; pace: string; label: string } | null {
+  if (!isRun(a) || a.distance_m <= 0 || a.moving_time_s <= 0) return null;
   const speedMps = a.average_speed && a.average_speed > 0
     ? a.average_speed
     : a.distance_m / a.moving_time_s;
-  if (!Number.isFinite(speedMps) || speedMps <= 0) return "";
+  if (!Number.isFinite(speedMps) || speedMps <= 0) return null;
   const secondsPerMile = Math.round(1609.344 / speedMps);
-  const quality = secondsPerMile <= 7 * 60 + 30 ? "fast pace" : secondsPerMile <= 9 * 60 ? "moderate pace" : "easy pace";
-  return `${formatDuration(secondsPerMile)} /mi, ${quality}`;
+  const label = secondsPerMile <= 7 * 60 + 30 ? "fast pace" : secondsPerMile <= 9 * 60 ? "moderate pace" : "easy pace";
+  const pace = `${formatDuration(secondsPerMile)} /mi`;
+  return { text: `${pace}, ${label}`, pace, label };
 }
 
-function rankingDescription(description: string | undefined): string {
+function clippedDescription(description: string | undefined): string {
   if (!description) return "";
   const clean = description.replace(/\s+/g, " ").trim();
   if (!clean) return "";
-  const clipped = clean.length > MAX_RANKING_DESCRIPTION
+  return clean.length > MAX_RANKING_DESCRIPTION
     ? `${clean.slice(0, MAX_RANKING_DESCRIPTION - 3)}...`
     : clean;
-  return `description: ${clipped}`;
+}
+
+function rankingDescription(description: string | undefined): string {
+  const clipped = clippedDescription(description);
+  return clipped ? `description: ${clipped}` : "";
+}
+
+export type ActivityFacts = {
+  name: string;
+  sport: string;
+  date: string;
+  weekday?: string;
+  year?: string;
+  days_ago?: string;
+  distance_km?: number;
+  moving_time?: string;
+  pace?: string;
+  pace_label?: string;
+  climbing_m?: number;
+  workout?: string;
+  indoor?: true;
+  stimulus?: string;
+  modifiers?: string[];
+  place?: string;
+  intervals?: string;
+  heart_rate?: string;
+  power?: string;
+  best_20min_watts?: number;
+  description?: string;
+};
+
+/** Structured activity fields for one packed Jev call. Empty fields are omitted. */
+export function activityFacts(a: Activity, now?: Date): ActivityFacts {
+  const date = a.start_date_local.slice(0, 10);
+  const year = date.slice(0, 4);
+  const km = a.distance_m / 1000;
+  const pace = runPaceParts(a);
+  const weekday = weekdayName(a);
+  const daysAgo = daysAgoLabel(date, now);
+  const notes = clippedDescription(a.description);
+  const facts: ActivityFacts = {
+    name: a.name,
+    sport: sportLabel(a.sport_type),
+    date,
+  };
+  if (weekday) facts.weekday = weekday;
+  if (/^\d{4}$/.test(year)) facts.year = year;
+  if (daysAgo) facts.days_ago = daysAgo;
+  if (km > 0) facts.distance_km = Math.round(km * 10) / 10;
+  if (a.moving_time_s > 0) facts.moving_time = formatDuration(a.moving_time_s);
+  if (pace) {
+    facts.pace = pace.pace;
+    facts.pace_label = pace.label;
+  }
+  if (a.elevation_gain_m > 0) facts.climbing_m = a.elevation_gain_m;
+  const workout = WORKOUT_TAGS[a.workout_type ?? -1]?.[0];
+  if (workout) facts.workout = workout;
+  if (a.trainer) facts.indoor = true;
+  if (a.primary_stimulus) facts.stimulus = a.primary_stimulus;
+  if (a.modifiers && a.modifiers.length > 0) facts.modifiers = a.modifiers.slice(0, 3);
+  if (a.place) facts.place = a.place;
+  if (a.has_intervals) facts.intervals = a.hard_lap_count ? `${a.hard_lap_count} hard laps` : "intervals";
+  if (a.average_heartrate) {
+    facts.heart_rate = a.max_heartrate
+      ? `${Math.round(a.average_heartrate)} bpm avg (max ${Math.round(a.max_heartrate)})`
+      : `${Math.round(a.average_heartrate)} bpm avg`;
+  }
+  if (a.average_watts || a.weighted_average_watts) {
+    const watts = Math.round(a.weighted_average_watts ?? a.average_watts ?? 0);
+    facts.power = a.weighted_average_watts ? `${watts}W weighted avg` : `${watts}W avg`;
+  }
+  if (a.best_watts_20m) facts.best_20min_watts = Math.round(a.best_watts_20m);
+  if (notes) facts.description = notes;
+  return facts;
+}
+
+const HOW_TO_JUDGE =
+  "Sport, place, weekday, and dates must fit the interpreted query. The dates in interpreted_query are the window; do not substitute a different month. Last week is the previous Monday–Sunday. Last month is the trailing month through today. Speedy, fast, and quick mean a fast pace: trust a fast pace label, or a run around 7:30/mi or quicker. An easy pace is not speedy. Fastest matches a genuinely quick effort. Longest matches a long effort, well over 20 km for a run. A city counts from place, name, or description, including when place is only a neighborhood. A list or date-window query matches every activity of the right sport inside that window. A race is marked race, not merely mentioned.";
+
+export type JevNoul = {
+  type: "noul";
+  instructions: string;
+  criteria: { true: string; false: string };
+};
+
+/** One shared state and one noul per activity. Questions do not see each other. */
+export function buildJevRequest(query: string, activities: Activity[], now?: Date): {
+  state: {
+    search_query: string;
+    interpreted_query: string;
+    how_to_judge: string;
+    activities: Record<string, ActivityFacts>;
+  };
+  questions: Record<string, JevNoul>;
+} {
+  const packed: Record<string, ActivityFacts> = {};
+  const questions: Record<string, JevNoul> = {};
+  for (const activity of activities) {
+    const key = `a${activity.id}`;
+    packed[key] = activityFacts(activity, now);
+    questions[key] = {
+      type: "noul",
+      instructions: `Does activities.${key} match interpreted_query? Apply how_to_judge. Ignore every other activity.`,
+      criteria: {
+        true: "This activity fits interpreted_query under how_to_judge.",
+        false: "A required part of interpreted_query does not fit this activity.",
+      },
+    };
+  }
+  return {
+    state: {
+      search_query: query,
+      interpreted_query: describeIntent(classifyIntent(query, now)),
+      how_to_judge: HOW_TO_JUDGE,
+      activities: packed,
+    },
+    questions,
+  };
 }
 
 export function describeActivity(a: Activity, now?: Date): string {
@@ -1325,12 +1449,12 @@ export function describeActivity(a: Activity, now?: Date): string {
     `"${a.name}"`,
     sportLabel(a.sport_type),
     date,
-    WEEKDAYS[localStart(a).getDay()] ? WEEKDAYS[localStart(a).getDay()].replace(/^./, (c) => c.toUpperCase()) : "",
+    weekdayName(a),
     /^\d{4}$/.test(year) ? `year ${year}` : "",
     daysAgoLabel(date, now),
     km > 0 ? `${km.toFixed(1)} km` : "",
     formatDuration(a.moving_time_s),
-    runPacePerMile(a),
+    runPaceParts(a)?.text ?? "",
     a.elevation_gain_m > 0 ? `${a.elevation_gain_m} m climbing` : "",
     ...(WORKOUT_TAGS[a.workout_type ?? -1]?.slice(0, 1) ?? []),
     a.trainer ? "indoor" : "",

@@ -1,7 +1,7 @@
 // Intent, distance-band sort, and describeActivity checks.
 // Run: node --experimental-strip-types test-intent.mjs
 
-import { buildIndex, classifyIntent, describeActivity, describeIntent, searchActivities, selectJevCandidates } from "./src/lib/activitySearch.ts";
+import { activityFacts, buildIndex, buildJevRequest, classifyIntent, describeActivity, describeIntent, searchActivities, selectJevCandidates } from "./src/lib/activitySearch.ts";
 import { toActivity } from "./scripts/strava-activity.mjs";
 
 const testClock = new Date("2026-09-29T12:00:00-05:00");
@@ -301,6 +301,49 @@ const clipped = describeActivity(
 );
 const notes = clipped.split("description: ")[1] ?? "";
 check("describeActivity caps long descriptions", notes.endsWith("...") && notes.length <= 500, `notes length ${notes.length}`);
+
+const tuesdayFacts = activityFacts(
+  act({
+    id: 31,
+    name: "easy miles",
+    start_date_local: "2026-09-01T08:00:00",
+    distance_m: 28000,
+    moving_time_s: 10000,
+    place: "Lincoln Park",
+    description: "Lakefront",
+  }),
+  testClock,
+);
+check(
+  "activityFacts keeps weekday, distance, pace, and place as fields",
+  tuesdayFacts.weekday === "Tuesday" &&
+    tuesdayFacts.distance_km === 28 &&
+    tuesdayFacts.pace_label === "easy pace" &&
+    tuesdayFacts.place === "Lincoln Park" &&
+    tuesdayFacts.description === "Lakefront",
+  JSON.stringify(tuesdayFacts),
+);
+
+const packed = buildJevRequest(
+  "longest run on a Tuesday",
+  [
+    act({ id: 31, name: "easy miles", start_date_local: "2026-09-01T08:00:00", distance_m: 28000, moving_time_s: 10000 }),
+    act({ id: 30, name: "Monday long", start_date_local: "2026-09-28T08:00:00", distance_m: 42000, moving_time_s: 14000 }),
+  ],
+  testClock,
+);
+check(
+  "Jev request packs one noul per activity against one shared rubric",
+  packed.state.interpreted_query.includes("on tuesday") &&
+    packed.state.how_to_judge.includes("weekday") &&
+    packed.questions.a31?.type === "noul" &&
+    packed.questions.a30?.type === "noul" &&
+    packed.questions.a31.instructions.includes("activities.a31") &&
+    !packed.questions.a31.instructions.includes("Last month") &&
+    packed.state.activities.a31.weekday === "Tuesday" &&
+    packed.state.activities.a30.weekday === "Monday",
+  JSON.stringify({ interpreted: packed.state.interpreted_query, q: packed.questions.a31 }),
+);
 
 console.log("\nexport mapping:\n");
 
