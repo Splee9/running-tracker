@@ -1,15 +1,15 @@
 .section {
   position: relative;
   z-index: 1;
-  min-height: 70vh;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  padding: var(--section-space) 0;
 }
 
 .title {
-  font-size: clamp(28px, 5vw, 44px);
-  margin: 10px 0 28px;
+  font-size: var(--text-page);
+  margin: 8px 0 24px;
 }
 
 .links {

@@ -2,25 +2,32 @@ import { useState, useRef, useEffect } from "react";
 import { Link, usePathname } from "../lib/router";
 import styles from "./Nav.module.css";
 
+const NAV_ITEMS = [
+  { href: "/miles", label: "Miles" },
+  { href: "/training", label: "Variability" },
+  { href: "/training/chicago", label: "Chicago" },
+  { href: "/activity-lookup", label: "Lookup" },
+];
+
 export function Nav() {
-  const [isTrainingOpen, setIsTrainingOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsTrainingOpen(false);
+      if (navRef.current && !navRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
       }
     }
 
     function handleEscape(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        setIsTrainingOpen(false);
+        setIsMenuOpen(false);
       }
     }
 
-    if (isTrainingOpen) {
+    if (isMenuOpen) {
       document.addEventListener("mousedown", handleClickOutside);
       document.addEventListener("keydown", handleEscape);
     }
@@ -29,44 +36,45 @@ export function Nav() {
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [isTrainingOpen]);
+  }, [isMenuOpen]);
 
   useEffect(() => {
-    setIsTrainingOpen(false);
+    setIsMenuOpen(false);
   }, [pathname]);
 
   return (
-    <nav className={styles.nav}>
+    <nav ref={navRef} className={styles.nav} aria-label="Primary navigation">
       <Link href="/" className={styles.brand}>
         Spencer Lee
       </Link>
-      <div className={styles.menu}>
-        <div className={styles.dropdown} ref={dropdownRef}>
-          <button
-            className={styles.dropdownToggle}
-            onClick={() => setIsTrainingOpen(!isTrainingOpen)}
-            aria-expanded={isTrainingOpen}
-            aria-haspopup="true"
-          >
-            Training <span className={styles.caret}>▾</span>
-          </button>
-          {isTrainingOpen && (
-            <div className={styles.dropdownMenu}>
-              <Link href="/miles" className={styles.dropdownItem}>
-                Running log
-              </Link>
-              <Link href="/training" className={styles.dropdownItem}>
-                Training variability
-              </Link>
-              <Link href="/activity-lookup" className={styles.dropdownItem}>
-                Activity lookup
-              </Link>
-              <Link href="/training/chicago" className={styles.dropdownItem}>
-                Chicago build
-              </Link>
-            </div>
-          )}
-        </div>
+
+      <button
+        type="button"
+        className={styles.menuToggle}
+        onClick={() => setIsMenuOpen((open) => !open)}
+        aria-expanded={isMenuOpen}
+        aria-controls="primary-menu"
+      >
+        Menu
+        <span className={styles.caret} aria-hidden>
+          ▾
+        </span>
+      </button>
+
+      <div id="primary-menu" className={`${styles.menu} ${isMenuOpen ? styles.menuOpen : ""}`}>
+        {NAV_ITEMS.map((item) => {
+          const current = pathname === item.href;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`${styles.menuItem} ${current ? styles.menuItemActive : ""}`}
+              aria-current={current ? "page" : undefined}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
       </div>
     </nav>
   );

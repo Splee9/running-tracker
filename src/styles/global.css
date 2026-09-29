@@ -5,9 +5,37 @@
   --muted: #6b6b63;
   --line: #e7e5e0;
   --accent: #1a1a1a;
+  --on-accent: #ffffff;
   --bar: #d9d6ce;
   --bar-active: #1a1a1a;
   --card: #ffffff;
+  --surface-subtle: #f4f2ee;
+  --status-good: #176a4f;
+  --status-warn: #795300;
+  --status-neutral: #6b6b63;
+
+  /* Shared type, spacing, and shape scales. */
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", monospace;
+  --text-meta: 13px;
+  --text-body: 16px;
+  --text-lede: 17px;
+  --text-section: clamp(22px, 2.5vw, 28px);
+  --text-page: clamp(32px, 3.5vw, 40px);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --section-space: clamp(48px, 6vw, 64px);
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-pill: 999px;
 
   /* Phase palette for Chicago tracker — four mesocycles, base → engine → sharpen → taper.
      The brand four: plum, periwinkle, bright red, clay red. */
@@ -24,9 +52,7 @@
   --t-commute: #9aa9c9; /* mid periwinkle-gray */
   --t-other: #eceaf1; /* lightest plum tint */
 
-  --maxw: 1040px;
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
-    sans-serif;
+  --maxw: 1120px;
 }
 
 * {
@@ -44,13 +70,14 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font);
-  line-height: 1.5;
+  font-size: var(--text-body);
+  line-height: 1.55;
 }
 
 #root {
   max-width: var(--maxw);
   margin: 0 auto;
-  padding: clamp(24px, 6vw, 80px) clamp(20px, 6vw, 80px);
+  padding: clamp(24px, 4vw, 40px) clamp(20px, 4vw, 40px);
 }
 
 h1,
@@ -66,7 +93,7 @@ b {
 
 /* Shared eyebrow / section-label treatment */
 .eyebrow {
-  font-size: 13px;
+  font-size: var(--text-meta);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
@@ -94,5 +121,13 @@ b {
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

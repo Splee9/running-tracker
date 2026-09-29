@@ -1,14 +1,14 @@
 .section {
   position: relative;
   z-index: 1;
-  padding: clamp(60px, 12vw, 120px) 0;
+  padding: var(--section-space) 0;
   border-top: 1px solid var(--line);
 }
 
 .headline {
-  margin: 18px 0 clamp(28px, 5vw, 44px);
-  font-size: clamp(24px, 4.4vw, 38px);
-  font-weight: 500;
+  margin: 14px 0 clamp(24px, 4vw, 32px);
+  font-size: var(--text-section);
+  font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.25;
   max-width: 22ch;
@@ -23,10 +23,10 @@
 .card {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(165deg, #ffffff 0%, #fbfaf7 100%);
+  background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 24px 26px;
+  border-radius: var(--radius-card);
+  padding: 20px;
   transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease;
 }
 
@@ -47,9 +47,9 @@
 }
 
 .card:hover {
-  transform: translateY(-5px);
+  transform: translateY(-2px);
   border-color: #cfccc4;
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.09);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.07);
 }
 
 .card:hover::after {
@@ -58,7 +58,7 @@
 
 .big {
   position: relative;
-  font-size: clamp(30px, 5vw, 40px);
+  font-size: clamp(28px, 4vw, 36px);
   font-weight: 700;
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;

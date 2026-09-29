@@ -48,12 +48,6 @@ export function Training() {
 
   return (
     <div className={styles.page}>
-      <nav className={styles.nav}>
-        <Link href="/" className={styles.navLink}>
-          <span className={styles.navArrow}>←</span> Every mile
-        </Link>
-      </nav>
-
       <header className={styles.header}>
         <motion.p className="eyebrow" variants={rise} custom={0} initial="hidden" animate="show">
           Training variability
@@ -218,8 +212,8 @@ export function Training() {
         </p>
         <p className={styles.stamp}>Through the week ending {formatDate(tv.last_complete_week_end)}.</p>
         <p className={styles.crosslink}>
-          <Link href="/">
-            <span className={styles.arrow}>←</span> Back to every mile
+          <Link href="/miles">
+            <span className={styles.arrow}>←</span> Back to the running log
           </Link>
         </p>
       </footer>
