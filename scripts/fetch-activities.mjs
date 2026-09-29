@@ -4,7 +4,8 @@
 //
 // Env:
 //   BRAIN_GITHUB_TOKEN     fine-grained token with Contents: read on spencer-brain
-//   BRAIN_ACTIVITIES_PATH  path of the activities file inside spencer-brain (required with a token)
+//   BRAIN_ACTIVITIES_PATH  path of the activities file inside spencer-brain
+//                          (default: data/public/strava-activities.json)
 //   BRAIN_REF              optional branch/tag/sha (default: the repo's default branch)
 //
 // Without BRAIN_GITHUB_TOKEN it keeps an existing src/activities.json, so local builds work
@@ -19,6 +20,7 @@ import path from "node:path";
 import { isPublic, toActivity } from "./strava-activity.mjs";
 
 const REPO = "Splee9/spencer-brain";
+const DEFAULT_ACTIVITIES_PATH = "data/public/strava-activities.json";
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "activities.json");
 
 async function download(token, filePath, ref) {
@@ -76,7 +78,8 @@ function validate(records) {
 }
 
 async function main() {
-  const { BRAIN_GITHUB_TOKEN: token, BRAIN_ACTIVITIES_PATH: filePath, BRAIN_REF: ref } = process.env;
+  const { BRAIN_GITHUB_TOKEN: token, BRAIN_REF: ref } = process.env;
+  const filePath = process.env.BRAIN_ACTIVITIES_PATH || DEFAULT_ACTIVITIES_PATH;
   if (!token) {
     try {
       await access(OUT);
@@ -86,7 +89,6 @@ async function main() {
     console.log(`BRAIN_GITHUB_TOKEN not set; keeping existing ${OUT}`);
     return;
   }
-  if (!filePath) throw new Error("Set BRAIN_ACTIVITIES_PATH to the activities file's path in spencer-brain");
 
   const records = parseRecords(await download(token, filePath, ref));
   validate(records);

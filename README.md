@@ -82,10 +82,12 @@ The fetch keeps public activities only and maps them with the same rules as the
 direct Strava export (`scripts/strava-activity.mjs`):
 
 ```bash
-BRAIN_GITHUB_TOKEN=... BRAIN_ACTIVITIES_PATH=... node scripts/fetch-activities.mjs
+BRAIN_GITHUB_TOKEN=... BRAIN_ACTIVITIES_PATH=data/public/strava-activities.json node scripts/fetch-activities.mjs
 ```
 
-Without `BRAIN_GITHUB_TOKEN` it keeps an existing local file. To build that file
+`BRAIN_ACTIVITIES_PATH` defaults to `data/public/strava-activities.json` (public
+activities tracked on spencer-brain `main`). Without `BRAIN_GITHUB_TOKEN` the
+script keeps the existing `src/activities.json` snapshot. To build that file
 straight from Strava instead (incremental by default; `--full` re-downloads
 everything and waits out 429s):
 
@@ -107,7 +109,7 @@ Environment variables (Netlify → Site configuration → Environment variables)
 | Variable             | Purpose                                                              |
 | -------------------- | -------------------------------------------------------------------- |
 | `BRAIN_GITHUB_TOKEN` | Fine-grained GitHub token, Contents: read on `Splee9/spencer-brain`. |
-| `BRAIN_ACTIVITIES_PATH` | Path of the Strava activities file inside spencer-brain.         |
+| `BRAIN_ACTIVITIES_PATH` | Path inside spencer-brain. Default: `data/public/strava-activities.json`. |
 | `OPENROUTER_API_KEY` | Jev via OpenRouter's Decisions API (`typesafe/jev-1.13`).            |
 | `TYPESAFE_API_KEY`   | Alternative: Jev direct from TypeSafe. Used only if no OpenRouter key. |
 | `JEV_MODEL`          | Optional model override.                                             |
