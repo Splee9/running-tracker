@@ -163,18 +163,19 @@ export function ActivityLookup() {
     // Deterministic intent status
     const intent = intentClassification.intent;
     if (intent) {
+      const placeNote = intent.kind !== "place_filter" && intent.place ? ` in ${intent.place}` : "";
       if (intent.kind === "longest") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by distance`;
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${placeNote} · sorted by distance`;
       } else if (intent.kind === "fastest") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by pace`;
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${placeNote} · sorted by pace`;
       } else if (intent.kind === "most_intervals") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by interval intensity`;
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${placeNote} · sorted by interval intensity`;
       } else if (intent.kind === "hilliest") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by elevation`;
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${placeNote} · sorted by elevation`;
       } else if (intent.kind === "highest_hr") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by heart rate`;
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${placeNote} · sorted by heart rate`;
       } else if (intent.kind === "highest_power") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by power`;
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${placeNote} · sorted by power`;
       } else if (intent.kind === "place_filter") {
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · filtered by place${intent.filterType ? ` and ${intent.filterType}` : ""}`;
       } else {

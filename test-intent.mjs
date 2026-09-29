@@ -158,14 +158,102 @@ function detectSuperlativeIntent(query) {
       intent.sport = "run";
       consumedIndices.add(sportIdx);
     }
+    const bikeIdx = tokens.findIndex(t => ["ride", "rides", "bike", "cycling"].includes(t));
+    if (bikeIdx >= 0) {
+      intent.sport = "ride";
+      consumedIndices.add(bikeIdx);
+    }
+    
+    // Extract place tokens (after consuming superlative and sport)
+    const placeTokens = tokens.filter((t, i) => 
+      !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+    );
+    if (placeTokens.length > 0) {
+      intent.place = placeTokens.join(" ");
+      // Consume place tokens and prepositions
+      tokens.forEach((t, i) => {
+        if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+          consumedIndices.add(i);
+        }
+      });
+    }
   }
 
   const mostIdx = tokens.findIndex(t => t === "most");
   const intervalIdx = tokens.findIndex(t => ["intervals", "reps", "repeats"].includes(t));
-  if (mostIdx >= 0 && intervalIdx >= 0) {
+  if (mostIdx >= 0 && intervalIdx >= 0 && !intent) {
     intent = { kind: "most_intervals" };
     consumedIndices.add(mostIdx);
     consumedIndices.add(intervalIdx);
+    
+    // Extract place tokens
+    const placeTokens = tokens.filter((t, i) => 
+      !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+    );
+    if (placeTokens.length > 0) {
+      intent.place = placeTokens.join(" ");
+      tokens.forEach((t, i) => {
+        if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+          consumedIndices.add(i);
+        }
+      });
+    }
+  }
+
+  // Detect fastest
+  const fastestIdx = tokens.findIndex(t => ["fastest", "quickest"].includes(t));
+  if (fastestIdx >= 0 && !intent) {
+    intent = { kind: "fastest" };
+    consumedIndices.add(fastestIdx);
+    const sportIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
+    if (sportIdx >= 0) {
+      intent.sport = "run";
+      consumedIndices.add(sportIdx);
+    }
+    const bikeIdx = tokens.findIndex(t => ["ride", "rides", "bike", "cycling"].includes(t));
+    if (bikeIdx >= 0) {
+      intent.sport = "ride";
+      consumedIndices.add(bikeIdx);
+    }
+    
+    // Extract place tokens
+    const placeTokens = tokens.filter((t, i) => 
+      !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+    );
+    if (placeTokens.length > 0) {
+      intent.place = placeTokens.join(" ");
+      tokens.forEach((t, i) => {
+        if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+          consumedIndices.add(i);
+        }
+      });
+    }
+  }
+
+  // Detect hilliest/most climbing
+  const hilliestIdx = tokens.findIndex(t => ["hilliest", "climbing"].includes(t));
+  const mostClimbingIdx = mostIdx >= 0 && tokens.findIndex(t => t === "climbing") >= 0;
+  if ((hilliestIdx >= 0 || mostClimbingIdx) && !intent) {
+    intent = { kind: "hilliest" };
+    if (hilliestIdx >= 0) consumedIndices.add(hilliestIdx);
+    if (mostClimbingIdx) {
+      consumedIndices.add(mostIdx);
+      const climbIdx = tokens.findIndex(t => t === "climbing");
+      consumedIndices.add(climbIdx);
+    }
+    
+    // Extract place tokens
+    const placeTokens = tokens.filter((t, i) => 
+      !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+    );
+    if (placeTokens.length > 0) {
+      intent.place = placeTokens.join(" ");
+      tokens.forEach((t, i) => {
+        if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+          consumedIndices.add(i);
+        }
+      });
+    }
   }
 
   const raceIdx = tokens.findIndex(t => ["race", "races"].includes(t));
@@ -208,6 +296,13 @@ const tests = [
   ["longest run this month", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: { start: "2026-09-01", end: "2026-09-29" } }],
   ["longest run march 2024", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: { start: "2024-03-01", end: "2024-03-31" } }],
   ["longest run last 3 months", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: { start: "2026-06-29", end: "2026-09-29" } }],
+  
+  // New place-based superlative tests (the bug fix)
+  ["longest run in Chicago", { isDeterministic: true, kind: "longest", sport: "run", place: "chicago", dateWindow: null }],
+  ["longest Chicago run", { isDeterministic: true, kind: "longest", sport: "run", place: "chicago", dateWindow: null }],
+  ["longest run Chicago", { isDeterministic: true, kind: "longest", sport: "run", place: "chicago", dateWindow: null }],
+  ["fastest run in Boston", { isDeterministic: true, kind: "fastest", sport: "run", place: "boston", dateWindow: null }],
+  ["hilliest in Denver", { isDeterministic: true, kind: "hilliest", place: "denver", dateWindow: null }],
 ];
 
 let allPassed = true;
@@ -241,8 +336,9 @@ for (const [query, expected] of tests) {
   const status = pass ? "✅" : "❌";
   console.log(`${status} "${query}"`);
   console.log(`   isDeterministic: ${result.isDeterministic}, kind: ${result.intent?.kind || "null"}`);
-  if (result.intent && "sport" in result.intent) console.log(`   sport: ${result.intent.sport}`);
-  if (result.intent && "place" in result.intent) console.log(`   place: ${result.intent.place}, filterType: ${result.intent.filterType}`);
+  if (result.intent && "sport" in result.intent && result.intent.sport) console.log(`   sport: ${result.intent.sport}`);
+  if (result.intent && "place" in result.intent && result.intent.place) console.log(`   place: ${result.intent.place}`);
+  if (result.intent && "filterType" in result.intent && result.intent.filterType) console.log(`   filterType: ${result.intent.filterType}`);
   if (result.dateWindow) console.log(`   dateWindow: ${result.dateWindow.start} to ${result.dateWindow.end}`);
   console.log();
   

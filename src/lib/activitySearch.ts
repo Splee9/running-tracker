@@ -274,6 +274,7 @@ export type DateWindow = {
 export type SuperlativeIntent = {
   kind: "longest" | "fastest" | "most_intervals" | "hilliest" | "highest_hr" | "highest_power";
   sport?: "run" | "ride";
+  place?: string;
 } | {
   kind: "place_filter";
   place: string;
@@ -312,20 +313,47 @@ function detectSuperlativeIntent(query: string): IntentClassification {
       intent.sport = "ride";
       consumedIndices.add(bikeIdx);
     }
+    
+    // Extract place tokens (after consuming superlative and sport)
+    const placeTokens = tokens.filter((t, i) => 
+      !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+    );
+    if (placeTokens.length > 0) {
+      intent.place = placeTokens.join(" ");
+      // Consume place tokens and prepositions
+      tokens.forEach((t, i) => {
+        if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+          consumedIndices.add(i);
+        }
+      });
+    }
   }
 
   // Detect most intervals/reps
   const mostIdx = tokens.findIndex(t => t === "most");
   const intervalIdx = tokens.findIndex(t => ["intervals", "reps", "repeats"].includes(t));
-  if (mostIdx >= 0 && intervalIdx >= 0) {
+  if (mostIdx >= 0 && intervalIdx >= 0 && !intent) {
     intent = { kind: "most_intervals" };
     consumedIndices.add(mostIdx);
     consumedIndices.add(intervalIdx);
+    
+    // Extract place tokens
+    const placeTokens = tokens.filter((t, i) => 
+      !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+    );
+    if (placeTokens.length > 0) {
+      intent.place = placeTokens.join(" ");
+      tokens.forEach((t, i) => {
+        if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+          consumedIndices.add(i);
+        }
+      });
+    }
   }
 
   // Detect fastest
   const fastestIdx = tokens.findIndex(t => ["fastest", "quickest"].includes(t));
-  if (fastestIdx >= 0) {
+  if (fastestIdx >= 0 && !intent) {
     intent = { kind: "fastest" };
     consumedIndices.add(fastestIdx);
     const sportIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
@@ -333,12 +361,31 @@ function detectSuperlativeIntent(query: string): IntentClassification {
       intent.sport = "run";
       consumedIndices.add(sportIdx);
     }
+    const bikeIdx = tokens.findIndex(t => ["ride", "rides", "bike", "cycling"].includes(t));
+    if (bikeIdx >= 0) {
+      intent.sport = "ride";
+      consumedIndices.add(bikeIdx);
+    }
+    
+    // Extract place tokens (after consuming superlative and sport)
+    const placeTokens = tokens.filter((t, i) => 
+      !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+    );
+    if (placeTokens.length > 0) {
+      intent.place = placeTokens.join(" ");
+      // Consume place tokens and prepositions
+      tokens.forEach((t, i) => {
+        if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+          consumedIndices.add(i);
+        }
+      });
+    }
   }
 
   // Detect hilliest/most climbing
   const hilliestIdx = tokens.findIndex(t => ["hilliest", "climbing"].includes(t));
   const mostClimbingIdx = mostIdx >= 0 && tokens.findIndex(t => t === "climbing") >= 0;
-  if (hilliestIdx >= 0 || mostClimbingIdx) {
+  if ((hilliestIdx >= 0 || mostClimbingIdx) && !intent) {
     intent = { kind: "hilliest" };
     if (hilliestIdx >= 0) consumedIndices.add(hilliestIdx);
     if (mostClimbingIdx) {
@@ -346,13 +393,26 @@ function detectSuperlativeIntent(query: string): IntentClassification {
       const climbIdx = tokens.findIndex(t => t === "climbing");
       consumedIndices.add(climbIdx);
     }
+    
+    // Extract place tokens
+    const placeTokens = tokens.filter((t, i) => 
+      !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+    );
+    if (placeTokens.length > 0) {
+      intent.place = placeTokens.join(" ");
+      tokens.forEach((t, i) => {
+        if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+          consumedIndices.add(i);
+        }
+      });
+    }
   }
 
   // Detect highest HR (e.g., "highest heart rate", "highest hr", "highest average hr")
   const highestIdx = tokens.findIndex(t => ["highest", "max"].includes(t));
   const hrIdx = tokens.findIndex(t => ["hr", "heartrate", "heart"].includes(t));
   const avgIdx = tokens.findIndex(t => ["avg", "average"].includes(t));
-  if (highestIdx >= 0 && hrIdx >= 0) {
+  if (highestIdx >= 0 && hrIdx >= 0 && !intent) {
     intent = { kind: "highest_hr" };
     consumedIndices.add(highestIdx);
     consumedIndices.add(hrIdx);
@@ -360,11 +420,24 @@ function detectSuperlativeIntent(query: string): IntentClassification {
     // Also consume "rate" if it follows "heart"
     const rateIdx = tokens.findIndex(t => t === "rate");
     if (rateIdx >= 0 && rateIdx === hrIdx + 1) consumedIndices.add(rateIdx);
+    
+    // Extract place tokens
+    const placeTokens = tokens.filter((t, i) => 
+      !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+    );
+    if (placeTokens.length > 0) {
+      intent.place = placeTokens.join(" ");
+      tokens.forEach((t, i) => {
+        if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+          consumedIndices.add(i);
+        }
+      });
+    }
   }
 
   // Detect highest power (e.g., "highest power", "highest watts", "highest average watts")
   const powerIdx = tokens.findIndex(t => ["power", "watts", "watt"].includes(t));
-  if (highestIdx >= 0 && powerIdx >= 0) {
+  if (highestIdx >= 0 && powerIdx >= 0 && !intent) {
     intent = { kind: "highest_power" };
     consumedIndices.add(highestIdx);
     consumedIndices.add(powerIdx);
@@ -372,6 +445,19 @@ function detectSuperlativeIntent(query: string): IntentClassification {
     // Also consume "average" or "weighted" before power/watts
     const weightedIdx = tokens.findIndex(t => t === "weighted");
     if (weightedIdx >= 0) consumedIndices.add(weightedIdx);
+    
+    // Extract place tokens
+    const placeTokens = tokens.filter((t, i) => 
+      !consumedIndices.has(i) && !["in", "at", "from", "near"].includes(t)
+    );
+    if (placeTokens.length > 0) {
+      intent.place = placeTokens.join(" ");
+      tokens.forEach((t, i) => {
+        if (placeTokens.includes(t) || ["in", "at", "from", "near"].includes(t)) {
+          consumedIndices.add(i);
+        }
+      });
+    }
   }
 
   // Detect place filters (e.g., "Chicago races")
@@ -500,14 +586,22 @@ export function searchActivities(
         }
         return true;
       });
-    } else if (intent.kind === "longest" && intent.sport) {
-      candidates = candidates.filter(({ activity }) => 
-        intent.sport === "run" ? isRun(activity) : isRide(activity)
-      );
-    } else if (intent.kind === "fastest" && intent.sport) {
-      candidates = candidates.filter(({ activity }) => 
-        intent.sport === "run" ? isRun(activity) : isRide(activity)
-      );
+    } else {
+      // For superlatives (longest, fastest, etc.), apply sport and place filters
+      if (intent.sport) {
+        candidates = candidates.filter(({ activity }) => 
+          intent.sport === "run" ? isRun(activity) : isRide(activity)
+        );
+      }
+      if (intent.place) {
+        const placeLower = intent.place.toLowerCase();
+        candidates = candidates.filter(({ activity }) => {
+          // Match against place field or activity name (case-insensitive)
+          const placeMatch = activity.place?.toLowerCase().includes(placeLower);
+          const nameMatch = activity.name.toLowerCase().includes(placeLower);
+          return placeMatch || nameMatch;
+        });
+      }
     }
   }
 
