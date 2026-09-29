@@ -5,6 +5,21 @@ export function isPublic(a) {
   return !a.private && (a.visibility ?? "everyone") === "everyone";
 }
 
+// spencer-brain guesses some places from the activity name. These guesses are wrong.
+// The Shamrock Shuffle is a Chicago race, not Washington DC.
+const NAME_PLACE_FIXES = [[/\bshamrock shuffle\b/i, "Chicago"]];
+
+// A virtual or trainer session happens nowhere: Zwift's "New York" is a game world.
+function placeFor(a, sportType) {
+  if (a.place === undefined) return undefined;
+  if (a.trainer || sportType.startsWith("Virtual")) return null;
+  if (a.place_source === "name") {
+    const fix = NAME_PLACE_FIXES.find(([pattern]) => pattern.test(a.name ?? ""));
+    if (fix) return fix[1];
+  }
+  return a.place;
+}
+
 export function toActivity(a) {
   const base = {
     id: a.id,
@@ -20,8 +35,11 @@ export function toActivity(a) {
   // v2 enrichment (omit undefined fields to keep backward compatibility)
   if (a.primary_stimulus !== undefined) base.primary_stimulus = a.primary_stimulus;
   if (Array.isArray(a.modifiers) && a.modifiers.length > 0) base.modifiers = a.modifiers;
-  if (a.place !== undefined) base.place = a.place;
-  if (a.place_source !== undefined) base.place_source = a.place_source;
+  const place = placeFor(a, base.sport_type ?? "");
+  if (place != null) {
+    base.place = place;
+    if (a.place_source !== undefined) base.place_source = a.place_source;
+  }
   if (a.lap_count !== undefined) base.lap_count = a.lap_count;
   if (a.hard_lap_count !== undefined) base.hard_lap_count = a.hard_lap_count;
   if (a.has_intervals !== undefined) base.has_intervals = a.has_intervals;

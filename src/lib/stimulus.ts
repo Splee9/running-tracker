@@ -256,13 +256,24 @@ export function labelConfidence(activity: { low_confidence?: boolean; primary_st
   return 0;
 }
 
-export function matchesModality(activity: LabeledActivity, sport: "run" | "ride"): boolean {
+/** Sports a query can name. Run and ride have a modality label; the rest match on Strava sport_type. */
+export type Sport = "run" | "ride" | "swim" | "ski" | "hike" | "walk";
+
+const SPORT_TYPE_PATTERNS: Record<Exclude<Sport, "run" | "ride">, RegExp> = {
+  swim: /Swim$/,
+  ski: /Ski$|Snowboard$/,
+  hike: /Hike$/,
+  walk: /Walk$/,
+};
+
+export function matchesModality(activity: LabeledActivity, sport: Sport): boolean {
+  const sportType = activity.sport_type ?? "";
+  if (sport !== "run" && sport !== "ride") return SPORT_TYPE_PATTERNS[sport].test(sportType);
   const modality = activity.modality?.toLowerCase();
   if (modality) {
     if (sport === "run") return modality === "run" || modality === "running";
     return modality === "ride" || modality === "bike" || modality === "cycling";
   }
-  const sportType = activity.sport_type ?? "";
   return sport === "run" ? /Run$/.test(sportType) : /Ride$/.test(sportType);
 }
 

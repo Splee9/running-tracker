@@ -937,6 +937,90 @@ check(
   JSON.stringify(mappedBlank),
 );
 
+console.log("\neval misses:\n");
+
+// One fixture per miss that scripts/eval-jev.mjs found on real searches.
+const evalIndex = buildIndex([
+  act({ id: 101, name: "Tally In The Valley", sport_type: "TrailRun", start_date_local: "2022-07-31T08:00:00", distance_m: 49000, moving_time_s: 21000, elevation_gain_m: 1100, primary_stimulus: "long" }),
+  act({ id: 102, name: "Long Run", start_date_local: "2023-10-14T08:00:00", distance_m: 29500, moving_time_s: 8000, elevation_gain_m: 538, primary_stimulus: "long" }),
+  act({ id: 103, name: "Mt. Holly Ski", sport_type: "AlpineSki", start_date_local: "2025-12-21T08:00:00", distance_m: 23800, moving_time_s: 4200, elevation_gain_m: 2839, primary_stimulus: "other" }),
+  act({ id: 104, name: "Mega Ride", sport_type: "Ride", start_date_local: "2025-07-08T08:00:00", distance_m: 182000, moving_time_s: 22000, elevation_gain_m: 1366, primary_stimulus: "long" }),
+  act({ id: 105, name: "Morning Hill Sprints", start_date_local: "2024-08-21T08:00:00", distance_m: 17000, moving_time_s: 5300, elevation_gain_m: 533, primary_stimulus: "quality" }),
+  act({ id: 106, name: "Hill session", start_date_local: "2024-09-01T08:00:00", distance_m: 12000, moving_time_s: 4000, elevation_gain_m: 200, primary_stimulus: "hills" }),
+  act({ id: 107, name: "Long Run", start_date_local: "2025-10-10T08:00:00", distance_m: 35900, moving_time_s: 8900, elevation_gain_m: 43, primary_stimulus: "long", place: "Los Angeles" }),
+  act({ id: 108, name: "La Plagne Ski", sport_type: "AlpineSki", start_date_local: "2026-03-27T08:00:00", distance_m: 22800, moving_time_s: 4100, elevation_gain_m: 95, primary_stimulus: "other" }),
+  act({ id: 109, name: "Lunch Swim", sport_type: "Swim", start_date_local: "2020-08-23T08:00:00", distance_m: 1100, moving_time_s: 1300, primary_stimulus: "easy" }),
+  act({ id: 110, name: "Morning Swim", sport_type: "Swim", start_date_local: "2026-05-16T08:00:00", distance_m: 800, moving_time_s: 1080, primary_stimulus: "easy" }),
+  // Zwift's France is a game world, but its name still says France.
+  act({ id: 112, name: "Zwift - Race: R.G.V. in France", sport_type: "VirtualRide", start_date_local: "2023-04-06T08:00:00", distance_m: 25400, moving_time_s: 2700, primary_stimulus: "race" }),
+  act({ id: 111, name: "Chicago Marathon", start_date_local: "2024-10-13T08:00:00", distance_m: 42970, moving_time_s: 10745, primary_stimulus: "race", place: "Chicago" }),
+]);
+const evalIds = (query, c = classifyIntent(query, testClock)) =>
+  searchActivities(evalIndex, query, 50, testClock, c).map((hit) => hit.activity.id);
+
+const ultra = evalIds("ultra");
+check("ultra finds the 49 km trail run and not a GPS-long marathon", ultra[0] === 101 && !ultra.includes(111), JSON.stringify(ultra));
+
+const hilliestRun = classifyIntent("hilliest run", testClock);
+const hilliest = evalIds("hilliest run", hilliestRun);
+check(
+  "hilliest run is a run-only sort, so the ski day and the ride drop out",
+  hilliestRun.intent?.sport === "run" && hilliestRun.isDeterministic && hilliest[0] === 101 && !hilliest.includes(103) && !hilliest.includes(104),
+  JSON.stringify({ intent: hilliestRun.intent, hilliest }),
+);
+
+const longestSwim = classifyIntent("longest swim", testClock);
+const swims = evalIds("longest swim", longestSwim);
+check(
+  "longest swim sorts swims only",
+  longestSwim.intent?.sport === "swim" && JSON.stringify(swims) === "[109,110]",
+  JSON.stringify({ intent: longestSwim.intent, swims }),
+);
+
+const hillCode = classifyIntent("hill sprints", testClock);
+const hillFilled = applyJevIntent(hillCode, { stimulus: pick("hills", 0.89) });
+const hillSprints = evalIds("hill sprints", hillFilled);
+check(
+  "a Jev hills fill keeps the run named Hill Sprints",
+  hillFilled.stimulus?.primary === "hills" && hillFilled.softStimulus === true && hillSprints.includes(105) && hillSprints.includes(106),
+  JSON.stringify({ stimulus: hillFilled.stimulus, hillSprints }),
+);
+const typedHills = evalIds("hills");
+check("hills typed by the person stays a hard label filter", JSON.stringify(typedHills) === "[106]", JSON.stringify(typedHills));
+
+const longLa = classifyIntent("long run in LA", testClock);
+const la = evalIds("long run in LA", longLa);
+check("LA reads as Los Angeles", longLa.place === "los angeles" && JSON.stringify(la) === "[107]", JSON.stringify({ place: longLa.place, la }));
+const plagne = classifyIntent("La Plagne", testClock);
+check("a bare La is not Los Angeles", plagne.place === null, JSON.stringify(plagne));
+
+const franceSki = classifyIntent("skiing in France", testClock);
+const france = searchActivities(evalIndex, "skiing in France", 50, testClock, franceSki);
+check(
+  "a place no ski day has leaves ski days unlocked for Jev to judge",
+  franceSki.intent?.sport === "ski" &&
+    franceSki.place === "france" &&
+    JSON.stringify(france.map((hit) => hit.activity.id).sort()) === "[103,108]" &&
+    france.every((hit) => !hit.locked),
+  JSON.stringify({ intent: franceSki.intent, france: france.map((hit) => [hit.activity.id, hit.locked]) }),
+);
+check(
+  "a place activities do have stays a hard, locked filter",
+  searchActivities(evalIndex, "long run in LA", 50, testClock, longLa).every((hit) => hit.locked),
+);
+
+const marathonPr = classifyIntent("marathon PR", testClock);
+check("marathon PR reads as the fastest marathon", marathonPr.intent?.kind === "fastest" && marathonPr.distanceBand?.kind === "marathon", JSON.stringify(marathonPr));
+const barePr = classifyIntent("PR", testClock);
+check("a bare PR stays a name search", barePr.intent === null && JSON.stringify(barePr.remainingTokens) === '["pr"]', JSON.stringify(barePr));
+
+const shamrock = toActivity({ id: 120, name: "Shamrock Shuffle 8km", sport_type: "Run", start_date_local: "2025-03-23T08:00:00Z", place: "Washington DC", place_source: "name" });
+check("toActivity corrects the Shamrock Shuffle to Chicago", shamrock.place === "Chicago", JSON.stringify(shamrock));
+const zwift = toActivity({ id: 121, name: "Zwift - Easy Ride in New York", sport_type: "VirtualRide", start_date_local: "2025-01-01T08:00:00Z", place: "New York", place_source: "name" });
+check("toActivity drops a virtual ride's game-world place", !("place" in zwift) && !("place_source" in zwift), JSON.stringify(zwift));
+const gpsPlace = toActivity({ id: 122, name: "Easy Run", sport_type: "Run", start_date_local: "2025-01-01T08:00:00Z", place: "Chicago", place_source: "gps" });
+check("toActivity keeps a GPS place", gpsPlace.place === "Chicago" && gpsPlace.place_source === "gps", JSON.stringify(gpsPlace));
+
 console.log();
 if (failures === 0) {
   console.log("✅ All tests pass!");

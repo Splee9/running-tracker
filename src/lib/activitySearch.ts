@@ -217,6 +217,8 @@ function distanceTags(a: Activity): string[] {
       if (Math.abs(km - spec.targetKm) <= spec.tolKm) tags.push(...spec.tags);
     }
     if (km >= 25) tags.push("long");
+    // Past any GPS-long marathon.
+    if (km >= 45) tags.push("ultra", "ultramarathon");
     if (km > 0 && km < 6) tags.push("short");
   }
   if (isRide(a)) {
@@ -534,12 +536,12 @@ export type DateWindow = {
 
 export type SuperlativeIntent = {
   kind: "longest" | "fastest" | "most_intervals" | "hilliest" | "highest_hr";
-  sport?: "run" | "ride";
+  sport?: Sport;
 } | {
   kind: "place_filter";
   place: string;
   filterType?: "race" | "workout";
-  sport?: "run" | "ride";
+  sport?: Sport;
 } | {
   kind: "mmp_power";
   field: "best_watts_5s" | "best_watts_1m" | "best_watts_5m" | "best_watts_20m" | "best_watts_60m";
@@ -547,7 +549,7 @@ export type SuperlativeIntent = {
   kind: "highest_power";
 } | {
   kind: "list";
-  sport?: "run" | "ride";
+  sport?: Sport;
 } | null;
 
 export type IntentClassification = {
@@ -561,13 +563,33 @@ export type IntentClassification = {
   weekday: string | null;
   /** Label hard filter. Null when the query does not name a stimulus. */
   stimulus: StimulusConstraint | null;
+  /** The stimulus came from Jev, not the query's own words: it must not drop name matches. */
+  softStimulus?: true;
   remainingTokens: string[];
   isDeterministic: boolean;
 };
 
 const SPEED_WORDS = ["fastest", "quickest", "speedy", "fast", "quick", "swift", "rapid"];
+// "marathon PR" is the fastest marathon. Without a distance, "PR" stays a name search:
+// the races are named PR.
+const PR_WORDS = ["pr", "prs", "pb", "pbs"];
 const RUN_WORDS = new Set(["run", "runs", "running"]);
 const RIDE_WORDS = new Set(["ride", "rides", "bike", "bikes", "cycling"]);
+// Sports without their own pool logic. They filter on Strava sport_type.
+const OTHER_SPORT_WORDS: Record<string, Exclude<Sport, "run" | "ride">> = {
+  swim: "swim",
+  swims: "swim",
+  swimming: "swim",
+  ski: "ski",
+  skis: "ski",
+  skiing: "ski",
+  hike: "hike",
+  hikes: "hike",
+  hiking: "hike",
+  walk: "walk",
+  walks: "walk",
+  walking: "walk",
+};
 const LIST_SYNONYMS = new Set(["activities", "activity", "workouts", "workout", "session", "sessions"]);
 const PLACE_PREPOSITIONS = new Set(["in", "at", "near", "around", "from"]);
 // "city" stays: "windy city" is a Chicago alias, not a filler.
@@ -578,6 +600,7 @@ const DATE_GLUE = new Set(["in", "during", "over", "from", "for", "within", "of"
 const PLACE_STOP = new Set([
   ...RUN_WORDS,
   ...RIDE_WORDS,
+  ...Object.keys(OTHER_SPORT_WORDS),
   ...LIST_SYNONYMS,
   ...SPEED_WORDS,
   ...STIMULUS_PLACE_WORDS,
@@ -587,8 +610,9 @@ const PLACE_STOP = new Set([
   "races",
 ]);
 // Query aliases. Activity places are canonical city names ("Chicago"), so the
-// shortlist has to fold these before filtering.
-const PLACE_ALIASES: { canonical: string; phrases: string[][] }[] = [
+// shortlist has to fold these before filtering. queryOnly phrases are too short to
+// look for in activity names ("La Plagne" is not LA) and need a preposition in the query.
+const PLACE_ALIASES: { canonical: string; phrases: string[][]; queryOnly?: string[][] }[] = [
   {
     canonical: "chicago",
     phrases: [
@@ -599,12 +623,16 @@ const PLACE_ALIASES: { canonical: string; phrases: string[][] }[] = [
       ["chi"],
     ],
   },
+  { canonical: "los angeles", phrases: [["los", "angeles"]], queryOnly: [["la"]] },
+  { canonical: "new york", phrases: [["new", "york"], ["nyc"]], queryOnly: [["ny"]] },
+  { canonical: "washington dc", phrases: [["washington", "dc"]], queryOnly: [["dc"]] },
 ];
 // Unbanded "fastest run" should not be won by a stride or a short shakeout.
 const MIN_UNBANDED_FASTEST_M = 3000;
 
 import {
   isBlockedPlaceName,
+  type Sport,
   labelConfidence,
   matchesModality,
   matchesPrimary,
@@ -628,10 +656,15 @@ function phraseAt(tokens: string[], index: number, phrase: string[]): boolean {
   return phrase.every((word, offset) => tokens[index + offset] === word);
 }
 
-function aliasAt(tokens: string[], index: number): { canonical: string; length: number } | null {
+function aliasAt(
+  tokens: string[],
+  index: number,
+  includeQueryOnly = true,
+): { canonical: string; length: number } | null {
   let best: { canonical: string; length: number } | null = null;
   for (const entry of PLACE_ALIASES) {
-    for (const phrase of entry.phrases) {
+    const phrases = includeQueryOnly ? [...entry.phrases, ...(entry.queryOnly ?? [])] : entry.phrases;
+    for (const phrase of phrases) {
       if (index + phrase.length > tokens.length || !phraseAt(tokens, index, phrase)) continue;
       if (!best || phrase.length > best.length) best = { canonical: entry.canonical, length: phrase.length };
     }
@@ -708,7 +741,7 @@ function parseBarePlace(
 ): { place: string; consumedIndices: Set<number> } | null {
   for (let i = 0; i < tokens.length; i++) {
     if (consumed.has(i)) continue;
-    const hit = aliasAt(tokens, i);
+    const hit = aliasAt(tokens, i, false);
     if (!hit) continue;
     const indices: number[] = [];
     let blocked = false;
@@ -750,25 +783,31 @@ function activityMatchesPlace(activity: Activity, place: string): boolean {
   return textHasPlace(`${activity.place ?? ""} ${activity.name}`, place);
 }
 
+function sportOfToken(token: string): Sport | undefined {
+  if (RUN_WORDS.has(token)) return "run";
+  if (RIDE_WORDS.has(token)) return "ride";
+  return OTHER_SPORT_WORDS[token];
+}
+
+// Run wins over ride ("run and bike" is a run query); both win over the other sports.
+function sportRank(sport: Sport): number {
+  return sport === "run" ? 2 : sport === "ride" ? 1 : 0;
+}
+
 function findSport(
   tokens: string[],
   consumed: Set<number>,
-): { sport?: "run" | "ride"; indices: number[] } {
-  const indices: number[] = [];
-  let sport: "run" | "ride" | undefined;
+): { sport?: Sport; indices: number[] } {
+  const found: { sport: Sport; index: number }[] = [];
   tokens.forEach((token, i) => {
     if (consumed.has(i)) return;
-    if (RUN_WORDS.has(token)) {
-      sport = "run";
-      indices.push(i);
-    } else if (RIDE_WORDS.has(token)) {
-      if (sport !== "run") sport = "ride";
-      indices.push(i);
-    }
+    const sport = sportOfToken(token);
+    if (sport) found.push({ sport, index: i });
   });
-  if (sport === "run") {
-    return { sport, indices: indices.filter((i) => RUN_WORDS.has(tokens[i])) };
-  }
+  if (found.length === 0) return { indices: [] };
+  const sport = found.reduce((best, hit) => (sportRank(hit.sport) > sportRank(best.sport) ? hit : best)).sport;
+  // Words for a losing sport stay as keywords.
+  const indices = found.filter((hit) => hit.sport === sport).map((hit) => hit.index);
   return { sport, indices };
 }
 
@@ -920,7 +959,10 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
 
   // Detect fastest
   if (!intent) {
-    const fastestIdx = tokens.findIndex(t => SPEED_WORDS.includes(t));
+    let fastestIdx = tokens.findIndex(t => SPEED_WORDS.includes(t));
+    if (fastestIdx < 0 && parseDistanceBand(query).band) {
+      fastestIdx = tokens.findIndex(t => PR_WORDS.includes(t));
+    }
     if (fastestIdx >= 0) {
       intent = { kind: "fastest" };
       consumedIndices.add(fastestIdx);
@@ -1051,14 +1093,10 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   const weekday = parsedWeekday.weekday;
   parsedWeekday.consumedIndices.forEach((i) => consumedIndices.add(i));
 
-  // "runs" / "run" selects the run pool once the rest of the query is a date, a place,
-  // or a metric. A bare "runs" stays a keyword search.
+  // A sport word ("runs", "swim", "skiing") selects that pool once the rest of the query
+  // is a date, a place, or a metric. A bare "runs" stays a keyword search.
   const sportHit = findSport(tokens, consumedIndices);
-  if (
-    sportHit.sport &&
-    intent &&
-    (intent.kind === "fastest" || intent.kind === "longest" || intent.kind === "place_filter")
-  ) {
+  if (sportHit.sport && intent && intent.kind !== "mmp_power" && intent.kind !== "highest_power") {
     if (!intent.sport) intent.sport = sportHit.sport;
     sportHit.indices.forEach((i) => consumedIndices.add(i));
   }
@@ -1096,13 +1134,9 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   let remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
   // "runs on a Tuesday" has no date or place, so the list detector above skips it.
   if (!intent && weekday) {
-    const listWord = (token: string) => RUN_WORDS.has(token) || RIDE_WORDS.has(token) || LIST_SYNONYMS.has(token);
+    const listWord = (token: string) => sportOfToken(token) !== undefined || LIST_SYNONYMS.has(token);
     if (remainingTokens.every(listWord)) {
-      const sport: "run" | "ride" | undefined = remainingTokens.some((token) => RUN_WORDS.has(token))
-        ? "run"
-        : remainingTokens.some((token) => RIDE_WORDS.has(token))
-          ? "ride"
-          : undefined;
+      const sport = sportFromRemaining(remainingTokens);
       tokens.forEach((token, i) => {
         if (listWord(token)) consumedIndices.add(i);
       });
@@ -1119,10 +1153,8 @@ export function classifyIntent(query: string, now?: Date): IntentClassification 
   return detectSuperlativeIntent(query, now);
 }
 
-function sportFromRemaining(tokens: string[]): "run" | "ride" | undefined {
-  if (tokens.some((token) => RUN_WORDS.has(token))) return "run";
-  if (tokens.some((token) => RIDE_WORDS.has(token))) return "ride";
-  return undefined;
+function sportFromRemaining(tokens: string[]): Sport | undefined {
+  return findSport(tokens, new Set()).sport;
 }
 
 /** Stable identity for "did Jev change the hard filters?" Refetches only when this changes. */
@@ -1214,6 +1246,7 @@ export function applyJevIntent(
     if (stimulus) {
       const edited = edit();
       edited.stimulus = stimulus;
+      edited.softStimulus = true;
       if (!edited.intent) {
         edited.intent = { kind: "list", sport: sportFromRemaining(edited.remainingTokens) };
       }
@@ -1329,7 +1362,7 @@ export type SettledIntentPayload = {
   stimulus?: { intervals?: boolean; primary?: string; modifiers?: string[] } | null;
   place?: string | null;
   dateWindow?: { start?: string; end?: string } | null;
-  sport?: "run" | "ride" | null;
+  sport?: Sport | null;
   kind?: string | null;
 };
 
@@ -1391,7 +1424,7 @@ type ParsedGap = {
   stimulus: StimulusConstraint | null;
   place: string | null;
   dateWindow: DateWindow | null;
-  sport: "run" | "ride" | null;
+  sport: Sport | null;
   kind: "fastest" | "longest" | null;
 };
 
@@ -1401,7 +1434,7 @@ function parseSettledPayload(raw: unknown, now?: Date): ParsedGap | null {
   const stimulus = validGapStimulus(body.stimulus);
   const place = validGapPlace(body.place);
   const dateWindow = validGapYear(body.dateWindow, now);
-  const sport = body.sport === "run" || body.sport === "ride" ? body.sport : null;
+  const sport = typeof body.sport === "string" ? sportOfToken(body.sport) ?? null : null;
   const kind = body.kind === "fastest" || body.kind === "longest" ? body.kind : null;
   if (!stimulus && !place && !dateWindow && !sport && !kind) return null;
   return { stimulus, place, dateWindow, sport, kind };
@@ -1446,6 +1479,7 @@ export function resolveInterpretation(query: string, settled: unknown, now?: Dat
       primary: gap.stimulus.primary,
       modifiers: [...gap.stimulus.modifiers],
     };
+    edited.softStimulus = true;
     if (!edited.intent) {
       edited.intent = { kind: "list", sport: sportFromRemaining(edited.remainingTokens) };
     }
@@ -1567,7 +1601,7 @@ type ShortlistBranch = {
   dateWindow: DateWindow | null;
   place: string | null;
   weekday: string | null;
-  sport?: "run" | "ride";
+  sport?: Sport;
   stimulus: StimulusConstraint | null;
   distanceBand: DistanceBand | null;
   filterType?: "race" | "workout";
@@ -1575,7 +1609,7 @@ type ShortlistBranch = {
   tokens: string[];
 };
 
-function intentSport(intent: SuperlativeIntent): "run" | "ride" | undefined {
+function intentSport(intent: SuperlativeIntent): Sport | undefined {
   return intent && "sport" in intent ? intent.sport : undefined;
 }
 
@@ -1661,6 +1695,8 @@ function buildShortlistBranches(c: IntentClassification, query: string): Shortli
   if (keywordTokens.length > 0) {
     branches.push({
       ...shared,
+      // "hill sprints" filled as hills must still find the run named Hill Sprints.
+      stimulus: c.softStimulus ? null : c.stimulus,
       id: "keyword",
       distanceBand: null,
       intent: null,
@@ -1680,7 +1716,7 @@ function inWindow(activity: Activity, window: DateWindow): boolean {
   return activityDate >= window.start && activityDate <= window.end;
 }
 
-function matchesSportChoice(activity: Activity, sport: "run" | "ride" | undefined): boolean {
+function matchesSportChoice(activity: Activity, sport: Sport | undefined): boolean {
   if (!sport) return true;
   return matchesModality(activity, sport);
 }
@@ -1809,6 +1845,21 @@ export function searchActivities(
   now?: Date,
   classification: IntentClassification = detectSuperlativeIntent(query, now),
 ): SearchHit[] {
+  const hits = shortlistHits(index, query, limit, classification, false);
+  if (hits.length > 0 || !classification.place) return hits;
+  // Nothing of this kind carries the place ("skiing in France": ski days have no place,
+  // only resort names). Drop it rather than show nothing, and leave every row unlocked:
+  // the place stays in the interpreted query for Jev to judge.
+  return shortlistHits(index, query, limit, withoutParts(classification, ["place"]), true);
+}
+
+function shortlistHits(
+  index: IndexedActivity[],
+  query: string,
+  limit: number,
+  classification: IntentClassification,
+  openPlace: boolean,
+): SearchHit[] {
   const branches = buildShortlistBranches(classification, query);
   const seen = new Set<number>();
   const merged: SearchHit[] = [];
@@ -1817,9 +1868,10 @@ export function searchActivities(
     // A code-settled list stays locked. A list opened by a soft leftover
     // ("fartlek" filled as intervals) stays unlocked so membership can order it.
     const softFill = !classification.isDeterministic && classification.remainingTokens.length > 0;
-    const locked = branch.id === "metric"
+    const locked = !openPlace && (
+      branch.id === "metric"
       || branch.id === "place-longest"
-      || (!softFill && branch.id !== "keyword");
+      || (!softFill && branch.id !== "keyword"));
     for (const hit of runShortlistBranch(index, branch, limit)) {
       if (seen.has(hit.activity.id)) continue;
       seen.add(hit.activity.id);
@@ -2259,9 +2311,12 @@ function membershipCriteria(
   standoutGraded = false,
 ): { true: string; false: string } {
   const must: string[] = [];
-  if (c.stimulus?.intervals) must.push("an interval workout, including fartlek or speed play");
-  else if (c.stimulus?.primary) must.push(`primary stimulus ${c.stimulus.primary}`);
-  if (c.stimulus && c.stimulus.modifiers.length > 0) must.push(`modifier ${c.stimulus.modifiers.join(" and ")}`);
+  // A stimulus Jev filled in is a guess at the words, not the person's own label.
+  const stimulusParts: string[] = [];
+  if (c.stimulus?.intervals) stimulusParts.push("an interval workout, including fartlek or speed play");
+  else if (c.stimulus?.primary) stimulusParts.push(`primary stimulus ${c.stimulus.primary}`);
+  if (c.stimulus && c.stimulus.modifiers.length > 0) stimulusParts.push(`modifier ${c.stimulus.modifiers.join(" and ")}`);
+  if (!c.softStimulus) must.push(...stimulusParts);
   if (c.place) must.push(`in ${c.place}`);
   if (c.weekday) must.push(`on ${c.weekday}`);
   if (c.dateWindow) must.push(`dated ${c.dateWindow.start} through ${c.dateWindow.end}`);
@@ -2278,6 +2333,9 @@ function membershipCriteria(
   if (must.length > 0) {
     yes.push(`It satisfies: ${must.join("; ")}.`);
     no.push(`It misses: ${must.join("; ")}.`);
+  }
+  if (c.softStimulus && stimulusParts.length > 0) {
+    yes.push(`${stimulusParts.join(" with ")} fits, and so does an activity whose name is what the query asks for, whatever its stimulus label.`);
   }
   if (raceNamed) {
     yes.push("A race-labeled activity whose name is that race, or a race at that distance, is a yes.");

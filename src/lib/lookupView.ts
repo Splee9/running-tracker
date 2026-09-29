@@ -9,7 +9,7 @@ import {
   type SearchHit,
   type ShortlistBranchId,
 } from "./activitySearch.ts";
-import { stimulusSummary } from "./stimulus.ts";
+import { stimulusSummary, type Sport } from "./stimulus.ts";
 
 export type InterpretationPart = {
   key: IntentPartKey;
@@ -67,6 +67,15 @@ export function formatWindow(start: string, end: string): string {
   return `${shortDate(start)}, ${startYear} – ${shortDate(end)}, ${endYear}`;
 }
 
+const SPORT_NAMES: Record<Sport, string> = {
+  run: "Runs",
+  ride: "Rides",
+  swim: "Swims",
+  ski: "Ski days",
+  hike: "Hikes",
+  walk: "Walks",
+};
+
 function partValues(c: IntentClassification): Map<InterpretationPart["key"], { label: string; value: string }> {
   const values = new Map<InterpretationPart["key"], { label: string; value: string }>();
   const intent = c.intent;
@@ -79,7 +88,7 @@ function partValues(c: IntentClassification): Map<InterpretationPart["key"], { l
     values.set("sort", { label: "Type", value: `${capitalize(intent.filterType)}s` });
   }
   if (intent && "sport" in intent && intent.sport) {
-    values.set("sport", { label: "Sport", value: intent.sport === "run" ? "Runs" : "Rides" });
+    values.set("sport", { label: "Sport", value: SPORT_NAMES[intent.sport] });
   }
   if (c.distanceBand) values.set("distance", { label: "Distance", value: c.distanceBand.label });
   const stimulus = stimulusSummary(c.stimulus);
