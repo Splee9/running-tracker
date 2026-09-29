@@ -43,6 +43,15 @@ export function Training() {
   const [showHours, setShowHours] = useState(false);
   const current = tv.current[sport];
 
+  // Slice weeks and hours to match the selected horizon's lookback window
+  const horizonWeeks = tv.horizons[horizon].weeks;
+  const lastCompleteWeek = tv.last_complete_week_end;
+  const lastWeekIdx = weekly.weeks.lastIndexOf(lastCompleteWeek);
+  const startIdx = lastWeekIdx >= 0 ? Math.max(0, lastWeekIdx - horizonWeeks + 1) : 0;
+  const endIdx = lastWeekIdx >= 0 ? lastWeekIdx + 1 : weekly.weeks.length;
+  const visibleWeeks = weekly.weeks.slice(startIdx, endIdx);
+  const visibleHours = weekly.hours[sport].slice(startIdx, endIdx);
+
   return (
     <div className={styles.page}>
       <nav className={styles.nav}>
@@ -147,8 +156,8 @@ export function Training() {
             </p>
             <TvChart
               points={tv.series[sport][horizon]}
-              weeks={weekly.weeks}
-              hours={weekly.hours[sport]}
+              weeks={visibleWeeks}
+              hours={visibleHours}
               showHours={showHours}
               drawKey={`${sport}-${horizon}`}
               label={`${tv.filters[sport].label}, ${tv.horizons[horizon].label}`}
