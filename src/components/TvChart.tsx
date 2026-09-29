@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { formatDate } from "../lib/format";
-import { BANDS, BAND_COLOR, DAY0, DAY1, fmtTv, toDays, type TvPoint } from "../lib/training";
+import { BANDS, BAND_COLOR, fmtTv, toDays, type TvPoint } from "../lib/training";
 import styles from "./TvChart.module.css";
 
 const PAD_TOP = 34;
@@ -67,8 +67,14 @@ function Plot({
   const padRight = showHours ? (narrow ? 30 : 40) : 12;
   const baseline = H - PAD_BOTTOM;
   const plotW = W - padLeft - padRight;
-  const px = (iso: string) => padLeft + ((toDays(iso) - DAY0) / (DAY1 - DAY0)) * plotW;
-  const weekW = (7 / (DAY1 - DAY0)) * plotW;
+  
+  // Dynamic x-domain from the visible weeks instead of fixed DAY0/DAY1
+  const dayMin = weeks.length > 0 ? toDays(weeks[0]) : 0;
+  const dayMax = weeks.length > 0 ? toDays(weeks[weeks.length - 1]) : 0;
+  const daySpan = dayMax - dayMin || 1; // avoid division by zero
+  
+  const px = (iso: string) => padLeft + ((toDays(iso) - dayMin) / daySpan) * plotW;
+  const weekW = (7 / daySpan) * plotW;
 
   // Floor of 100 keeps every band visible; spiky series (e.g. a bike block
   // after weeks off) extend the axis instead of being clipped.
@@ -130,7 +136,7 @@ function Plot({
     const svg = svgRef.current;
     if (!svg) return;
     const x = clientX - svg.getBoundingClientRect().left;
-    const target = DAY0 + ((x - padLeft) / plotW) * (DAY1 - DAY0);
+    const target = dayMin + ((x - padLeft) / plotW) * daySpan;
     let best = 0;
     for (let i = 1; i < weeks.length; i++) {
       if (Math.abs(toDays(weeks[i]) - target) < Math.abs(toDays(weeks[best]) - target)) best = i;
