@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # No BRAIN_GITHUB_TOKEN here, so this writes an empty src/activities.json.
+      - run: npm run fetch:activities
+      - run: npm run test:intent
+      - run: npm run build

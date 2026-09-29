@@ -1002,7 +1002,13 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   let consumedIndices = new Set<number>();
 
   // Parse date window first. Glue ("in the", "from", "during") is part of the date phrase.
-  const { window: dateWindow, consumedIndices: dateIndices } = parseDateWindow(tokens, now);
+  // A holiday phrase is hidden from it so "July 4" stays the holiday, not the month.
+  const holidayPhrase = parseCalendarPhrase(tokens, new Set());
+  const dateTokens =
+    holidayPhrase.tag && !isSeasonTag(holidayPhrase.tag)
+      ? tokens.map((t, i) => (holidayPhrase.consumedIndices.has(i) ? "" : t))
+      : tokens;
+  const { window: dateWindow, consumedIndices: dateIndices } = parseDateWindow(dateTokens, now);
   (dateWindow ? withDateGlue(tokens, dateIndices) : dateIndices).forEach(i => consumedIndices.add(i));
 
   // Detect MMP power queries: "top/best/highest/max" + duration + optional "power/watts"
