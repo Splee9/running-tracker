@@ -161,13 +161,13 @@ function parseDistanceBand(query: string): { band: DistanceBand | null; consumed
   const norm = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const spans = tokenSpans(query);
   const patterns: { re: RegExp; build: (m: RegExpExecArray) => DistanceBand }[] = [
-    { re: /\bhalf(?:[-\s]*marathon)?\b/, build: () => raceBand("half") },
-    { re: /\bmarathon\b/, build: () => raceBand("marathon") },
-    { re: /\b5\s*k\b/, build: () => raceBand("5k") },
-    { re: /\b10\s*k\b/, build: () => raceBand("10k") },
+    { re: /\bhalf(?:[-\s]*marathons?)?\b/, build: () => raceBand("half") },
+    { re: /\bmarathons?\b/, build: () => raceBand("marathon") },
+    { re: /\b5\s*ks?\b/, build: () => raceBand("5k") },
+    { re: /\b10\s*ks?\b/, build: () => raceBand("10k") },
     {
-      re: /\b(\d+(?:\.\d+)?)\s*(km|kilometers?|mi|miles?|k)\b/,
-      build: (m) => numericBand(Number(m[1]), m[2]),
+      re: /\b(\d+(?:\.\d+)?)\s*(km|kilometers?|mi|miles?|ks?)\b/,
+      build: (m) => numericBand(Number(m[1]), m[2].replace(/s$/, "")),
     },
   ];
 
@@ -512,6 +512,7 @@ export type SuperlativeIntent = {
   kind: "place_filter";
   place: string;
   filterType?: "race" | "workout";
+  sport?: "run" | "ride";
 } | {
   kind: "mmp_power";
   field: "best_watts_5s" | "best_watts_1m" | "best_watts_5m" | "best_watts_20m" | "best_watts_60m";
@@ -534,11 +535,92 @@ export type IntentClassification = {
 };
 
 const SPEED_WORDS = ["fastest", "quickest", "speedy", "fast", "quick", "swift", "rapid"];
+const RUN_WORDS = new Set(["run", "runs", "running"]);
+const RIDE_WORDS = new Set(["ride", "rides", "bike", "bikes", "cycling"]);
+const LIST_SYNONYMS = new Set(["activities", "activity", "workouts", "workout", "session", "sessions"]);
 const PLACE_PREPOSITIONS = new Set(["in", "at", "near", "around", "from"]);
-const PLACE_FILLERS = new Set(["the", "a", "an", "my", "our", "area", "region", "city"]);
+// "city" stays: "windy city" is a Chicago alias, not a filler.
+const PLACE_FILLERS = new Set(["the", "a", "an", "my", "our", "area", "region"]);
 const QUERY_FILLERS = new Set(["the", "a", "an", "my", "our", "me", "show", "find", "please", "some"]);
+// Words that stick to a date phrase: "in the last week", "from last month", "during last week".
+const DATE_GLUE = new Set(["in", "during", "over", "from", "for", "within", "of"]);
+const PLACE_STOP = new Set([
+  ...RUN_WORDS,
+  ...RIDE_WORDS,
+  ...LIST_SYNONYMS,
+  ...SPEED_WORDS,
+  "longest",
+  "farthest",
+  "race",
+  "races",
+]);
+// Query aliases. Activity places are canonical city names ("Chicago"), so the
+// shortlist has to fold these before filtering.
+const PLACE_ALIASES: { canonical: string; phrases: string[][] }[] = [
+  {
+    canonical: "chicago",
+    phrases: [
+      ["windy", "city"],
+      ["chi", "town"],
+      ["chicago"],
+      ["chitown"],
+      ["chi"],
+    ],
+  },
+];
 // Unbanded "fastest run" should not be won by a stride or a short shakeout.
 const MIN_UNBANDED_FASTEST_M = 3000;
+
+function phraseAt(tokens: string[], index: number, phrase: string[]): boolean {
+  return phrase.every((word, offset) => tokens[index + offset] === word);
+}
+
+function aliasAt(tokens: string[], index: number): { canonical: string; length: number } | null {
+  let best: { canonical: string; length: number } | null = null;
+  for (const entry of PLACE_ALIASES) {
+    for (const phrase of entry.phrases) {
+      if (index + phrase.length > tokens.length || !phraseAt(tokens, index, phrase)) continue;
+      if (!best || phrase.length > best.length) best = { canonical: entry.canonical, length: phrase.length };
+    }
+  }
+  return best;
+}
+
+function canonicalPlaceName(phrase: string): string {
+  const tokens = tokenize(phrase).filter((token) => !PLACE_FILLERS.has(token));
+  if (tokens.length === 0) return "";
+  const hit = aliasAt(tokens, 0);
+  if (hit && hit.length === tokens.length) return hit.canonical;
+  return tokens.join(" ");
+}
+
+function textHasPlace(text: string, place: string): boolean {
+  const canonical = canonicalPlaceName(place);
+  if (!canonical) return false;
+  const alias = PLACE_ALIASES.find((entry) => entry.canonical === canonical);
+  const tokens = tokenize(text);
+  if (alias) {
+    for (let i = 0; i < tokens.length; i++) {
+      if (alias.phrases.some((phrase) => phraseAt(tokens, i, phrase))) return true;
+    }
+    return false;
+  }
+  const words = canonical.split(" ").filter(Boolean);
+  return words.length > 0 && words.every((word) => tokens.includes(word));
+}
+
+// "in the last week" — the preposition belongs to the date, not to a place.
+function withDateGlue(tokens: string[], consumed: Set<number>): Set<number> {
+  if (consumed.size === 0) return consumed;
+  const extra = new Set(consumed);
+  let i = Math.min(...consumed) - 1;
+  if (i >= 0 && !extra.has(i) && tokens[i] === "the") {
+    extra.add(i);
+    i--;
+  }
+  if (i >= 0 && !extra.has(i) && DATE_GLUE.has(tokens[i])) extra.add(i);
+  return extra;
+}
 
 function parsePlacePhrase(
   tokens: string[],
@@ -550,7 +632,7 @@ function parsePlacePhrase(
   const placeTokens: string[] = [];
   const indices = [prepIdx];
   for (let i = prepIdx + 1; i < tokens.length; i++) {
-    if (consumed.has(i)) break;
+    if (consumed.has(i) || PLACE_STOP.has(tokens[i])) break;
     indices.push(i);
     if (!PLACE_FILLERS.has(tokens[i])) placeTokens.push(tokens[i]);
   }
@@ -559,11 +641,60 @@ function parsePlacePhrase(
   return { place: placeTokens.join(" "), consumedIndices };
 }
 
+// "speedy Chicago runs" / "chitown runs" have no preposition. Only known aliases,
+// so a leftover word like "hilly" does not become a place.
+function parseBarePlace(
+  tokens: string[],
+  consumed: Set<number>,
+): { place: string; consumedIndices: Set<number> } | null {
+  for (let i = 0; i < tokens.length; i++) {
+    if (consumed.has(i)) continue;
+    const hit = aliasAt(tokens, i);
+    if (!hit) continue;
+    const indices: number[] = [];
+    let blocked = false;
+    for (let k = 0; k < hit.length; k++) {
+      if (consumed.has(i + k)) blocked = true;
+      indices.push(i + k);
+    }
+    if (blocked) continue;
+    return { place: hit.canonical, consumedIndices: new Set(indices) };
+  }
+  return null;
+}
+
 function activityMatchesPlace(activity: Activity, place: string): boolean {
-  const words = place.toLowerCase().split(/\s+/).filter((token) => token && !PLACE_FILLERS.has(token));
-  if (words.length === 0) return false;
-  const hay = `${activity.place ?? ""} ${activity.name}`.toLowerCase();
-  return words.every((word) => hay.includes(word));
+  return textHasPlace(`${activity.place ?? ""} ${activity.name}`, place);
+}
+
+function findSport(
+  tokens: string[],
+  consumed: Set<number>,
+): { sport?: "run" | "ride"; indices: number[] } {
+  const indices: number[] = [];
+  let sport: "run" | "ride" | undefined;
+  tokens.forEach((token, i) => {
+    if (consumed.has(i)) return;
+    if (RUN_WORDS.has(token)) {
+      sport = "run";
+      indices.push(i);
+    } else if (RIDE_WORDS.has(token)) {
+      if (sport !== "run") sport = "ride";
+      indices.push(i);
+    }
+  });
+  if (sport === "run") {
+    return { sport, indices: indices.filter((i) => RUN_WORDS.has(tokens[i])) };
+  }
+  return { sport, indices };
+}
+
+function listSynonymIndices(tokens: string[], consumed: Set<number>): number[] {
+  const indices: number[] = [];
+  tokens.forEach((token, i) => {
+    if (!consumed.has(i) && LIST_SYNONYMS.has(token)) indices.push(i);
+  });
+  return indices;
 }
 
 function detectSuperlativeIntent(query: string, now?: Date): IntentClassification {
@@ -571,9 +702,9 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   let intent: SuperlativeIntent = null;
   let consumedIndices = new Set<number>();
 
-  // Parse date window first
+  // Parse date window first. Glue ("in the", "from", "during") is part of the date phrase.
   const { window: dateWindow, consumedIndices: dateIndices } = parseDateWindow(tokens, now);
-  dateIndices.forEach(i => consumedIndices.add(i));
+  (dateWindow ? withDateGlue(tokens, dateIndices) : dateIndices).forEach(i => consumedIndices.add(i));
 
   // Detect MMP power queries: "top/best/highest/max" + duration + optional "power/watts"
   // Durations: 5s, 5 sec, 1 min, 5 min, 20 min, 20m, 60 min, 1 hour, ftp (→ 20m)
@@ -581,7 +712,8 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   const powerTriggerIdx = tokens.findIndex(t => powerTriggers.includes(t));
   
   if (powerTriggerIdx >= 0) {
-    consumedIndices.add(powerTriggerIdx);
+    // Hold these until we know it's actually a power query. "best run" is not watts.
+    const powerConsumed = new Set<number>([powerTriggerIdx]);
     
     // Look for duration tokens
     let mmpField: "best_watts_5s" | "best_watts_1m" | "best_watts_5m" | "best_watts_20m" | "best_watts_60m" | null = null;
@@ -590,12 +722,12 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     const ftpIdx = tokens.indexOf("ftp");
     if (ftpIdx >= 0) {
       mmpField = "best_watts_20m";
-      consumedIndices.add(ftpIdx);
+      powerConsumed.add(ftpIdx);
     }
     
     // Check for duration patterns like "5s", "1m", "20m", "5 sec", "1 min", "20 min", "1 hour"
     for (let i = 0; i < tokens.length; i++) {
-      if (consumedIndices.has(i)) continue;
+      if (powerConsumed.has(i) || consumedIndices.has(i)) continue;
       
       const token = tokens[i];
       const nextToken = i + 1 < tokens.length ? tokens[i + 1] : "";
@@ -609,22 +741,22 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
           
           if ((unit === "s" || unit === "sec" || unit.startsWith("second")) && num === 5) {
             mmpField = "best_watts_5s";
-            consumedIndices.add(i);
+            powerConsumed.add(i);
           } else if ((unit === "m" || unit === "min" || unit.startsWith("minute")) && num === 1) {
             mmpField = "best_watts_1m";
-            consumedIndices.add(i);
+            powerConsumed.add(i);
           } else if ((unit === "m" || unit === "min" || unit.startsWith("minute")) && num === 5) {
             mmpField = "best_watts_5m";
-            consumedIndices.add(i);
+            powerConsumed.add(i);
           } else if ((unit === "m" || unit === "min" || unit.startsWith("minute")) && num === 20) {
             mmpField = "best_watts_20m";
-            consumedIndices.add(i);
+            powerConsumed.add(i);
           } else if ((unit === "m" || unit === "min" || unit.startsWith("minute")) && num === 60) {
             mmpField = "best_watts_60m";
-            consumedIndices.add(i);
+            powerConsumed.add(i);
           } else if ((unit === "h" || unit === "hour" || unit.startsWith("hour")) && num === 1) {
             mmpField = "best_watts_60m";
-            consumedIndices.add(i);
+            powerConsumed.add(i);
           }
         }
       }
@@ -634,43 +766,42 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
       if (!isNaN(num) && nextToken) {
         if ((nextToken === "s" || nextToken === "sec" || nextToken.startsWith("second")) && num === 5) {
           mmpField = "best_watts_5s";
-          consumedIndices.add(i);
-          consumedIndices.add(i + 1);
+          powerConsumed.add(i);
+          powerConsumed.add(i + 1);
         } else if ((nextToken === "m" || nextToken === "min" || nextToken.startsWith("minute")) && num === 1) {
           mmpField = "best_watts_1m";
-          consumedIndices.add(i);
-          consumedIndices.add(i + 1);
+          powerConsumed.add(i);
+          powerConsumed.add(i + 1);
         } else if ((nextToken === "m" || nextToken === "min" || nextToken.startsWith("minute")) && num === 5) {
           mmpField = "best_watts_5m";
-          consumedIndices.add(i);
-          consumedIndices.add(i + 1);
+          powerConsumed.add(i);
+          powerConsumed.add(i + 1);
         } else if ((nextToken === "m" || nextToken === "min" || nextToken.startsWith("minute")) && num === 20) {
           mmpField = "best_watts_20m";
-          consumedIndices.add(i);
-          consumedIndices.add(i + 1);
+          powerConsumed.add(i);
+          powerConsumed.add(i + 1);
         } else if ((nextToken === "m" || nextToken === "min" || nextToken.startsWith("minute")) && num === 60) {
           mmpField = "best_watts_60m";
-          consumedIndices.add(i);
-          consumedIndices.add(i + 1);
+          powerConsumed.add(i);
+          powerConsumed.add(i + 1);
         } else if ((nextToken === "h" || nextToken === "hour" || nextToken.startsWith("hour")) && num === 1) {
           mmpField = "best_watts_60m";
-          consumedIndices.add(i);
-          consumedIndices.add(i + 1);
+          powerConsumed.add(i);
+          powerConsumed.add(i + 1);
         }
       }
     }
     
-    // Consume optional "power" or "watts"
     const powerIdx = tokens.indexOf("power");
     const wattsIdx = tokens.indexOf("watts");
-    if (powerIdx >= 0) consumedIndices.add(powerIdx);
-    if (wattsIdx >= 0) consumedIndices.add(wattsIdx);
-    
-    if (mmpField) {
-      intent = { kind: "mmp_power", field: mmpField };
-    } else {
-      // No duration specified, use average/weighted fallback (existing "highest power" behavior)
-      intent = { kind: "highest_power" };
+    const wattIdx = tokens.indexOf("watt");
+    const mentionsPower = powerIdx >= 0 || wattsIdx >= 0 || wattIdx >= 0 || ftpIdx >= 0;
+    if (mmpField || mentionsPower) {
+      if (powerIdx >= 0) powerConsumed.add(powerIdx);
+      if (wattsIdx >= 0) powerConsumed.add(wattsIdx);
+      if (wattIdx >= 0) powerConsumed.add(wattIdx);
+      powerConsumed.forEach((i) => consumedIndices.add(i));
+      intent = mmpField ? { kind: "mmp_power", field: mmpField } : { kind: "highest_power" };
     }
   }
 
@@ -778,65 +909,70 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
         !["race", "races", "workout", "workouts", "session", "sessions", "run", "runs", "running", "ride", "rides", "bike", "cycling"].includes(t)
       );
       if (placeTokens.length > 0) {
-        const place = placeTokens.join(" ");
+        const place = canonicalPlaceName(placeTokens.join(" "));
         const filterType = raceIdx >= 0 ? "race" as const : workoutIdx >= 0 ? "workout" as const : undefined;
-        intent = { kind: "place_filter", place, filterType };
-        consumedIndices.add(raceIdx >= 0 ? raceIdx : workoutIdx);
-        // Consume place tokens
-        placeTokens.forEach(pt => {
-          const idx = tokens.indexOf(pt);
-          if (idx >= 0) consumedIndices.add(idx);
-        });
+        if (place) {
+          intent = { kind: "place_filter", place, filterType };
+          consumedIndices.add(raceIdx >= 0 ? raceIdx : workoutIdx);
+          placeTokens.forEach(pt => {
+            const idx = tokens.indexOf(pt);
+            if (idx >= 0) consumedIndices.add(idx);
+          });
+        }
       }
     }
   }
 
-  // "in Chicago" / "near Chicago" attaches to whatever intent we already have.
+  // "in Chicago", "in the windy city", or a bare alias ("speedy Chicago runs").
+  // Canonical form so chi / chitown / windy city share the Chicago pool.
   const parsedPlace = parsePlacePhrase(tokens, consumedIndices);
-  let place = parsedPlace.place;
+  let place = parsedPlace.place ? canonicalPlaceName(parsedPlace.place) : "";
   if (place) parsedPlace.consumedIndices.forEach((i) => consumedIndices.add(i));
+  if (!place) {
+    const bare = parseBarePlace(tokens, consumedIndices);
+    if (bare) {
+      place = bare.place;
+      bare.consumedIndices.forEach((i) => consumedIndices.add(i));
+    }
+  }
 
   tokens.forEach((token, i) => {
     if (QUERY_FILLERS.has(token)) consumedIndices.add(i);
   });
+  // "week's" tokenizes to week + s. Drop the possessive once the date word is consumed.
+  tokens.forEach((token, i) => {
+    if (token === "s" && i > 0 && consumedIndices.has(i - 1)) consumedIndices.add(i);
+  });
 
-  // Detect list intent: pure date window with optional sport, optional "activities/workouts/rides/runs"
-  // Synonyms: activities, workouts, rides, runs
-  if (!intent && dateWindow) {
-    const listSynonyms = ["activities", "activity", "workouts", "workout", "rides", "runs"];
-    const listIdx = tokens.findIndex(t => listSynonyms.includes(t));
-    if (listIdx >= 0) consumedIndices.add(listIdx);
-    
-    // Check for sport
-    let sport: "run" | "ride" | undefined = undefined;
-    const runIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
-    const rideIdx = tokens.findIndex(t => ["ride", "rides", "bike", "cycling"].includes(t));
-    if (runIdx >= 0) {
-      sport = "run";
-      consumedIndices.add(runIdx);
-    } else if (rideIdx >= 0) {
-      sport = "ride";
-      consumedIndices.add(rideIdx);
-    }
-    
-    // Also consume possessive "'s" if present
-    const possessiveIdx = tokens.indexOf("s");
-    if (possessiveIdx >= 0 && possessiveIdx > 0) {
-      // Check if it follows a date window token (e.g., "week's")
-      consumedIndices.add(possessiveIdx);
-    }
-    
-    const remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
-    if (remainingTokens.length === 0) {
-      intent = { kind: "list", sport };
+  if (!place && intent?.kind === "place_filter") place = canonicalPlaceName(intent.place);
+
+  // "runs" / "run" selects the run pool once the rest of the query is a date, a place,
+  // or a metric. A bare "runs" stays a keyword search.
+  const sportHit = findSport(tokens, consumedIndices);
+  if (
+    sportHit.sport &&
+    intent &&
+    (intent.kind === "fastest" || intent.kind === "longest" || intent.kind === "place_filter")
+  ) {
+    if (!intent.sport) intent.sport = sportHit.sport;
+    sportHit.indices.forEach((i) => consumedIndices.add(i));
+  }
+
+  if (!intent && (dateWindow || place)) {
+    const synonyms = listSynonymIndices(tokens, consumedIndices);
+    const pending = tokens.filter(
+      (_, i) => !consumedIndices.has(i) && !sportHit.indices.includes(i) && !synonyms.includes(i),
+    );
+    if (pending.length === 0 && (dateWindow || sportHit.sport)) {
+      sportHit.indices.forEach((i) => consumedIndices.add(i));
+      synonyms.forEach((i) => consumedIndices.add(i));
+      intent = { kind: "list", sport: sportHit.sport };
+    } else if (pending.length === 0 && place) {
+      intent = { kind: "place_filter", place };
     }
   }
 
-  if (!place && intent?.kind === "place_filter") place = intent.place;
-  if (!intent && place) {
-    const pending = tokens.filter((_, i) => !consumedIndices.has(i));
-    if (pending.length === 0) intent = { kind: "place_filter", place };
-  }
+  const resolvedPlace = place || null;
 
   // Consume a distance band only for fastest/longest, so a plain "10k" search
   // still matches the tag instead of becoming an empty list query.
@@ -855,7 +991,7 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   const remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
   // Deterministic if we have an intent and no remaining semantic tokens
   const isDeterministic = intent !== null && remainingTokens.length === 0;
-  return { intent, dateWindow, distanceBand, place, remainingTokens, isDeterministic };
+  return { intent, dateWindow, distanceBand, place: resolvedPlace, remainingTokens, isDeterministic };
 }
 
 export function classifyIntent(query: string, now?: Date): IntentClassification {
@@ -875,7 +1011,7 @@ export function describeIntent(c: IntentClassification): string {
   } else if (intent?.kind === "longest") {
     bits.push("longest distance; a long effort is a strong match and a short one is not");
   } else if (intent?.kind === "list") {
-    bits.push("list of matching activities, most recent first; every activity in the window is a match");
+    bits.push("list of matching activities, most recent first; every activity that fits the sport, place, and dates is a match");
   } else if (intent?.kind === "place_filter") {
     bits.push(intent.filterType ? `${intent.filterType}s in this place` : "activities in this place");
   } else if (intent?.kind) {
@@ -919,6 +1055,8 @@ function editDistance(a: string, b: string, max: number): number {
 }
 
 function scoreToken(token: string, words: string[]): { score: number; fuzzy: boolean } {
+  // "10ks" is the same tag as "10k". Digits are exact, so the plural would otherwise miss.
+  if (/^\d+ks$/.test(token)) token = token.slice(0, -1);
   let best = 0;
   let fuzzy = false;
   // Years and distances ("2025", "10k") must not fuzz into their neighbours.
@@ -962,11 +1100,11 @@ export function searchActivities(
   // Apply intent-based filtering
   if (intent) {
     if (intent.kind === "place_filter") {
-      const placeLower = intent.place.toLowerCase();
       candidates = candidates.filter(({ activity }) => {
-        const placeMatch = activity.place?.toLowerCase().includes(placeLower);
-        if (!placeMatch) return false;
-        
+        if (!activityMatchesPlace(activity, intent.place)) return false;
+        if (intent.sport === "run" && !isRun(activity)) return false;
+        if (intent.sport === "ride" && !isRide(activity)) return false;
+
         // Additional filter type checks
         if (intent.filterType === "race") {
           return activity.primary_stimulus === "race" || 

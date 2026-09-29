@@ -45,6 +45,9 @@ const activities = [
   act({ id: 25, name: "Chicago stride", start_date_local: "2026-08-08T08:00:00", distance_m: 800, moving_time_s: 120, place: "Chicago" }),
   act({ id: 26, name: "Chicago long", start_date_local: "2026-06-15T08:00:00", distance_m: 32000, moving_time_s: 12000, place: "Chicago" }),
   act({ id: 27, name: "Thursday run", start_date_local: "2026-09-24T08:00:00", distance_m: 10000, moving_time_s: 3600 }),
+  // Name alias, no place field: "windy city" must still join the Chicago pool.
+  act({ id: 28, name: "Windy City shakeout", start_date_local: "2026-06-18T08:00:00", distance_m: 8000, moving_time_s: 2000 }),
+  act({ id: 29, name: "Naperville fast", start_date_local: "2026-09-05T08:00:00", distance_m: 15000, moving_time_s: 4500, place: "Naperville" }),
 ];
 
 const index = buildIndex(activities);
@@ -100,6 +103,22 @@ const classTests = [
   ["fast runs near Chicago", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, place: "chicago" }],
   ["quickest run in Chicago last month", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: { start: "2026-08-01", end: "2026-08-31" }, band: null, place: "chicago" }],
   ["runs in Chicago last week", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-09-21", end: "2026-09-27" }, band: null, place: "chicago" }],
+  ["fastest Chicago run", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, place: "chicago" }],
+  ["longest run Chicago", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: null, band: null, place: "chicago" }],
+  ["speedy Chicago runs", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, place: "chicago" }],
+  ["fastest run in Chi", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, place: "chicago" }],
+  ["fastest run in the windy city", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, place: "chicago" }],
+  ["chitown runs", { isDeterministic: true, kind: "list", sport: "run", dateWindow: null, band: null, place: "chicago" }],
+  ["runs in Chicago", { isDeterministic: true, kind: "list", sport: "run", dateWindow: null, band: null, place: "chicago" }],
+  ["runs in the last week", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-09-21", end: "2026-09-27" }, band: null, place: null }],
+  ["runs from last week", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-09-21", end: "2026-09-27" }, band: null, place: null }],
+  ["fastest run in the last month", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: { start: "2026-08-01", end: "2026-08-31" }, band: null, place: null }],
+  ["speedy runs in the last month", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: { start: "2026-08-01", end: "2026-08-31" }, band: null, place: null }],
+  ["quick runs this week", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: { start: "2026-09-28", end: "2026-09-29" }, band: null, place: null }],
+  ["quick 10ks last month", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: { start: "2026-08-01", end: "2026-08-31" }, band: "10k", place: null }],
+  ["this month", { isDeterministic: true, kind: "list", dateWindow: { start: "2026-09-01", end: "2026-09-29" }, band: null }],
+  ["this week", { isDeterministic: true, kind: "list", dateWindow: { start: "2026-09-28", end: "2026-09-29" }, band: null }],
+  ["best run in Chicago", { isDeterministic: false, kind: null, dateWindow: null, band: null, place: "chicago" }],
 ];
 
 for (const [query, expected] of classTests) {
@@ -177,6 +196,22 @@ order("fastest run in Chicago ignores other cities and strides", "fastest run in
 order("longest run in Chicago sorts by distance", "longest run in Chicago", [26], [7, 17, 22]);
 order("speedy runs last month is pace within August", "speedy runs last month", [22, 19], [21, 25, 6]);
 order("runs last week is the previous week, newest first", "runs last week", [27, 23], [24, 21]);
+order("fastest Chicago run matches in-Chicago pace order", "fastest Chicago run", [19], [22, 25, 29]);
+order("windy city alias includes a nameless-place Chicago run", "fastest run in the windy city", [19], [22, 29]);
+order("longest run Chicago sorts by distance", "longest run Chicago", [26], [7, 17, 22, 29]);
+order("runs in the last week matches runs last week", "runs in the last week", [27, 23], [24, 21]);
+order("runs from last week is not an empty keyword search", "runs from last week", [27, 23], [24]);
+order("speedy runs in the last month keeps August pace order", "speedy runs in the last month", [22, 19], [21, 25]);
+order("quick 10ks last month sorts by time inside the band", "quick 10ks last month", [22, 19, 20], [17, 21, 25]);
+order("chitown runs are Chicago runs, newest first", "chitown runs", [21, 20], [22, 29]);
+
+const chicagoFast = ids("fastest run in Chicago");
+const windyFast = ids("fastest run in the windy city");
+check(
+  "Chicago alias in the name joins the Chicago pool",
+  chicagoFast.includes(28) && windyFast.includes(28) && !chicagoFast.includes(29) && !chicagoFast.includes(22),
+  `chicago [${chicagoFast.join(", ")}] windy [${windyFast.join(", ")}]`,
+);
 
 console.log("\ndescribeActivity:\n");
 
