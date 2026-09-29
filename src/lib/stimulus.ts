@@ -94,6 +94,13 @@ export type LabeledActivity = {
   trainer?: boolean;
   sport_type?: string;
   workout_type?: number | null;
+  /** Additive public-export race record. Missing means "use the stimulus label". */
+  race?: {
+    event_name?: string;
+    official_distance?: string;
+    result_time?: number | string;
+    is_pr?: boolean;
+  };
 };
 
 // Words that must never become a place. "interval workouts" is the case that used to.
@@ -291,7 +298,21 @@ export function matchesIntervalWorkout(activity: LabeledActivity): boolean {
   return (activity.hard_lap_count ?? 0) >= 2;
 }
 
+function hasRaceRecord(activity: LabeledActivity): boolean {
+  const race = activity.race;
+  if (!race) return false;
+  return Boolean(
+    race.event_name ||
+    race.official_distance ||
+    race.result_time != null ||
+    typeof race.is_pr === "boolean",
+  );
+}
+
 export function matchesPrimary(activity: LabeledActivity, primary: PrimaryStimulus): boolean {
+  // A structured race record is the race signal when the export has one.
+  // Activities without the field keep the stimulus / workout_type path.
+  if (primary === "race" && hasRaceRecord(activity)) return true;
   const labeled = activity.primary_stimulus;
   if (labeled && labeled !== "other" && labeled !== "low_confidence") return labeled === primary;
   // other / low_confidence / missing: a cluster can still agree. "other" itself never hard-matches.

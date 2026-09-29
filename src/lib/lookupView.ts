@@ -9,6 +9,7 @@ import {
   type SearchHit,
   type ShortlistBranchId,
 } from "./activitySearch.ts";
+import { calendarLabel } from "./calendar.ts";
 import { stimulusSummary, type Sport } from "./stimulus.ts";
 
 export type InterpretationPart = {
@@ -95,7 +96,12 @@ function partValues(c: IntentClassification): Map<InterpretationPart["key"], { l
   if (stimulus) values.set("stimulus", { label: "Workout", value: stimulus });
   if (c.place) values.set("place", { label: "Place", value: capitalize(c.place) });
   if (c.weekday) values.set("weekday", { label: "Day", value: `${capitalize(c.weekday)}s` });
-  if (c.dateWindow) values.set("dates", { label: "Dates", value: formatWindow(c.dateWindow.start, c.dateWindow.end) });
+  if (c.dateWindow || c.calendar) {
+    const bits: string[] = [];
+    if (c.calendar) bits.push(calendarLabel(c.calendar));
+    if (c.dateWindow) bits.push(formatWindow(c.dateWindow.start, c.dateWindow.end));
+    values.set("dates", { label: "Dates", value: bits.join(" · ") });
+  }
   if (c.remainingTokens.length > 0) values.set("words", { label: "Words", value: c.remainingTokens.join(" ") });
   return values;
 }

@@ -77,6 +77,53 @@ const activities = [
   act({ id: 61, name: "Marathon pace", start_date_local: "2026-08-01T08:00:00", distance_m: 16000, moving_time_s: 4800, place: "Chicago", primary_stimulus: "quality", modifiers: ["marathon_pace"] }),
   act({ id: 63, name: "Shamrock Shuffle", start_date_local: "2026-03-22T08:00:00", distance_m: 10000, moving_time_s: 4200, primary_stimulus: "race", workout_type: 1 }),
   act({ id: 64, name: "run commute", start_date_local: "2026-09-02T08:00:00", distance_m: 10000, moving_time_s: 3600, primary_stimulus: "easy", modifiers: ["commute"] }),
+  // Holiday / season fixtures. Distances stay off the 10k and marathon heads.
+  act({ id: 70, name: "Christmas easy", start_date_local: "2025-12-25T08:00:00", distance_m: 8000, moving_time_s: 3600 }),
+  act({ id: 71, name: "Christmas eve", start_date_local: "2025-12-24T08:00:00", distance_m: 8000, moving_time_s: 3000 }),
+  act({ id: 72, name: "Christmas ride", sport_type: "Ride", start_date_local: "2025-12-25T09:00:00", distance_m: 20000, moving_time_s: 3600 }),
+  act({ id: 73, name: "New Year easy", start_date_local: "2026-01-01T08:00:00", distance_m: 8000, moving_time_s: 3200 }),
+  act({ id: 74, name: "January 2", start_date_local: "2026-01-02T08:00:00", distance_m: 8000, moving_time_s: 3200 }),
+  act({ id: 75, name: "Turkey trot", start_date_local: "2025-11-27T08:00:00", distance_m: 8000, moving_time_s: 3200 }),
+  act({ id: 76, name: "Day before Thanksgiving", start_date_local: "2025-11-26T08:00:00", distance_m: 8000, moving_time_s: 3200 }),
+  act({ id: 77, name: "Fourth easy", start_date_local: "2026-07-04T08:00:00", distance_m: 8000, moving_time_s: 3200 }),
+  act({ id: 78, name: "July 5", start_date_local: "2026-07-05T08:00:00", distance_m: 8000, moving_time_s: 3200 }),
+  act({ id: 79, name: "January easy", start_date_local: "2024-01-10T08:00:00", distance_m: 8000, moving_time_s: 3200 }),
+  act({ id: 87, name: "Christmas tempo", start_date_local: "2024-12-25T08:00:00", distance_m: 8000, moving_time_s: 2000 }),
+  // Name says Chicago; GPS place is Boston. Structured place must win.
+  act({
+    id: 80,
+    name: "Chicago Marathon",
+    start_date_local: "2020-05-01T08:00:00",
+    distance_m: 8000,
+    moving_time_s: 4000,
+    place: "Chicago",
+    place_city: "Boston",
+    place_region: "Massachusetts",
+    place_country: "United States",
+  }),
+  act({
+    id: 81,
+    name: "Neighborhood",
+    start_date_local: "2020-06-01T08:00:00",
+    distance_m: 8000,
+    moving_time_s: 3600,
+    place_city: "Chicago",
+    place_region: "Illinois",
+    place_country: "United States",
+  }),
+  act({ id: 82, name: "Track", start_date_local: "2020-07-01T08:00:00", distance_m: 8000, moving_time_s: 2400, workout_structure: "8×400m" }),
+  act({ id: 83, name: "Easy miles", start_date_local: "2020-07-02T08:00:00", distance_m: 8000, moving_time_s: 3200, gear: "Nike Vaporfly" }),
+  act({
+    id: 84,
+    name: "Road Race",
+    start_date_local: "2019-07-27T08:00:00",
+    distance_m: 11000,
+    moving_time_s: 4000,
+    place: "Chicago",
+    race: { event_name: "Bix 7", official_distance: "7 mi", result_time: 3000, is_pr: true },
+  }),
+  act({ id: 85, name: "PR shakeout", start_date_local: "2020-07-03T08:00:00", distance_m: 5000, moving_time_s: 2000 }),
+  act({ id: 86, name: "Doubles", start_date_local: "2020-07-04T08:00:00", distance_m: 8000, moving_time_s: 3200, with: ["Ada"], athlete_count: 2 }),
 ];
 
 const index = buildIndex(activities);
@@ -158,6 +205,15 @@ const classTests = [
   ["tempo runs last month", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-08-01", end: "2026-08-31" }, band: null, place: null, stimulusPrimary: null, modifier: "tempo" }],
   ["hilly ride", { isDeterministic: false, kind: null, dateWindow: null, band: null, stimulusPrimary: null, intervals: false }],
   ["fartlek session", { isDeterministic: false, kind: null, dateWindow: null, band: null, place: null }],
+  ["Christmas run", { isDeterministic: true, kind: "list", sport: "run", dateWindow: null, band: null, calendar: "christmas" }],
+  ["New Year's Day run", { isDeterministic: true, kind: "list", sport: "run", dateWindow: null, band: null, calendar: "new years day" }],
+  ["Thanksgiving", { isDeterministic: true, kind: "list", dateWindow: null, band: null, calendar: "thanksgiving" }],
+  ["July 4", { isDeterministic: true, kind: "list", dateWindow: null, band: null, calendar: "july 4" }],
+  ["4th of July run", { isDeterministic: true, kind: "list", sport: "run", dateWindow: null, band: null, calendar: "july 4" }],
+  ["summer runs", { isDeterministic: true, kind: "list", sport: "run", dateWindow: null, band: null, calendar: "summer" }],
+  ["autumn runs", { isDeterministic: true, kind: "list", sport: "run", dateWindow: null, band: null, calendar: "fall" }],
+  ["fastest Christmas run", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, calendar: "christmas" }],
+  ["400 repeats", { isDeterministic: false, kind: null, dateWindow: null, band: null, intervals: false }],
 ];
 
 for (const [query, expected] of classTests) {
@@ -175,9 +231,10 @@ for (const [query, expected] of classTests) {
   if (expected.stimulusPrimary !== undefined && (result.stimulus?.primary ?? null) !== expected.stimulusPrimary) pass = false;
   if (expected.intervals !== undefined && Boolean(result.stimulus?.intervals) !== expected.intervals) pass = false;
   if (expected.modifier !== undefined && !(result.stimulus?.modifiers ?? []).includes(expected.modifier)) pass = false;
+  if (expected.calendar !== undefined && result.calendar !== expected.calendar) pass = false;
   const detail = pass
     ? ""
-    : `got deterministic=${result.isDeterministic} kind=${result.intent?.kind ?? "null"} sport=${result.intent?.sport ?? "-"} band=${result.distanceBand?.kind ?? "null"} label=${result.distanceBand?.label ?? "-"} place=${result.place ?? "null"} weekday=${result.weekday ?? "null"} stimulus=${JSON.stringify(result.stimulus)} window=${result.dateWindow ? `${result.dateWindow.start}..${result.dateWindow.end}` : "null"} remaining=${result.remainingTokens.join(",")}`;
+    : `got deterministic=${result.isDeterministic} kind=${result.intent?.kind ?? "null"} sport=${result.intent?.sport ?? "-"} band=${result.distanceBand?.kind ?? "null"} label=${result.distanceBand?.label ?? "-"} place=${result.place ?? "null"} weekday=${result.weekday ?? "null"} calendar=${result.calendar ?? "null"} stimulus=${JSON.stringify(result.stimulus)} window=${result.dateWindow ? `${result.dateWindow.start}..${result.dateWindow.end}` : "null"} remaining=${result.remainingTokens.join(",")}`;
   check(`"${query}"`, pass, detail);
 }
 
@@ -1020,6 +1077,234 @@ const zwift = toActivity({ id: 121, name: "Zwift - Easy Ride in New York", sport
 check("toActivity drops a virtual ride's game-world place", !("place" in zwift) && !("place_source" in zwift), JSON.stringify(zwift));
 const gpsPlace = toActivity({ id: 122, name: "Easy Run", sport_type: "Run", start_date_local: "2025-01-01T08:00:00Z", place: "Chicago", place_source: "gps" });
 check("toActivity keeps a GPS place", gpsPlace.place === "Chicago" && gpsPlace.place_source === "gps", JSON.stringify(gpsPlace));
+
+console.log("\nholidays and export metadata:\n");
+
+order("Christmas run is the Christmas runs, newest first", "Christmas run", [70, 87], [71, 72, 73]);
+order("New Year's Day run is January 1", "New Year's Day run", [73], [74, 70]);
+order("Thanksgiving run is the fourth Thursday in November", "Thanksgiving run", [75], [76]);
+order("July 4 run is the Fourth", "July 4 run", [77], [78]);
+check(
+  "summer runs stay in summer",
+  ids("summer runs").includes(1) && ids("summer runs").includes(77) && !ids("summer runs").includes(73) && !ids("summer runs").includes(79) && !ids("summer runs").includes(70),
+  ids("summer runs").join(","),
+);
+check(
+  "winter runs stay in winter",
+  ids("winter runs").includes(73) && ids("winter runs").includes(70) && ids("winter runs").includes(79) && !ids("winter runs").includes(1) && !ids("winter runs").includes(77),
+  ids("winter runs").join(","),
+);
+const fastestChristmas = searchActivities(index, "fastest Christmas run", 50, testClock);
+check(
+  "fastest Christmas run stays a locked pace sort",
+  fastestChristmas.every((hit) => hit.locked) &&
+    fastestChristmas.map((hit) => hit.activity.id).slice(0, 2).join(",") === "87,70" &&
+    !fastestChristmas.some((hit) => hit.activity.id === 71 || hit.activity.id === 72),
+  fastestChristmas.map((hit) => `${hit.activity.id}:${hit.locked}`).join(","),
+);
+check(
+  "a holiday list is locked, so Jev does not invent the day",
+  searchActivities(index, "Christmas run", 50, testClock).every((hit) => hit.locked) &&
+    !needsIntentFacets(classifyIntent("Christmas run", testClock)),
+);
+const christmasPacked = buildJevRequest(
+  "Christmas run",
+  [act({ id: 70, name: "Christmas easy", start_date_local: "2025-12-25T08:00:00", distance_m: 8000, moving_time_s: 3600 })],
+  testClock,
+);
+check(
+  "Christmas membership is settled in the question, not by a new intent facet",
+  christmasPacked.state.interpreted_query.includes("on Christmas") &&
+    christmasPacked.state.how_to_judge.includes("do not invent") &&
+    christmasPacked.questions.a70.criteria.true.includes("on Christmas") &&
+    christmasPacked.questions.stimulus === undefined,
+  christmasPacked.state.interpreted_query,
+);
+const christmasParts = interpretationParts(classifyIntent("Christmas run", testClock), classifyIntent("Christmas run", testClock));
+check(
+  "Christmas shows up as a date chip",
+  christmasParts.some((part) => part.key === "dates" && part.value === "Christmas" && part.fromJev === false),
+  JSON.stringify(christmasParts),
+);
+const droppedChristmas = withoutParts(classifyIntent("Christmas run", testClock), ["dates"]);
+check("removing the date chip clears the holiday", droppedChristmas.calendar === null, JSON.stringify(droppedChristmas.calendar));
+
+order("structured Boston does not join Chicago", "runs in Chicago", [21], [80]);
+check(
+  "structured Chicago joins Chicago, and the United States query uses country",
+  ids("runs in Chicago").includes(81) && ids("runs in Boston").includes(80) && !ids("runs in Boston").includes(81) && ids("runs in the United States").includes(80) && ids("runs in the United States").includes(81),
+  `chicago [${ids("runs in Chicago").join(", ")}] boston [${ids("runs in Boston").join(", ")}]`,
+);
+order("Chicago races include a race record that has no stimulus label", "Chicago races", [60], [61, 80]);
+check("Chicago races keep the unlabeled race record", ids("Chicago races").includes(84), ids("Chicago races").join(","));
+order("8x400 finds the workout structure", "8x400", [82], [1, 83]);
+order("400 repeats uses workout structure instead of the interval label", "400 repeats", [82], [1]);
+check(
+  "400 repeats is not an interval hard filter",
+  classifyIntent("400 repeats", testClock).stimulus == null && branches("400 repeats") === "keyword",
+  JSON.stringify(classifyIntent("400 repeats", testClock)),
+);
+order("vaporfly matches the gear name", "vaporfly", [83], [82, 1]);
+const prIds = ids("pr");
+check(
+  "a PR query prefers race.is_pr over a name that only says PR",
+  prIds[0] === 84 && prIds.includes(85),
+  prIds.join(","),
+);
+check(
+  "marathon PR stays the locked fastest-marathon sort",
+  classifyIntent("marathon PR", testClock).intent?.kind === "fastest" &&
+    searchActivities(index, "marathon PR", 50, testClock).every((hit) => hit.locked),
+);
+
+const bareFacts = activityFacts(act({ id: 1, name: "shakeout", start_date_local: "2026-06-01T08:00:00", distance_m: 2000, moving_time_s: 400 }), testClock);
+check(
+  "activityFacts omits metadata that is not on the activity",
+  bareFacts.place_city === undefined &&
+    bareFacts.race_name === undefined &&
+    bareFacts.gear === undefined &&
+    bareFacts.workout_structure === undefined &&
+    bareFacts.with === undefined &&
+    bareFacts.athlete_count === undefined &&
+    bareFacts.occasions?.includes("summer") === true,
+  JSON.stringify(bareFacts),
+);
+const richFacts = activityFacts(
+  act({
+    id: 200,
+    name: "Race day",
+    start_date_local: "2025-12-25T08:00:00",
+    distance_m: 42195,
+    moving_time_s: 10800,
+    place: "Chicago",
+    place_city: "Boston",
+    place_region: "Massachusetts",
+    place_country: "United States",
+    description: "Perfect day",
+    race: { event_name: "Bix 7", official_distance: "7 mi", result_time: 2700, is_pr: true },
+    workout_structure: "8×400m",
+    gear: "Vaporfly",
+    with: ["Ada"],
+    athlete_count: 2,
+  }),
+  testClock,
+);
+check(
+  "activityFacts keeps structured place, race, gear, companions, and Christmas",
+  richFacts.place === "Boston, Massachusetts, United States" &&
+    richFacts.place_city === "Boston" &&
+    richFacts.place_country === "United States" &&
+    richFacts.description === "Perfect day" &&
+    richFacts.race_name === "Bix 7" &&
+    richFacts.race_distance === "7 mi" &&
+    richFacts.race_time === "45:00" &&
+    richFacts.race_pr === true &&
+    richFacts.workout_structure === "8×400m" &&
+    richFacts.gear === "Vaporfly" &&
+    JSON.stringify(richFacts.with) === '["Ada"]' &&
+    richFacts.athlete_count === 2 &&
+    richFacts.occasions?.includes("Christmas") === true &&
+    richFacts.occasions?.includes("winter") === true,
+  JSON.stringify(richFacts),
+);
+const richProse = describeActivity(
+  act({
+    id: 200,
+    name: "Race day",
+    start_date_local: "2025-12-25T08:00:00",
+    distance_m: 42195,
+    moving_time_s: 10800,
+    place_city: "Boston",
+    place_country: "United States",
+    race: { event_name: "Bix 7", official_distance: "7 mi", result_time: "45:12", is_pr: true },
+    workout_structure: "8×400m",
+    gear: "Vaporfly",
+    with: ["Ada", "Ben"],
+    athlete_count: 4,
+  }),
+  testClock,
+);
+check(
+  "describeActivity includes the new fields when they are present",
+  richProse.includes("Boston, United States") &&
+    richProse.includes("race Bix 7") &&
+    richProse.includes("7 mi") &&
+    richProse.includes("45:12") &&
+    richProse.includes("PR") &&
+    richProse.includes("8×400m") &&
+    richProse.includes("gear Vaporfly") &&
+    richProse.includes("with Ada, Ben (4 athletes)") &&
+    richProse.includes("Christmas") &&
+    richProse.includes("winter"),
+  richProse,
+);
+const plainProse = describeActivity(act({ id: 1, name: "shakeout", start_date_local: "2026-06-01T08:00:00", distance_m: 2000, moving_time_s: 400 }), testClock);
+check(
+  "describeActivity omits metadata that is missing",
+  !plainProse.includes("gear ") && !plainProse.includes("PR") && !plainProse.includes("race ") && plainProse.includes("summer"),
+  plainProse,
+);
+
+const nestedPlace = toActivity({
+  id: 130,
+  name: "Easy",
+  sport_type: "Run",
+  start_date_local: "2025-12-25T08:00:00Z",
+  place: { city: "Chicago", region: "Illinois", country: "United States", lat: 41.88, lng: -87.63 },
+  race: { event_name: "CHI", distance: "marathon", result_time: 10800, is_pr: false },
+  workout_structure: " 8×400m ",
+  gear: { name: " Vaporfly " },
+  with: ["Ada", "  "],
+  athlete_count: 2,
+  start_latlng: [41.88, -87.63],
+  map: { summary_polyline: "secret" },
+});
+check(
+  "toActivity copies structured place, race, gear, and companions and drops coordinates",
+  nestedPlace.place === "Chicago" &&
+    nestedPlace.place_source === "gps" &&
+    nestedPlace.place_city === "Chicago" &&
+    nestedPlace.place_region === "Illinois" &&
+    nestedPlace.place_country === "United States" &&
+    nestedPlace.lat === undefined &&
+    nestedPlace.lng === undefined &&
+    nestedPlace.start_latlng === undefined &&
+    nestedPlace.race?.event_name === "CHI" &&
+    nestedPlace.race?.official_distance === "marathon" &&
+    nestedPlace.race?.result_time === 10800 &&
+    nestedPlace.race?.is_pr === false &&
+    nestedPlace.workout_structure === "8×400m" &&
+    nestedPlace.gear === "Vaporfly" &&
+    JSON.stringify(nestedPlace.with) === '["Ada"]' &&
+    nestedPlace.athlete_count === 2,
+  JSON.stringify(nestedPlace),
+);
+const sparseExport = toActivity({ id: 131, name: "Easy", sport_type: "Run", start_date_local: "2026-06-01T08:00:00Z" });
+check(
+  "toActivity omits metadata the export did not send",
+  !("place_city" in sparseExport) &&
+    !("place_region" in sparseExport) &&
+    !("place_country" in sparseExport) &&
+    !("race" in sparseExport) &&
+    !("workout_structure" in sparseExport) &&
+    !("gear" in sparseExport) &&
+    !("with" in sparseExport) &&
+    !("athlete_count" in sparseExport),
+  JSON.stringify(sparseExport),
+);
+const virtualNested = toActivity({
+  id: 132,
+  name: "Zwift",
+  sport_type: "VirtualRide",
+  start_date_local: "2025-01-01T08:00:00Z",
+  place: { city: "Paris", country: "France" },
+  gear: "Kicker",
+});
+check(
+  "toActivity drops a virtual activity's structured place and keeps gear",
+  !("place" in virtualNested) && !("place_city" in virtualNested) && !("place_country" in virtualNested) && virtualNested.gear === "Kicker",
+  JSON.stringify(virtualNested),
+);
 
 console.log();
 if (failures === 0) {

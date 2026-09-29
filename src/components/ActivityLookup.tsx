@@ -17,6 +17,7 @@ import {
   searchActivities,
   settledIntentPayload,
   sportLabel,
+  structuredPlaceText,
   type Activity,
   type IntentClassification,
   type IntentFacets,
@@ -28,6 +29,7 @@ import {
   type ActivityGrades,
   type IntentPartKey,
 } from "../lib/activitySearch";
+import { calendarLabel, holidayOf } from "../lib/calendar";
 import {
   formatHours,
   interpretationParts,
@@ -509,9 +511,20 @@ function ActivityRow({
     }
   }
 
-  // Build enrichment chips
+  // Build enrichment chips. Structured place wins over a name-derived city.
   const enrichmentChips: string[] = [];
-  if (a.place) enrichmentChips.push(a.place);
+  const where = structuredPlaceText(a);
+  if (a.place_city || a.place_country) {
+    if (where) enrichmentChips.push(where);
+  } else if (a.place) enrichmentChips.push(a.place);
+  const holiday = holidayOf(a.start_date_local);
+  if (holiday) enrichmentChips.push(calendarLabel(holiday));
+  if (a.race?.event_name) enrichmentChips.push(a.race.event_name);
+  if (a.race?.is_pr) enrichmentChips.push("PR");
+  if (a.workout_structure) enrichmentChips.push(a.workout_structure);
+  if (a.gear) enrichmentChips.push(a.gear);
+  if (a.with && a.with.length > 0) enrichmentChips.push(`with ${a.with.slice(0, 2).join(", ")}`);
+  else if (a.athlete_count != null && a.athlete_count > 1) enrichmentChips.push(`${a.athlete_count} athletes`);
   if (a.primary_stimulus && !["other", "easy"].includes(a.primary_stimulus)) {
     enrichmentChips.push(a.primary_stimulus);
   }
