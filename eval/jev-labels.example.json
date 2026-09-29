@@ -1,0 +1,5 @@
+[
+  { "query": "best run in Chicago", "relevant": [1] },
+  { "query": "fartlek", "relevant": [2] },
+  { "query": "hilly ride", "relevant": [4] }
+]

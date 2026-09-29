@@ -1,10 +1,16 @@
 // Intent, distance-band sort, and describeActivity checks.
 // Run: node --experimental-strip-types test-intent.mjs
 
-import { activityFacts, applyJevIntent, buildIndex, buildJevRequest, classifyIntent, describeActivity, describeIntent, MEMBERSHIP_DEMOTE_BELOW, planShortlist, rerankUnlockedHits, resolveInterpretation, searchActivities, settledIntentPayload, splitJevAnswers } from "./src/lib/activitySearch.ts";
+import { activityFacts, applyJevIntent, buildGradeRequest, buildIndex, buildJevRequest, classifyIntent, climbingLabel, rankGradeFor, readStandout, STANDOUT_LEVELS, withGrades, withoutParts, describeActivity, describeIntent, jevCacheScope, MEMBERSHIP_DEMOTE_BELOW, needsIntentFacets, planShortlist, rerankUnlockedHits, resolveInterpretation, searchActivities, settledIntentPayload, splitJevAnswers } from "./src/lib/activitySearch.ts";
 import { toActivity } from "./scripts/strava-activity.mjs";
+import { formatHours, formatWindow, interpretationParts, lookupStatus, orderHits, primaryHits, resultTotals } from "./src/lib/lookupView.ts";
 
 const testClock = new Date("2026-09-29T12:00:00-05:00");
+
+// A Jev Choice answer as splitJevAnswers keeps it.
+function pick(choice, confidence = 0.9) {
+  return { choice, confidence };
+}
 
 function act(overrides) {
   return {
@@ -328,7 +334,7 @@ const fartlekFilledHits = searchActivities(
   "fartlek",
   50,
   testClock,
-  applyJevIntent(classifyIntent("fartlek", testClock), { is_intervals: 0.91, is_quality: 0.2, is_easy: 0.05 }),
+  applyJevIntent(classifyIntent("fartlek", testClock), { stimulus: pick("intervals") }),
 );
 check(
   "fartlek fill is an unlocked interval shortlist",
@@ -388,21 +394,21 @@ order("most intervals keeps easy strides out", "most intervals", [50, 55, 41], [
 const easySettled = classifyIntent("easy runs last week", testClock);
 check(
   "Jev does not replace a settled easy parse",
-  applyJevIntent(easySettled, { is_quality: 0.99, is_intervals: 0.99, year_2020: 0.99 }) === easySettled,
+  applyJevIntent(easySettled, { stimulus: pick("quality"), year: pick("2020") }) === easySettled,
 );
 const intervalSettled = classifyIntent("interval workouts 2024", testClock);
 check(
   "Jev does not move interval workouts off 2024 or onto a place",
-  applyJevIntent(intervalSettled, { year_2023: 0.99, is_easy: 0.99, place_chicago: 0.99 }) === intervalSettled &&
+  applyJevIntent(intervalSettled, { year: pick("2023"), stimulus: pick("easy"), place_chicago: 0.99 }) === intervalSettled &&
     intervalSettled.place === null,
 );
 const runsSettled = classifyIntent("runs last week", testClock);
 check(
   "Jev does not turn a settled date list into fastest",
-  applyJevIntent(runsSettled, { is_fastest: 0.99 }) === runsSettled,
+  applyJevIntent(runsSettled, { superlative: pick("fastest") }) === runsSettled,
 );
 const fartlek = classifyIntent("fartlek", testClock);
-const fartlekFilled = applyJevIntent(fartlek, { is_intervals: 0.91, is_quality: 0.84, is_easy: 0.1 });
+const fartlekFilled = applyJevIntent(fartlek, { stimulus: pick("intervals", 0.8) });
 check(
   "Jev intervals facet fills an unrecognized workout word",
   !fartlek.isDeterministic &&
@@ -413,17 +419,21 @@ check(
   JSON.stringify(fartlekFilled.stimulus),
 );
 check(
-  "a low Jev interval score is discarded",
-  applyJevIntent(fartlek, { is_intervals: 0.4, is_easy: 0.2 }) === fartlek,
+  "a low-confidence stimulus choice is discarded",
+  applyJevIntent(fartlek, { stimulus: pick("intervals", 0.3) }) === fartlek,
 );
 check(
-  "tied Jev stimulus scores are discarded",
-  applyJevIntent(fartlek, { is_easy: 0.8, is_quality: 0.78 }) === fartlek,
+  "a no-match stimulus choice adds nothing",
+  applyJevIntent(fartlek, { stimulus: pick("none", 0.99) }) === fartlek,
+);
+check(
+  "tempo and marathon pace choices land as modifiers",
+  applyJevIntent(classifyIntent("threshold", testClock), { stimulus: pick("tempo") }).stimulus?.modifiers?.[0] === "tempo",
+  JSON.stringify(applyJevIntent(classifyIntent("threshold", testClock), { stimulus: pick("tempo") }).stimulus),
 );
 const speedwork = applyJevIntent(classifyIntent("speedwork", testClock), {
-  is_intervals: 0.92,
-  year_2024: 0.9,
-  year_2025: 0.2,
+  stimulus: pick("intervals"),
+  year: pick("2024", 0.8),
 });
 check(
   "Jev year facet applies only as a gap fill beside a stimulus",
@@ -431,7 +441,7 @@ check(
   JSON.stringify({ stimulus: speedwork.stimulus, window: speedwork.dateWindow }),
 );
 const bestRun = classifyIntent("best run in Chicago", testClock);
-const bestSped = applyJevIntent(bestRun, { is_fastest: 0.92, is_longest: 0.2 });
+const bestSped = applyJevIntent(bestRun, { superlative: pick("fastest", 0.84) });
 check(
   "Jev fastest facet can complete an unsettled Chicago query",
   !bestRun.isDeterministic && bestSped.intent?.kind === "fastest" && bestSped.intent?.sport === "run" && bestSped.place === "chicago",
@@ -439,19 +449,22 @@ check(
 );
 
 const split = splitJevAnswers({
-  a31: { noul: 0.8 },
-  a31s: { noul: 0.7 },
-  a31p: { noul: 0.6 },
-  is_intervals: { noul: 0.91 },
-  is_easy: { noul: 0.2 },
-  has_place: { noul: 0.4 },
+  a31: { type: "noul", noul: 0.8 },
+  a31s: { type: "noul", noul: 0.7 },
+  a31p: { type: "noul", noul: 0.6 },
+  stimulus: { type: "choice", choice: "intervals", probabilities: { intervals: 0.9, none: 0.1 }, confidence: 0.82 },
+  year: { type: "choice", choice: "none", probabilities: { none: 1 }, confidence: 1 },
+  place_chicago: { type: "noul", noul: 0.2 },
+  has_place: { type: "noul", noul: 0.4 },
 });
 check(
-  "Jev answers split into membership scores and intent facets",
+  "Jev answers split into membership scores, companions, and typed intent facets",
   split.scores[31] === 0.8 &&
-    split.facets.is_intervals === 0.91 &&
-    split.facets.is_easy === 0.2 &&
-    split.scores.is_intervals === undefined &&
+    split.facets.stimulus?.choice === "intervals" &&
+    split.facets.stimulus?.confidence === 0.82 &&
+    split.facets.year?.choice === "none" &&
+    split.facets.place_chicago === 0.2 &&
+    split.facets.has_place === undefined &&
     split.facets.a31s === undefined &&
     split.companions[31]?.stimulus === 0.7 &&
     split.companions[31]?.place === 0.6,
@@ -567,31 +580,85 @@ check(
   JSON.stringify({ interpreted: packed.state.interpreted_query, q: packed.questions.a31 }),
 );
 check(
-  "Jev request asks intent facets in parallel with membership",
-  packed.questions.is_intervals?.type === "noul" &&
-    packed.questions.is_easy?.type === "noul" &&
-    packed.questions.is_fastest?.type === "noul" &&
-    packed.questions.has_place?.type === "noul" &&
-    packed.questions.year_2024?.type === "noul" &&
-    packed.questions.band_10k?.type === "noul" &&
-    packed.state.vocab.primary_stimulus.includes("easy") &&
-    packed.state.vocab.stimulus_cluster.includes("quality_intervals") &&
-    packed.questions.a31?.type === "noul",
+  "a deterministic parse asks no intent facets",
+  !needsIntentFacets(classifyIntent("longest run on a Tuesday", testClock)) &&
+    Object.keys(packed.questions).sort().join(",") === "a30,a31",
   Object.keys(packed.questions).sort().join(","),
+);
+const openPacked = buildJevRequest(
+  "hilly ride",
+  [act({ id: 32, name: "gravel climb", sport_type: "Ride", start_date_local: "2026-09-01T08:00:00", distance_m: 60000, moving_time_s: 9000 })],
+  testClock,
+);
+check(
+  "an open parse asks pick-one intent facets as Choices with a no-match option",
+  needsIntentFacets(classifyIntent("hilly ride", testClock)) &&
+    openPacked.questions.stimulus?.type === "choice" &&
+    "none" in openPacked.questions.stimulus.criteria &&
+    "intervals" in openPacked.questions.stimulus.criteria &&
+    openPacked.questions.superlative?.type === "choice" &&
+    openPacked.questions.year?.type === "choice" &&
+    "2020" in openPacked.questions.year.criteria &&
+    "2026" in openPacked.questions.year.criteria &&
+    "none" in openPacked.questions.year.criteria &&
+    openPacked.questions.distance?.type === "choice" &&
+    openPacked.questions.sport?.criteria.any !== undefined &&
+    openPacked.questions.place_chicago?.type === "noul" &&
+    openPacked.questions.has_place === undefined &&
+    openPacked.state.vocab.primary_stimulus.includes("easy") &&
+    openPacked.state.vocab.stimulus_cluster.includes("quality_intervals") &&
+    openPacked.questions.a32?.type === "noul",
+  Object.keys(openPacked.questions).sort().join(","),
+);
+const cachedFacetsPacked = buildJevRequest(
+  "hilly ride",
+  [act({ id: 32, name: "gravel climb", sport_type: "Ride", start_date_local: "2026-09-01T08:00:00", distance_m: 60000, moving_time_s: 9000 })],
+  testClock,
+  undefined,
+  { includeFacets: false },
+);
+check(
+  "cached facets are not asked again",
+  Object.keys(cachedFacetsPacked.questions).join(",") === "a32",
+  Object.keys(cachedFacetsPacked.questions).join(","),
 );
 check(
   "interval facet treats fartlek as the existing intervals predicate",
-  packed.questions.is_intervals.instructions.includes("fartlek") &&
-    packed.state.vocab.synonyms.fartlek === "intervals" &&
-    !packed.state.vocab.primary_stimulus.includes("fartlek"),
-  packed.questions.is_intervals.instructions,
+  openPacked.questions.stimulus.criteria.intervals.includes("fartlek") &&
+    openPacked.state.vocab.synonyms.fartlek === "intervals" &&
+    !openPacked.state.vocab.primary_stimulus.includes("fartlek"),
+  openPacked.questions.stimulus.criteria.intervals,
+);
+const blockedBase = { ...classifyIntent("fastest run in Chicago", testClock), place: "intervals" };
+const blockedCleared = applyJevIntent(blockedBase, {});
+check(
+  "a blocked place clears without waiting on facets",
+  blockedBase.isDeterministic && blockedCleared.place == null,
+  String(blockedCleared.place),
+);
+const hillyOpen = classifyIntent("hilly ride", testClock);
+check(
+  "empty or missing facets leave an open parse unchanged",
+  applyJevIntent(hillyOpen, {}) === hillyOpen && applyJevIntent(hillyOpen, undefined) === hillyOpen,
+  "",
+);
+const fartlekOpen = classifyIntent("fartlek", testClock);
+const scopeBefore = jevCacheScope("fartlek", settledIntentPayload(fartlekOpen), testClock);
+const scopeAfter = jevCacheScope(
+  "fartlek",
+  settledIntentPayload(applyJevIntent(fartlekOpen, { stimulus: pick("intervals") })),
+  testClock,
+);
+const scopeTomorrow = jevCacheScope("fartlek", settledIntentPayload(fartlekOpen), new Date("2026-09-30T12:00:00-05:00"));
+check(
+  "membership cache scope changes with the interpretation and the day",
+  scopeBefore.interpreted !== scopeAfter.interpreted &&
+    scopeBefore.day === "2026-09-29" &&
+    scopeTomorrow.day === "2026-09-30",
+  JSON.stringify({ scopeBefore, scopeAfter, scopeTomorrow }),
 );
 
-const fartlekSettled = applyJevIntent(classifyIntent("fartlek", testClock), {
-  is_intervals: 0.91,
-  is_quality: 0.2,
-  is_easy: 0.05,
-});
+const fartlekSettled = applyJevIntent(classifyIntent("fartlek", testClock), { stimulus: pick("intervals") });
 const fartlekPacked = buildJevRequest(
   "fartlek",
   [act({ id: 41, name: "Easy Run", start_date_local: "2026-09-26T08:00:00", distance_m: 10000, moving_time_s: 3000, primary_stimulus: "quality", modifiers: ["intervals"] })],
@@ -624,9 +691,13 @@ const bestPacked = buildJevRequest(
 check(
   "best in Chicago conditions membership on place and a standout",
   bestPacked.questions.a21.criteria.true.includes("in chicago") &&
-    bestPacked.questions.a21.criteria.true.includes("standout") &&
-    bestPacked.questions.a21p?.type === "noul",
+    bestPacked.questions.a21.criteria.true.includes("standout"),
   bestPacked.questions.a21.criteria.true,
+);
+check(
+  "a code-parsed place needs no place companion",
+  bestPacked.questions.a21p === undefined,
+  Object.keys(bestPacked.questions).filter((key) => key.startsWith("a21")).join(","),
 );
 const racePacked = buildJevRequest(
   "Chicago Marathon",
@@ -649,6 +720,167 @@ check(
   pacePacked.questions.a19.criteria.true.includes("in chicago") &&
     !pacePacked.questions.a19.criteria.true.includes("race-labeled"),
   pacePacked.questions.a19.criteria.true,
+);
+
+console.log("\nlookup view:\n");
+
+const idle = { available: true, scored: false, pending: false, error: false };
+const fastestChicago = classifyIntent("fastest run in Chicago", testClock);
+check(
+  "read-as parts name the sort, sport, and place a code parse settled",
+  JSON.stringify(interpretationParts(fastestChicago, fastestChicago).map((p) => [p.key, p.value, p.fromJev])) ===
+    JSON.stringify([["sort", "Fastest", false], ["sport", "Runs", false], ["place", "Chicago", false]]),
+  JSON.stringify(interpretationParts(fastestChicago, fastestChicago)),
+);
+const fartlekCode = classifyIntent("fartlek", testClock);
+const fartlekReadAs = applyJevIntent(fartlekCode, { stimulus: pick("intervals") });
+const fartlekParts = interpretationParts(fartlekReadAs, fartlekCode);
+check(
+  "a part Jev filled in is marked as Jev's",
+  fartlekParts.some((p) => p.key === "stimulus" && p.value === "intervals" && p.fromJev) &&
+    fartlekParts.some((p) => p.key === "words" && !p.fromJev),
+  JSON.stringify(fartlekParts),
+);
+check(
+  "a full calendar year reads as the year; a week reads as a range",
+  formatWindow("2024-01-01", "2024-12-31") === "2024" &&
+    formatWindow("2026-09-21", "2026-09-27") === "Sep 21 – Sep 27, 2026",
+  formatWindow("2026-09-21", "2026-09-27"),
+);
+const statusIndex = buildIndex(activities);
+const fastestHits = searchActivities(statusIndex, "fastest run in Chicago", 500, testClock, fastestChicago);
+check(
+  "a locked metric status reads as count and order, without Jev noise",
+  /^\d+ match(es)? · by pace( · \d+ related)?$/.test(lookupStatus("fastest run in Chicago", fastestHits, fastestChicago, { ...idle, pending: true })),
+  lookupStatus("fastest run in Chicago", fastestHits, fastestChicago, { ...idle, pending: true }),
+);
+const keywordQuery = classifyIntent("steady", testClock);
+const keywordHits = searchActivities(statusIndex, "steady", 500, testClock, keywordQuery);
+check(
+  "an unlocked status says when Jev is ranking and when it has",
+  lookupStatus("steady", keywordHits, keywordQuery, { ...idle, pending: true }).endsWith("best match first · ranking…") &&
+    lookupStatus("steady", keywordHits, keywordQuery, { ...idle, scored: true }).endsWith("ranked by Jev") &&
+    lookupStatus("steady", keywordHits, keywordQuery, { ...idle, error: true }).endsWith("Jev unavailable"),
+  lookupStatus("steady", keywordHits, keywordQuery, { ...idle, pending: true }),
+);
+check(
+  "empty and no-result statuses stay plain",
+  lookupStatus("", [], null, idle) === "0 activities · most recent first" &&
+    lookupStatus("zzz", [], classifyIntent("zzz", testClock), idle) === 'No activities match "zzz"',
+  "",
+);
+const totals = resultTotals([activities[1], activities[2]]);
+check(
+  "totals add distance and time and give run pace when every hit is a run",
+  totals.count === 2 && totals.distanceM === 20100 && totals.movingS === 4700 &&
+    Math.abs(totals.runPaceSPerM - 4700 / 20100) < 1e-9 &&
+    resultTotals([activities[1], activities[5]]).runPaceSPerM === null &&
+    formatHours(4700) === "1h 18m",
+  JSON.stringify(totals),
+);
+check(
+  "primary hits drop the related tail",
+  primaryHits(fastestHits, fastestChicago).every((h) => h.branch === "metric"),
+  "",
+);
+
+console.log("\ngrades, removal, and order:\n");
+
+check(
+  "climbing buckets come from metres per km in code, with tighter ride buckets",
+  climbingLabel(act({ id: 90, start_date_local: "2026-01-01T08:00:00", distance_m: 10000, moving_time_s: 3000, elevation_gain_m: 30 })) === "flat" &&
+    climbingLabel(act({ id: 91, start_date_local: "2026-01-01T08:00:00", distance_m: 10000, moving_time_s: 3000, elevation_gain_m: 150 })) === "hilly" &&
+    climbingLabel(act({ id: 92, sport_type: "Ride", start_date_local: "2026-01-01T08:00:00", distance_m: 50000, moving_time_s: 7000, elevation_gain_m: 450 })) === "hilly" &&
+    climbingLabel(act({ id: 93, trainer: true, start_date_local: "2026-01-01T08:00:00", distance_m: 10000, moving_time_s: 3000, elevation_gain_m: 150 })) === undefined,
+  "",
+);
+const gradeRequest = buildGradeRequest(act({ id: 94, name: "Chicago Marathon", start_date_local: "2025-10-12T08:00:00", distance_m: 42300, moving_time_s: 11000, primary_stimulus: "race" }));
+check(
+  "the standout grade is one Score per activity, with no day-relative facts",
+  gradeRequest.questions.standout.type === "score" &&
+    gradeRequest.questions.standout.criteria.length === STANDOUT_LEVELS.length &&
+    gradeRequest.state.activity.name === "Chicago Marathon" &&
+    gradeRequest.state.activity.days_ago === undefined,
+  JSON.stringify(gradeRequest.state.activity),
+);
+check(
+  "readStandout takes a Score answer and rejects anything else",
+  readStandout({ standout: { type: "score", score: 2.4 } }) === 2.4 &&
+    readStandout({ standout: { type: "noul", noul: 0.9 } }) === null &&
+    readStandout(undefined) === null,
+);
+const graded = withGrades([act({ id: 95, start_date_local: "2026-01-01T08:00:00", distance_m: 1, moving_time_s: 1 }), act({ id: 96, start_date_local: "2026-01-01T08:00:00", distance_m: 1, moving_time_s: 1 })], { model: "m", grades: { 95: { standout: 2.5 } } });
+check("grades attach by id and leave ungraded activities alone", graded[0].standout === 2.5 && graded[1].standout === undefined);
+const bestC = classifyIntent("best run in Chicago", testClock);
+check(
+  "best orders by standout only once grades exist; hilly orders by climbing; metrics keep their sort",
+  rankGradeFor("best run in Chicago", bestC, false) === null &&
+    rankGradeFor("best run in Chicago", bestC, true)?.label === "standout" &&
+    rankGradeFor("hilly ride", classifyIntent("hilly ride", testClock), false)?.label === "climbing" &&
+    rankGradeFor("fastest run in Chicago", classifyIntent("fastest run in Chicago", testClock), true) === null,
+  "",
+);
+function gradedHit(id, standout) {
+  return { activity: { id, standout }, locked: false, score: 1, kind: "keyword", matched: [] };
+}
+const byStandout = rerankUnlockedHits(
+  [gradedHit(1, 0.5), gradedHit(2, 2.8), gradedHit(3, 1.5), gradedHit(4, 3)],
+  { 1: 0.95, 2: 0.6, 3: 0.9, 4: 0.1 },
+  undefined,
+  (a) => a.standout,
+);
+check(
+  "the noul gates and the grade orders what passes; a failed gate stays last",
+  byStandout.map((h) => h.activity.id).join(",") === "2,3,1,4",
+  byStandout.map((h) => h.activity.id).join(","),
+);
+check(
+  "a grade orders unlocked rows even before Jev answers",
+  rerankUnlockedHits([gradedHit(1, 0.5), gradedHit(2, 2.8)], {}, undefined, (a) => a.standout).map((h) => h.activity.id).join(",") === "2,1",
+);
+check(
+  "a lower floor stops demoting weak yeses",
+  rerankUnlockedHits([bareHit(3, false), bareHit(4, false)], { 3: 0.2, 4: 0.25 }, undefined, undefined, 0).map((h) => h.activity.id).join(",") === "4,3",
+);
+const gradedBest = buildJevRequest("best run in Chicago", [{ ...act({ id: 21, name: "x", start_date_local: "2026-09-10T08:00:00", distance_m: 8000, moving_time_s: 2000, place: "Chicago" }), standout: 2 }], testClock);
+check(
+  "with standout grades, the best membership noul judges fit only",
+  !gradedBest.questions.a21.criteria.true.includes("standout"),
+  gradedBest.questions.a21.criteria.true,
+);
+const fastChi = classifyIntent("fastest run in Chicago", testClock);
+const noPlace = withoutParts(fastChi, ["place"]);
+const noSort = withoutParts(fastChi, ["sort"]);
+check(
+  "removing a part drops just that part; removing the sort keeps the filters as a list",
+  noPlace.place === null && noPlace.intent?.kind === "fastest" &&
+    noSort.intent?.kind === "list" && noSort.intent.sport === "run" && noSort.place === "chicago" &&
+    withoutParts(fastChi, []) === fastChi,
+  JSON.stringify({ noPlace: noPlace.intent, noSort: noSort.intent }),
+);
+const removedPacked = buildJevRequest("fastest run in Chicago", [act({ id: 19, name: "t", start_date_local: "2026-08-10T08:00:00", distance_m: 10000, moving_time_s: 2400, place: "Chicago" })], testClock, undefined, { removed: ["place"] });
+check(
+  "a removed part leaves the membership question and the cache scope",
+  !removedPacked.questions.a19.criteria.true.includes("chicago") &&
+    jevCacheScope("fastest run in Chicago", undefined, testClock, ["place"]).interpreted !==
+      jevCacheScope("fastest run in Chicago", undefined, testClock).interpreted,
+  removedPacked.questions.a19.criteria.true,
+);
+const orderedHits = orderHits(
+  [activities[0], activities[6], activities[12]].map((activity) => ({ activity, score: 1, kind: "keyword", matched: [] })),
+  "longest",
+);
+check(
+  "a picked order sorts every row",
+  orderedHits.map((h) => h.activity.id).join(",") === "7,13,1" &&
+    orderHits(orderedHits, "match") === orderedHits,
+  orderedHits.map((h) => h.activity.id).join(","),
+);
+check(
+  "a picked order replaces the ranking notes in the status",
+  lookupStatus("steady", keywordHits, keywordQuery, { ...idle, pending: true }, undefined, "newest first").endsWith("newest first") &&
+    lookupStatus("hilly ride", keywordHits, keywordQuery, idle, "climbing").includes("by climbing"),
+  lookupStatus("hilly ride", keywordHits, keywordQuery, idle, "climbing"),
 );
 
 console.log("\nexport mapping:\n");
@@ -704,6 +936,90 @@ check(
   !("stimulus_cluster" in mappedBlank) && !("modality" in mappedBlank) && !("low_confidence" in mappedBlank),
   JSON.stringify(mappedBlank),
 );
+
+console.log("\neval misses:\n");
+
+// One fixture per miss that scripts/eval-jev.mjs found on real searches.
+const evalIndex = buildIndex([
+  act({ id: 101, name: "Tally In The Valley", sport_type: "TrailRun", start_date_local: "2022-07-31T08:00:00", distance_m: 49000, moving_time_s: 21000, elevation_gain_m: 1100, primary_stimulus: "long" }),
+  act({ id: 102, name: "Long Run", start_date_local: "2023-10-14T08:00:00", distance_m: 29500, moving_time_s: 8000, elevation_gain_m: 538, primary_stimulus: "long" }),
+  act({ id: 103, name: "Mt. Holly Ski", sport_type: "AlpineSki", start_date_local: "2025-12-21T08:00:00", distance_m: 23800, moving_time_s: 4200, elevation_gain_m: 2839, primary_stimulus: "other" }),
+  act({ id: 104, name: "Mega Ride", sport_type: "Ride", start_date_local: "2025-07-08T08:00:00", distance_m: 182000, moving_time_s: 22000, elevation_gain_m: 1366, primary_stimulus: "long" }),
+  act({ id: 105, name: "Morning Hill Sprints", start_date_local: "2024-08-21T08:00:00", distance_m: 17000, moving_time_s: 5300, elevation_gain_m: 533, primary_stimulus: "quality" }),
+  act({ id: 106, name: "Hill session", start_date_local: "2024-09-01T08:00:00", distance_m: 12000, moving_time_s: 4000, elevation_gain_m: 200, primary_stimulus: "hills" }),
+  act({ id: 107, name: "Long Run", start_date_local: "2025-10-10T08:00:00", distance_m: 35900, moving_time_s: 8900, elevation_gain_m: 43, primary_stimulus: "long", place: "Los Angeles" }),
+  act({ id: 108, name: "La Plagne Ski", sport_type: "AlpineSki", start_date_local: "2026-03-27T08:00:00", distance_m: 22800, moving_time_s: 4100, elevation_gain_m: 95, primary_stimulus: "other" }),
+  act({ id: 109, name: "Lunch Swim", sport_type: "Swim", start_date_local: "2020-08-23T08:00:00", distance_m: 1100, moving_time_s: 1300, primary_stimulus: "easy" }),
+  act({ id: 110, name: "Morning Swim", sport_type: "Swim", start_date_local: "2026-05-16T08:00:00", distance_m: 800, moving_time_s: 1080, primary_stimulus: "easy" }),
+  // Zwift's France is a game world, but its name still says France.
+  act({ id: 112, name: "Zwift - Race: R.G.V. in France", sport_type: "VirtualRide", start_date_local: "2023-04-06T08:00:00", distance_m: 25400, moving_time_s: 2700, primary_stimulus: "race" }),
+  act({ id: 111, name: "Chicago Marathon", start_date_local: "2024-10-13T08:00:00", distance_m: 42970, moving_time_s: 10745, primary_stimulus: "race", place: "Chicago" }),
+]);
+const evalIds = (query, c = classifyIntent(query, testClock)) =>
+  searchActivities(evalIndex, query, 50, testClock, c).map((hit) => hit.activity.id);
+
+const ultra = evalIds("ultra");
+check("ultra finds the 49 km trail run and not a GPS-long marathon", ultra[0] === 101 && !ultra.includes(111), JSON.stringify(ultra));
+
+const hilliestRun = classifyIntent("hilliest run", testClock);
+const hilliest = evalIds("hilliest run", hilliestRun);
+check(
+  "hilliest run is a run-only sort, so the ski day and the ride drop out",
+  hilliestRun.intent?.sport === "run" && hilliestRun.isDeterministic && hilliest[0] === 101 && !hilliest.includes(103) && !hilliest.includes(104),
+  JSON.stringify({ intent: hilliestRun.intent, hilliest }),
+);
+
+const longestSwim = classifyIntent("longest swim", testClock);
+const swims = evalIds("longest swim", longestSwim);
+check(
+  "longest swim sorts swims only",
+  longestSwim.intent?.sport === "swim" && JSON.stringify(swims) === "[109,110]",
+  JSON.stringify({ intent: longestSwim.intent, swims }),
+);
+
+const hillCode = classifyIntent("hill sprints", testClock);
+const hillFilled = applyJevIntent(hillCode, { stimulus: pick("hills", 0.89) });
+const hillSprints = evalIds("hill sprints", hillFilled);
+check(
+  "a Jev hills fill keeps the run named Hill Sprints",
+  hillFilled.stimulus?.primary === "hills" && hillFilled.softStimulus === true && hillSprints.includes(105) && hillSprints.includes(106),
+  JSON.stringify({ stimulus: hillFilled.stimulus, hillSprints }),
+);
+const typedHills = evalIds("hills");
+check("hills typed by the person stays a hard label filter", JSON.stringify(typedHills) === "[106]", JSON.stringify(typedHills));
+
+const longLa = classifyIntent("long run in LA", testClock);
+const la = evalIds("long run in LA", longLa);
+check("LA reads as Los Angeles", longLa.place === "los angeles" && JSON.stringify(la) === "[107]", JSON.stringify({ place: longLa.place, la }));
+const plagne = classifyIntent("La Plagne", testClock);
+check("a bare La is not Los Angeles", plagne.place === null, JSON.stringify(plagne));
+
+const franceSki = classifyIntent("skiing in France", testClock);
+const france = searchActivities(evalIndex, "skiing in France", 50, testClock, franceSki);
+check(
+  "a place no ski day has leaves ski days unlocked for Jev to judge",
+  franceSki.intent?.sport === "ski" &&
+    franceSki.place === "france" &&
+    JSON.stringify(france.map((hit) => hit.activity.id).sort()) === "[103,108]" &&
+    france.every((hit) => !hit.locked),
+  JSON.stringify({ intent: franceSki.intent, france: france.map((hit) => [hit.activity.id, hit.locked]) }),
+);
+check(
+  "a place activities do have stays a hard, locked filter",
+  searchActivities(evalIndex, "long run in LA", 50, testClock, longLa).every((hit) => hit.locked),
+);
+
+const marathonPr = classifyIntent("marathon PR", testClock);
+check("marathon PR reads as the fastest marathon", marathonPr.intent?.kind === "fastest" && marathonPr.distanceBand?.kind === "marathon", JSON.stringify(marathonPr));
+const barePr = classifyIntent("PR", testClock);
+check("a bare PR stays a name search", barePr.intent === null && JSON.stringify(barePr.remainingTokens) === '["pr"]', JSON.stringify(barePr));
+
+const shamrock = toActivity({ id: 120, name: "Shamrock Shuffle 8km", sport_type: "Run", start_date_local: "2025-03-23T08:00:00Z", place: "Washington DC", place_source: "name" });
+check("toActivity corrects the Shamrock Shuffle to Chicago", shamrock.place === "Chicago", JSON.stringify(shamrock));
+const zwift = toActivity({ id: 121, name: "Zwift - Easy Ride in New York", sport_type: "VirtualRide", start_date_local: "2025-01-01T08:00:00Z", place: "New York", place_source: "name" });
+check("toActivity drops a virtual ride's game-world place", !("place" in zwift) && !("place_source" in zwift), JSON.stringify(zwift));
+const gpsPlace = toActivity({ id: 122, name: "Easy Run", sport_type: "Run", start_date_local: "2025-01-01T08:00:00Z", place: "Chicago", place_source: "gps" });
+check("toActivity keeps a GPS place", gpsPlace.place === "Chicago" && gpsPlace.place_source === "gps", JSON.stringify(gpsPlace));
 
 console.log();
 if (failures === 0) {

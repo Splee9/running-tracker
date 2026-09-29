@@ -1,50 +1,36 @@
-// POST /.netlify/functions/jev-rerank  { query: string, ids: number[] }
-//   → { scores: { [id]: p }, facets: { [question]: p } }
+// POST /.netlify/functions/jev-rerank  { query: string, ids: number[], settled?, removed? }
+//   → { scores: { [id]: p }, facets: IntentFacets, companions }
 // One packed Jev call. State is the query, the closed stimulus vocab, and the
 // shortlist. Intent facets and per-activity membership noul run in parallel.
 // Code applies a facet only when it fills a gap. Membership re-ranks unlocked
 // branches on the client. Locked metric and date order stay in code.
 
 import snapshot from "../../src/activities.json" with { type: "json" };
-import { buildJevRequest, splitJevAnswers, type Activity, type JevCompanions } from "../../src/lib/activitySearch.ts";
+import gradeFile from "../../src/activity-grades.json" with { type: "json" };
+import {
+  buildJevRequest,
+  classifyIntent,
+  jevCacheScope,
+  needsIntentFacets,
+  parseRemovedParts,
+  splitJevAnswers,
+  withGrades,
+  type Activity,
+  type ActivityGrades,
+  type IntentFacets,
+  type JevCompanions,
+} from "../../src/lib/activitySearch.ts";
+import { getJevProvider } from "../../src/lib/jevProvider.ts";
 
 const MAX_CANDIDATES = 25;
 const MAX_QUERY_LENGTH = 120;
 const TIMEOUT_MS = 1_500;
 const WINDOW_MS = 60_000;
 const MAX_REQUESTS_PER_WINDOW = 60;
-const OPENROUTER_MODEL = "typesafe/jev-1.13-20260917";
-const TYPESAFE_MODEL = "jev-1.13.0";
 
-type Provider = { url: string; model: string; key: string; headers: Record<string, string> };
-
-// OpenRouter's Decisions API and TypeSafe's /v1/systemone share the same request
-// and response shape; only the URL, model id and key differ. Both ids are pinned:
-// a confidence floor is calibrated to one model's distribution.
-function getProvider(): Provider | null {
-  const env = (name: string) => process.env[name];
-  const openrouter = env("OPENROUTER_API_KEY");
-  if (openrouter) {
-    return {
-      url: env("JEV_API_URL") ?? "https://openrouter.ai/api/alpha/decisions",
-      model: env("JEV_MODEL") ?? OPENROUTER_MODEL,
-      key: openrouter,
-      headers: { "HTTP-Referer": "https://iamspencerlee.com", "X-Title": "Activity Lookup" },
-    };
-  }
-  const typesafe = env("TYPESAFE_API_KEY");
-  if (typesafe) {
-    return {
-      url: env("JEV_API_URL") ?? "https://api.typesafe.ai/v1/systemone",
-      model: env("JEV_MODEL") ?? TYPESAFE_MODEL,
-      key: typesafe,
-      headers: {},
-    };
-  }
-  return null;
-}
-
-const byId = new Map((snapshot.activities as Activity[]).map((a) => [a.id, a]));
+const byId = new Map(
+  withGrades(snapshot.activities as Activity[], gradeFile as ActivityGrades).map((a) => [a.id, a]),
+);
 
 type CachedJudgment = { membership: number; stimulus?: number; place?: number };
 
@@ -53,8 +39,10 @@ const cache = new Map<string, CachedJudgment>();
 const CACHE_MAX = 5_000;
 const hits = new Map<string, { count: number; start: number }>();
 
-function cacheKey(model: string, query: string, id: number) {
-  return `${model}\u0000${query}\u0000${id}`;
+// Membership criteria follow the interpreted query, and facts carry days_ago.
+// The same raw query under a new interpretation or a new day is a different question.
+function cacheKey(model: string, day: string, interpreted: string, query: string, id: number) {
+  return `${model}\u0000${day}\u0000${interpreted}\u0000${query}\u0000${id}`;
 }
 
 function remember(key: string, value: CachedJudgment) {
@@ -79,10 +67,10 @@ type JevResponse = {
   usage?: { input_tokens?: number; output_tokens?: number; cost?: number };
 };
 
-const facetCache = new Map<string, Record<string, number>>();
+const facetCache = new Map<string, IntentFacets>();
 const FACET_CACHE_MAX = 500;
 
-function rememberFacets(key: string, value: Record<string, number>) {
+function rememberFacets(key: string, value: IntentFacets) {
   if (facetCache.size >= FACET_CACHE_MAX) facetCache.delete(facetCache.keys().next().value as string);
   facetCache.set(key, value);
 }
@@ -96,11 +84,13 @@ function json(body: unknown, status = 200) {
 
 export default async (req: Request, context: { ip?: string }) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
-  const provider = getProvider();
+  const provider = getJevProvider(process.env);
   if (!provider) return json({ error: "Jev is not configured" }, 503);
   if (rateLimited(context.ip ?? "unknown")) return json({ error: "Too many requests" }, 429);
 
-  const body = (await req.json().catch(() => null)) as { query?: unknown; ids?: unknown; settled?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as
+    | { query?: unknown; ids?: unknown; settled?: unknown; removed?: unknown }
+    | null;
   const query = typeof body?.query === "string" ? body.query.trim().toLowerCase() : "";
   const ids = Array.isArray(body?.ids) ? body.ids : [];
   if (
@@ -112,13 +102,17 @@ export default async (req: Request, context: { ip?: string }) => {
     return json({ error: "Invalid request" }, 400);
   }
 
+  // Parts removed from the "Read as" row are left out of the membership question too.
+  const removed = parseRemovedParts(body?.removed);
+  const { day, interpreted } = jevCacheScope(query, body?.settled, undefined, removed);
+  const needFacets = needsIntentFacets(classifyIntent(query));
   const scores: Record<number, number> = {};
   const companions: JevCompanions = {};
   const pending: Activity[] = [];
   for (const id of ids as number[]) {
     const activity = byId.get(id);
     if (!activity) continue;
-    const cached = cache.get(cacheKey(provider.model, query, id));
+    const cached = cache.get(cacheKey(provider.model, day, interpreted, query, id));
     if (cached !== undefined) {
       scores[id] = cached.membership;
       if (cached.stimulus !== undefined || cached.place !== undefined) {
@@ -129,15 +123,17 @@ export default async (req: Request, context: { ip?: string }) => {
     } else pending.push(activity);
   }
 
-  const facetKey = `${provider.model}\u0000${query}\u0000facets`;
+  // Facet questions name calendar years, so the day is part of their key too.
+  const facetKey = `${provider.model}\u0000${day}\u0000${query}\u0000facets`;
   const cachedFacets = facetCache.get(facetKey);
-  if (pending.length === 0 && cachedFacets) return json({ scores, facets: cachedFacets, companions });
+  const askFacets = needFacets && !cachedFacets;
+  if (pending.length === 0 && !askFacets) return json({ scores, facets: cachedFacets ?? {}, companions });
 
   const started = Date.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const packed = buildJevRequest(query, pending, undefined, body?.settled);
+    const packed = buildJevRequest(query, pending, undefined, body?.settled, { includeFacets: askFacets, removed });
     const res = await fetch(provider.url, {
       method: "POST",
       headers: {
@@ -167,13 +163,13 @@ export default async (req: Request, context: { ip?: string }) => {
       const companion = split.companions[numeric];
       scores[numeric] = score;
       if (companion) companions[numeric] = companion;
-      remember(cacheKey(provider.model, query, numeric), {
+      remember(cacheKey(provider.model, day, interpreted, query, numeric), {
         membership: score,
         stimulus: companion?.stimulus,
         place: companion?.place,
       });
     }
-    rememberFacets(facetKey, split.facets);
+    if (askFacets) rememberFacets(facetKey, split.facets);
     console.log(JSON.stringify({
       msg: "jev.decision",
       model: data.model ?? provider.model,
@@ -182,6 +178,8 @@ export default async (req: Request, context: { ip?: string }) => {
       query,
       scores,
       facets: split.facets,
+      facets_asked: askFacets,
+      questions: Object.keys(packed.questions).length,
     }));
   } catch (err) {
     const aborted = controller.signal.aborted;

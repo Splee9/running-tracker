@@ -37,11 +37,14 @@ src/
   training-variability.json  weekly training-variability series (generated)
   activities.json         public activity list for /activity-lookup (built from
                           spencer-brain at deploy time; gitignored)
+  activity-grades.json    offline Jev "standout" Score per activity (committed;
+                          scripts/grade-activities.mjs)
   components/             Hero, YearChart, CumulativeJourney, Comparisons, Footer,
                           Training + TvChart (the /training page)
   hooks/usePointer.ts     spring-smoothed cursor tracking
   lib/                    data types, formatting, comparisons, tiny history router,
-                          activitySearch (keyword + fuzzy index)
+                          activitySearch (keyword + fuzzy index), lookupView
+                          (status and "Read as" text), jevProvider (API routing)
 netlify/functions/
   jev-rerank.mts          Jev reranking for /activity-lookup (holds the API key)
   styles/global.css       design tokens + base styles
@@ -82,21 +85,44 @@ python3 scripts/derive_weekly_hours.py
   2. **Fan-out** for the rest of the query: metric, then place-longest,
      date-list, place-list, then keyword/fuzzy. First claim wins. A query that
      does not name a stimulus keeps the previous metric, place, and date behavior.
-  3. **Jev**, 300 ms after typing stops: one request asks parallel intent
-     questions (easy, intervals, quality, place, year, fastest, longest) and a
-     membership noul per shortlisted activity. A high-confidence answer fills
-     a gap in an incomplete parse (`fartlek` can land as intervals; no new
-     stimulus labels). A parse the code already settled is not replaced.
-     Unlocked branches — keyword, fuzzy, "best", and a synonym fill that still
-     has leftover words — then sort by that membership noul, highest first
-     ([re-ranking cookbook](https://docs.typesafe.ai/cookbooks/rerank_typesafe)).
-     A noul under 0.3 is demoted behind stronger yeses and kept. Stimulus-fit
-     and place-fit nouls share the same call and only break ties. Locked
-     branches (pace, distance, time, heart rate, power, and a code-settled
-     date or place list) stay in code order. Race-name keywords such as
-     "Chicago Marathon" boost a race-labeled name match before that re-rank.
-     Without a key the function returns 503 and the page stays on the local
-     shortlist.
+  3. **Jev**, 300 ms after typing stops: one request asks a membership noul
+     per shortlisted activity. When code could not fully parse the query, the
+     same request asks intent questions: Choices with a no-match option for
+     workout kind, fastest/longest, year, race distance, and sport, plus a
+     Chicago noul. A confident answer fills a gap (`fartlek` can land as
+     intervals; no new stimulus labels). A parse the code already settled asks
+     no intent questions and is not replaced. Unlocked branches — keyword,
+     fuzzy, "best", and a synonym fill that still has leftover words — are
+     gated by the membership noul
+     ([re-ranking cookbook](https://docs.typesafe.ai/cookbooks/rerank_typesafe)):
+     a noul under 0.3 is ranked after stronger yeses and kept. What passes is
+     ordered by a graded dimension when the query asks for a degree ("best" by
+     the offline standout Score, "hilly" by climbing per km in code), else by
+     the noul. Stimulus-fit and place-fit nouls are asked only for a value Jev
+     filled in, and only break ties. Locked branches (pace, distance, time,
+     heart rate, power, and a code-settled date or place list) stay in code
+     order. Race-name keywords such as "Chicago Marathon" boost a race-labeled
+     name match before that re-rank. Without a key the function returns 503
+     and the page stays on the local shortlist.
+
+  The page shows what the query was read as; each part can be removed, and the
+  removal reaches Jev's question too. An order menu (newest, longest, fastest
+  pace, most climbing) overrides the ranking. Query, sport, units, order, and
+  removed parts live in the URL (`?q=&sport=&u=&sort=&drop=`). `?debug=1` shows
+  match kind, branch, and Jev score on each row.
+
+Offline Jev work (same `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY` as the function):
+
+```bash
+npm run grade -- [--dry-run] [--limit N]      # standout Score for ungraded activities → src/activity-grades.json
+npm run eval:jev -- [--dry-run] [--labels f]  # rank labeled queries at each membership floor
+```
+
+Grading sends one activity per request and only for activities without a grade;
+a different model regrades everything. For the eval, copy
+`eval/jev-labels.example.json` to `eval/jev-labels.json` and list, per query, the
+activity ids you expect near the top. It reports top-1/5/10 and MRR for each
+floor (0–0.6) and caches Jev responses in `eval/.cache/`.
 
 `src/activities.json` is gitignored and built before every deploy from
 `data/public/strava-activities.json`, the public Strava activities export grokbot
