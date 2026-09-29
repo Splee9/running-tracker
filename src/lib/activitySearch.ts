@@ -525,7 +525,27 @@ function parseDateWindow(tokens: string[], now?: Date): { window: DateWindow | n
       };
     }
   }
-  
+
+  // A month with no year ("longest run in August") is its most recent occurrence:
+  // this year up to the current month, otherwise last year.
+  for (let i = 0; i < tokens.length; i++) {
+    const monthNum = monthNames.indexOf(tokens[i]);
+    if (monthNum < 0) continue;
+    // "may" is also a verb; only read it as the month after a date preposition.
+    if (tokens[i] === "may" && !(i > 0 && ["in", "during", "from", "of"].includes(tokens[i - 1]))) continue;
+    consumedIndices.add(i);
+    const year = monthNum <= today.getMonth() ? currentYear : currentYear - 1;
+    const month = monthNum + 1;
+    const lastDay = new Date(year, month, 0).getDate();
+    return {
+      window: {
+        start: `${year}-${String(month).padStart(2, '0')}-01`,
+        end: `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+      },
+      consumedIndices
+    };
+  }
+
   return { window: null, consumedIndices };
 }
 
@@ -535,7 +555,7 @@ export type DateWindow = {
 };
 
 export type SuperlativeIntent = {
-  kind: "longest" | "fastest" | "most_intervals" | "hilliest" | "highest_hr";
+  kind: "longest" | "fastest" | "most_intervals" | "hilliest" | "highest_hr" | "earliest";
   sport?: Sport;
 } | {
   kind: "place_filter";
@@ -995,6 +1015,15 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     }
   }
 
+  // "my first marathon" is the oldest one that fits.
+  if (!intent) {
+    const firstIdx = tokens.findIndex(t => ["first", "earliest", "oldest"].includes(t));
+    if (firstIdx >= 0) {
+      intent = { kind: "earliest" };
+      consumedIndices.add(firstIdx);
+    }
+  }
+
   // Detect highest HR (e.g., "highest heart rate", "highest hr", "highest average hr")
   const highestIdx = tokens.findIndex(t => ["highest", "max"].includes(t));
   const hrIdx = tokens.findIndex(t => ["hr", "heartrate", "heart"].includes(t));
@@ -1117,18 +1146,22 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
 
   const resolvedPlace = place || null;
 
-  // Consume a distance band only for fastest/longest, so a plain "10k" search
+  // Consume a distance band only for fastest/longest/earliest, so a plain "10k" search
   // still matches the tag instead of becoming an empty list query.
   const parsedBand = parseDistanceBand(query);
   let distanceBand: DistanceBand | null = null;
   if (
     parsedBand.band &&
     intent &&
-    (intent.kind === "fastest" || intent.kind === "longest")
+    (intent.kind === "fastest" || intent.kind === "longest" || intent.kind === "earliest")
   ) {
     distanceBand = parsedBand.band;
     parsedBand.consumedIndices.forEach((i) => consumedIndices.add(i));
     if (distanceBand.runsOnly && !intent.sport) intent.sport = "run";
+    // "first half marathon" is the first race at that distance, not a long training run that reached it.
+    if (intent.kind === "earliest" && distanceBand.kind !== "numeric" && !stimulus) {
+      stimulus = { intervals: false, primary: "race", modifiers: [] };
+    }
   }
 
   let remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
@@ -1525,6 +1558,8 @@ export function describeIntent(c: IntentClassification): string {
     );
   } else if (intent?.kind === "longest") {
     bits.push("longest distance; a long effort is a strong match and a short one is not");
+  } else if (intent?.kind === "earliest") {
+    bits.push("the first one, oldest date first");
   } else if (intent?.kind === "list") {
     bits.push("list of matching activities, most recent first; every activity that fits the sport, place, and dates is a match");
   } else if (intent?.kind === "place_filter") {
@@ -1579,8 +1614,14 @@ function scoreToken(token: string, words: string[]): { score: number; fuzzy: boo
   let fuzzy = false;
   // Years and distances ("2025", "10k") must not fuzz into their neighbours.
   const maxEdits = /\d/.test(token) ? 0 : token.length >= 7 ? 2 : token.length >= 4 ? 1 : 0;
+  // "marathons" names a marathon. A plural is not a typo, so it must not read as fuzzy.
+  const singular = token.length >= 4 && token.endsWith("s") ? token.slice(0, -1) : null;
   for (const w of words) {
     if (w === token) return { score: 1, fuzzy: false };
+    if (singular && w === singular) {
+      if (0.95 > best) [best, fuzzy] = [0.95, false];
+      continue;
+    }
     if (w.startsWith(token) && token.length >= 2) {
       if (0.85 > best) [best, fuzzy] = [0.85, false];
       continue;
@@ -1704,6 +1745,16 @@ function buildShortlistBranches(c: IntentClassification, query: string): Shortli
     });
   }
 
+  // A stimulus Jev guessed ("FTP builder" as quality) opens a list of every such session.
+  // Name matches are the stronger signal, so they go ahead of it, still behind a metric sort.
+  if (c.softStimulus) {
+    const at = branches.findIndex((branch) => branch.id === "keyword");
+    if (at > 0) {
+      const [keyword] = branches.splice(at, 1);
+      branches.splice(branches[0]?.id === "metric" ? 1 : 0, 0, keyword);
+    }
+  }
+
   return branches;
 }
 
@@ -1758,7 +1809,11 @@ function applyBranchFilters(index: IndexedActivity[], branch: ShortlistBranch): 
   } else if (branch.filterType === "workout") {
     candidates = candidates.filter(({ activity }) => activity.workout_type === 3 || activity.workout_type === 12);
   }
-  if (branch.distanceBand && branch.intent && (branch.intent.kind === "fastest" || branch.intent.kind === "longest")) {
+  if (
+    branch.distanceBand &&
+    branch.intent &&
+    (branch.intent.kind === "fastest" || branch.intent.kind === "longest" || branch.intent.kind === "earliest")
+  ) {
     const band = branch.distanceBand;
     const sport = branch.sport;
     candidates = candidates.filter(({ activity }) => {
@@ -1991,6 +2046,8 @@ function applySuperlativeSorting(
     });
   } else if (intent.kind === "hilliest") {
     sorted.sort((a, b) => b.activity.elevation_gain_m - a.activity.elevation_gain_m);
+  } else if (intent.kind === "earliest") {
+    sorted.sort((a, b) => a.activity.start_date_local.localeCompare(b.activity.start_date_local));
   } else if (intent.kind === "highest_hr") {
     // Sort by average heart rate (desc), filter out activities without HR data
     const withHr = sorted.filter(h => h.activity.average_heartrate !== undefined);
@@ -2297,7 +2354,7 @@ export function splitJevAnswers(answers: JevAnswerMap): {
 function metricKind(c: IntentClassification): boolean {
   const kind = c.intent?.kind;
   return kind === "fastest" || kind === "longest" || kind === "most_intervals" || kind === "hilliest"
-    || kind === "highest_hr" || kind === "highest_power" || kind === "mmp_power";
+    || kind === "highest_hr" || kind === "highest_power" || kind === "mmp_power" || kind === "earliest";
 }
 
 /**

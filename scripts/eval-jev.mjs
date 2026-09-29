@@ -7,6 +7,8 @@
 // eval/jev-labels.example.json. Replays what the page and function do: code parse, shortlist,
 // one packed Jev call, facet gap-fill (and a second call when it changes the filters), then
 // the rerank at each floor. Jev responses are cached in eval/.cache, so reruns are free.
+// Each line shows Jev's membership score for the labeled activity in parentheses, and the
+// Choice picks with their confidence in brackets when Jev was asked to fill gaps.
 // --dry-run skips Jev and reports whether the shortlist contains the labeled activities at all.
 
 import { createHash } from "node:crypto";
@@ -71,11 +73,20 @@ async function askJev(request) {
   } catch {
     // Not cached yet.
   }
-  const res = await fetch(provider.url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json", ...provider.headers },
-    body,
-  });
+  let res;
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(provider.url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json", ...provider.headers },
+      body,
+    });
+    // Rate limits and upstream 5xx (TypeSafe has returned 520) are worth a retry, as in grade-activities.mjs.
+    if ((res.status === 429 || res.status >= 500) && attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 1000));
+      continue;
+    }
+    break;
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const data = await res.json();
   await mkdir(CACHE, { recursive: true });
@@ -136,7 +147,10 @@ for (const { query, relevant: ids } of labels) {
   const picks = Object.entries(judged.facets)
     .map(([key, value]) => (typeof value === "number" ? `${key}=${value.toFixed(2)}` : `${key}=${value.choice}@${value.confidence.toFixed(2)}`))
     .join(" ");
-  console.log(`${query}: code order ${baseline ?? "-"}, Jev ${ranks[MEMBERSHIP_DEMOTE_BELOW] ?? "-"}${picks ? `  [${picks}]` : ""}`);
+  // Jev's membership score for the best-scored labeled activity it saw, like the badge on the page.
+  const labeledScores = [...relevant].map((id) => judged.scores[id]).filter((score) => score !== undefined);
+  const membership = labeledScores.length > 0 ? ` (${Math.round(Math.max(...labeledScores) * 100)}%)` : "";
+  console.log(`${query}: code order ${baseline ?? "-"}, Jev ${ranks[MEMBERSHIP_DEMOTE_BELOW] ?? "-"}${membership}${picks ? `  [${picks}]` : ""}`);
 }
 
 if (!dryRun && results.length > 0) {
