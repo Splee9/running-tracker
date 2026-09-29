@@ -37,6 +37,9 @@ src/
   training-variability.json  weekly training-variability series (generated)
   activities.json         public activity list for /activity-lookup (built from
                           spencer-brain at deploy time; gitignored)
+  chicago-data.json       Chicago Marathon tracker for /training/chicago
+                          (committed fallback; refreshed from spencer-brain
+                          on Netlify)
   components/             Hero, YearChart, CumulativeJourney, Comparisons, Footer,
                           Training + TvChart (the /training page)
   hooks/usePointer.ts     spring-smoothed cursor tracking
@@ -59,7 +62,9 @@ netlify/functions/
 - `/training/chicago` — Chicago Marathon 2026 training tracker: 23-week phase
   plan, weekly load by workout type, aerobic efficiency trend, and head-to-head
   comparison against prior marathon builds. Aggregate weekly figures only — no
-  pace, GPS, heart rate, or health data.
+  pace, GPS, heart rate, or health data. Refreshed on each Netlify build from
+  `data/public/chicago-tracker.json` in spencer-brain; the committed
+  `src/chicago-data.json` is the offline fallback.
 - `/activity-lookup` — search every public activity. Two stages:
 
 `src/training-weekly-hours.json` is derived from `src/training-variability.json`
@@ -93,9 +98,20 @@ export (`scripts/strava-activity.mjs`):
 BRAIN_GITHUB_TOKEN=... node scripts/fetch-activities.mjs   # BRAIN_ACTIVITIES_PATH overrides the path
 ```
 
-Without `BRAIN_GITHUB_TOKEN` it keeps an existing local file. To build that file
-straight from Strava instead (incremental by default; `--full` re-downloads
-everything and waits out 429s):
+`/training/chicago` reads `src/chicago-data.json`. That file is committed so
+local builds work offline. On Netlify, `scripts/fetch-chicago.mjs` replaces it
+from `data/public/chicago-tracker.json` in the same private repo before the
+Vite build. Without `BRAIN_GITHUB_TOKEN` the committed file is left as-is. With
+a token, a download or schema problem fails the build instead of publishing the
+stale committed copy.
+
+```bash
+BRAIN_GITHUB_TOKEN=... node scripts/fetch-chicago.mjs   # BRAIN_CHICAGO_PATH overrides the path
+```
+
+Without `BRAIN_GITHUB_TOKEN` the activity fetch keeps an existing local file. To
+build that file straight from Strava instead (incremental by default; `--full`
+re-downloads everything and waits out 429s):
 
 ```bash
 STRAVA_ACCESS_TOKEN=... node scripts/export-activities.mjs [--full]
@@ -107,8 +123,9 @@ library. `netlify.toml` rewrites every path to `index.html` so deep links load.
 ## Deploy
 
 Netlify builds from source on every push (see `netlify.toml`):
-`node scripts/fetch-activities.mjs && npm run build`, publishing `dist/`. No
-manual upload step. A daily build hook picks up grokbot's activity updates.
+`node scripts/fetch-chicago.mjs && node scripts/fetch-activities.mjs && npm run build`,
+publishing `dist/`. No manual upload step. A daily build hook picks up grokbot's
+activity export and the Chicago tracker JSON.
 
 Environment variables (Netlify → Site configuration → Environment variables):
 
@@ -116,6 +133,8 @@ Environment variables (Netlify → Site configuration → Environment variables)
 | -------------------- | -------------------------------------------------------------------- |
 | `BRAIN_GITHUB_TOKEN` | Fine-grained GitHub token, Contents: read on `Splee9/spencer-brain`. |
 | `BRAIN_ACTIVITIES_PATH` | Optional; defaults to `data/public/strava-activities.json`.      |
+| `BRAIN_CHICAGO_PATH` | Optional; defaults to `data/public/chicago-tracker.json`.           |
+| `BRAIN_REF`          | Optional branch, tag, or commit in spencer-brain (both fetches).    |
 | `OPENROUTER_API_KEY` | Jev via OpenRouter's Decisions API (`typesafe/jev-1.13`).            |
 | `TYPESAFE_API_KEY`   | Alternative: Jev direct from TypeSafe. Used only if no OpenRouter key. |
 | `JEV_MODEL`          | Optional model override.                                             |

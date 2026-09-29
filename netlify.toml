@@ -2,7 +2,7 @@
 # Only web/running-tracker/ is mirrored out (via git subtree), so these files
 # sit at the repo root that Netlify sees.
 [build]
-  command = "node scripts/fetch-activities.mjs && npm run build"
+  command = "node scripts/fetch-chicago.mjs && node scripts/fetch-activities.mjs && npm run build"
   publish = "dist"
 
 [build.environment]
