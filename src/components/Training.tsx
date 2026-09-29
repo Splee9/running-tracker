@@ -52,6 +52,13 @@ export function Training() {
   const visibleWeeks = weekly.weeks.slice(startIdx, endIdx);
   const visibleHours = weekly.hours[sport].slice(startIdx, endIdx);
 
+  // Filter TV points to only include those within the visible weeks range
+  const firstVisibleWeek = visibleWeeks[0];
+  const lastVisibleWeek = visibleWeeks[visibleWeeks.length - 1];
+  const visiblePoints = tv.series[sport][horizon].filter(
+    (p) => p.week_end >= firstVisibleWeek && p.week_end <= lastVisibleWeek
+  );
+
   return (
     <div className={styles.page}>
       <nav className={styles.nav}>
@@ -155,7 +162,7 @@ export function Training() {
               of week ending {formatDate(tv.last_complete_week_end)}
             </p>
             <TvChart
-              points={tv.series[sport][horizon]}
+              points={visiblePoints}
               weeks={visibleWeeks}
               hours={visibleHours}
               showHours={showHours}
