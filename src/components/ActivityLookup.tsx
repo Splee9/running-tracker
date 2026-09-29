@@ -186,8 +186,6 @@ export function ActivityLookup() {
           best_watts_60m: "60min",
         };
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by ${durationLabels[intent.field]} power`;
-      } else if (intent.kind === "highest_power") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by average power`;
       } else if (intent.kind === "list") {
         status = `${results.length.toLocaleString()} activit${results.length === 1 ? "y" : "ies"} · most recent first`;
       } else {
