@@ -26,5 +26,12 @@ export function toActivity(a) {
   if (a.hard_lap_count !== undefined) base.hard_lap_count = a.hard_lap_count;
   if (a.has_intervals !== undefined) base.has_intervals = a.has_intervals;
   if (a.interval_score !== undefined) base.interval_score = a.interval_score;
+  // v3 enrichment (omit undefined fields to keep backward compatibility)
+  if (a.average_heartrate !== undefined) base.average_heartrate = a.average_heartrate;
+  if (a.max_heartrate !== undefined) base.max_heartrate = a.max_heartrate;
+  if (a.average_speed !== undefined) base.average_speed = a.average_speed;
+  if (a.max_speed !== undefined) base.max_speed = a.max_speed;
+  if (a.average_watts !== undefined) base.average_watts = a.average_watts;
+  if (a.weighted_average_watts !== undefined) base.weighted_average_watts = a.weighted_average_watts;
   return base;
 }

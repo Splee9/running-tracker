@@ -171,6 +171,10 @@ export function ActivityLookup() {
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by interval intensity`;
       } else if (intent.kind === "hilliest") {
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by elevation`;
+      } else if (intent.kind === "highest_hr") {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by heart rate`;
+      } else if (intent.kind === "highest_power") {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by power`;
       } else if (intent.kind === "place_filter") {
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · filtered by place${intent.filterType ? ` and ${intent.filterType}` : ""}`;
       } else {
@@ -290,7 +294,7 @@ export function ActivityLookup() {
       <footer className={styles.footer}>
         <p>
           Public activities only, rebuilt from the Strava log. Names, dates, distance, time,
-          elevation, stimulus, place and intervals — no routes, polylines or heart-rate data.
+          elevation, HR, pace, power, stimulus, place and intervals — no routes, polylines or stream data.
         </p>
       </footer>
     </div>
@@ -313,11 +317,21 @@ function ActivityRow({
   const dist = units === "mi" ? a.distance_m / 1609.344 : a.distance_m / 1000;
   const elev = units === "mi" ? Math.round(a.elevation_gain_m * 3.28084) : a.elevation_gain_m;
 
+  // Calculate pace from distance and moving_time, or use average_speed if available
   let pace = "";
   if (a.distance_m > 0 && a.moving_time_s > 0) {
-    pace = isRun(a)
-      ? `${formatDuration(Math.round(a.moving_time_s / dist))} /${units}`
-      : `${(dist / (a.moving_time_s / 3600)).toFixed(1)} ${units === "mi" ? "mph" : "km/h"}`;
+    const speedMps = a.average_speed ?? (a.distance_m / a.moving_time_s);
+    if (isRun(a)) {
+      // For runs, show pace in min/mi or min/km
+      const metersPerUnit = units === "mi" ? 1609.344 : 1000;
+      const secondsPerUnit = metersPerUnit / speedMps;
+      pace = `${formatDuration(Math.round(secondsPerUnit))} /${units}`;
+    } else if (isRide(a)) {
+      // For rides, show speed in mph or km/h
+      const speedKmh = speedMps * 3.6;
+      const speed = units === "mi" ? speedKmh / 1.60934 : speedKmh;
+      pace = `${speed.toFixed(1)} ${units === "mi" ? "mph" : "km/h"}`;
+    }
   }
 
   // Build enrichment chips
@@ -329,6 +343,20 @@ function ActivityRow({
   if (a.has_intervals) {
     const intervalLabel = a.hard_lap_count ? `${a.hard_lap_count} hard laps` : "intervals";
     enrichmentChips.push(intervalLabel);
+  }
+
+  // v3 metrics: HR and power
+  const v3Chips: string[] = [];
+  if (a.average_heartrate) {
+    const hrLabel = a.max_heartrate 
+      ? `${Math.round(a.average_heartrate)} bpm (max ${Math.round(a.max_heartrate)})`
+      : `${Math.round(a.average_heartrate)} bpm`;
+    v3Chips.push(hrLabel);
+  }
+  if ((a.average_watts || a.weighted_average_watts) && isRide(a)) {
+    const watts = Math.round(a.weighted_average_watts ?? a.average_watts ?? 0);
+    const powerLabel = a.weighted_average_watts ? `${watts}W (w)` : `${watts}W`;
+    v3Chips.push(powerLabel);
   }
 
   return (
@@ -361,6 +389,11 @@ function ActivityRow({
                 {elev.toLocaleString()} {units === "mi" ? "ft" : "m"}
               </span>
             )}
+            {v3Chips.map((chip, i) => (
+              <span key={`v3-${i}`} style={{ opacity: 0.85, fontWeight: 500 }}>
+                {chip}
+              </span>
+            ))}
             {enrichmentChips.map((chip, i) => (
               <span key={i} style={{ opacity: 0.7, fontStyle: "italic" }}>
                 {chip}
