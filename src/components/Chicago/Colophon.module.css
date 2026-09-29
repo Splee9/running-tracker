@@ -1,0 +1,36 @@
+.section {
+  position: relative;
+  z-index: 1;
+  padding: clamp(60px, 12vw, 120px) 0 clamp(20px, 4vw, 36px);
+  border-top: 1px solid var(--line);
+}
+
+.body {
+  margin-top: 18px;
+  font-size: clamp(18px, 2.8vw, 23px);
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  max-width: 40ch;
+}
+
+.body em {
+  font-style: italic;
+}
+
+.byline {
+  margin-top: 22px;
+  color: var(--muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.byline a {
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.byline a:hover {
+  border-color: var(--ink);
+}

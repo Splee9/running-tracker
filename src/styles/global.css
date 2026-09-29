@@ -9,6 +9,21 @@
   --bar-active: #1a1a1a;
   --card: #ffffff;
 
+  /* Phase palette for Chicago tracker — four mesocycles, base → engine → sharpen → taper.
+     The brand four: plum, periwinkle, bright red, clay red. */
+  --p1: #2f2342; /* base — plum */
+  --p2: #7ca0e5; /* engine — periwinkle */
+  --p3: #e42f45; /* sharpen — bright red */
+  --p4: #b42b3f; /* taper — clay red */
+
+  /* Workout-type palette for Chicago weekly composition stacks. */
+  --t-quality: #e42f45; /* bright red — hard efforts pop */
+  --t-long: #2f2342; /* plum — the foundational long run */
+  --t-medlong: #7ca0e5; /* periwinkle */
+  --t-easy: #d6dae8; /* light blue-gray — the bulk, recedes */
+  --t-commute: #9aa9c9; /* mid periwinkle-gray */
+  --t-other: #eceaf1; /* lightest plum tint */
+
   --maxw: 1040px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
     sans-serif;

@@ -1,0 +1,211 @@
+.section {
+  padding: clamp(48px, 8vw, 88px) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.heading {
+  font-size: clamp(20px, 3.4vw, 30px);
+  line-height: 1.2;
+  margin: 12px 0 clamp(28px, 5vw, 40px);
+  max-width: 32ch;
+}
+
+/* head-to-head */
+.h2h {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: clamp(16px, 3vw, 24px);
+  margin-bottom: clamp(28px, 5vw, 44px);
+}
+
+.h2hNote {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+.h2hRow {
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 3vw, 28px);
+}
+
+.h2hCol {
+  flex: 1;
+  border-radius: 10px;
+  padding: 16px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.h2hAccent {
+  border-color: var(--p3);
+  box-shadow: 0 2px 14px rgba(168, 80, 74, 0.12);
+}
+
+.h2hLabel {
+  font-size: 15px;
+  font-weight: 600;
+  display: block;
+}
+
+.h2hSub {
+  font-size: 12px;
+  color: var(--muted);
+  display: block;
+  margin-top: 2px;
+}
+
+.h2hStats {
+  display: flex;
+  gap: 20px;
+  margin-top: 14px;
+}
+
+.h2hStats > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.h2hVal {
+  font-size: clamp(20px, 3.6vw, 28px);
+  font-weight: 600;
+  font-family: var(--mono);
+  letter-spacing: -0.02em;
+}
+
+.h2hBand {
+  font-size: clamp(16px, 3vw, 20px);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.h2hUnit {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.vs {
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+  flex-shrink: 0;
+}
+
+/* scatter */
+.chartWrap {
+  width: 100%;
+}
+
+.chart {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.axisLabel {
+  font-size: 12px;
+  fill: var(--muted);
+  font-family: var(--mono);
+}
+
+.axisTitle {
+  font-size: 12px;
+  fill: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.pointLabel {
+  font-size: 12.5px;
+  fill: var(--ink);
+  font-weight: 600;
+}
+
+.pointResult {
+  font-size: 11px;
+  fill: var(--muted);
+  font-family: var(--mono);
+}
+
+.chiLabel {
+  font-size: 13px;
+  fill: var(--p3);
+  font-weight: 700;
+}
+
+/* table */
+.table {
+  margin-top: clamp(28px, 5vw, 44px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.trow {
+  display: grid;
+  grid-template-columns: 2fr 1fr 0.8fr 1fr 1fr;
+  gap: 8px;
+  padding: 12px clamp(12px, 2.5vw, 20px);
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  transition: background 0.18s ease;
+}
+
+.trow:last-child {
+  border-bottom: none;
+}
+
+.trowData {
+  cursor: pointer;
+}
+
+.trowHover {
+  background: var(--bg);
+}
+
+.thead {
+  background: var(--bg);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.tname {
+  font-weight: 600;
+}
+
+.tmono {
+  font-family: var(--mono);
+}
+
+.tband {
+  font-weight: 600;
+}
+
+/* footnote */
+.footnote {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: clamp(20px, 4vw, 32px);
+  line-height: 1.5;
+  max-width: 56ch;
+}
+
+@media (max-width: 560px) {
+  .trow {
+    grid-template-columns: 1.4fr 1fr 0.7fr 0.9fr 0.9fr;
+    font-size: 12.5px;
+  }
+  .h2hRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .h2hStats {
+    gap: 16px;
+  }
+}

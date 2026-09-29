@@ -56,16 +56,13 @@ export function Home() {
             <span className={styles.projectArrow}>→</span>
           </Link>
 
-          <a
-            href="https://chicagomarathon2026.netlify.app/"
-            className={styles.projectCard}
-          >
+          <Link href="/training/chicago" className={styles.projectCard}>
             <h3 className={styles.projectName}>Chicago build</h3>
             <p className={styles.projectDesc}>
               23-week marathon training plan with weekly progress and race-day countdown.
             </p>
-            <span className={styles.projectArrow}>↗</span>
-          </a>
+            <span className={styles.projectArrow}>→</span>
+          </Link>
         </div>
       </motion.div>
     </section>

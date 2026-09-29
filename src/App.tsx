@@ -12,11 +12,16 @@ const Training = lazy(() => import("./components/Training").then((m) => ({ defau
 const ActivityLookup = lazy(() =>
   import("./components/ActivityLookup").then((m) => ({ default: m.ActivityLookup })),
 );
+// Chicago tracker with its own data bundle.
+const ChicagoTracker = lazy(() =>
+  import("./components/Chicago/ChicagoTracker").then((m) => ({ default: m.ChicagoTracker })),
+);
 
 const TITLES: Record<string, string> = {
   "/": "Spencer Lee — Projects",
   "/miles": "Miles — a running log",
   "/training": "Training variability — Miles",
+  "/training/chicago": "Chicago Marathon 2026 — Training tracker",
   "/activity-lookup": "Activity lookup — Miles",
 };
 
@@ -39,6 +44,10 @@ export default function App() {
         ) : path === "/training" ? (
           <Suspense fallback={null}>
             <Training />
+          </Suspense>
+        ) : path === "/training/chicago" ? (
+          <Suspense fallback={null}>
+            <ChicagoTracker />
           </Suspense>
         ) : path === "/activity-lookup" ? (
           <Suspense fallback={null}>
