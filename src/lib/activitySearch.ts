@@ -117,7 +117,7 @@ function tokenize(text: string): string[] {
     .filter(Boolean);
 }
 
-type SuperlativeIntent = {
+export type SuperlativeIntent = {
   kind: "longest" | "fastest" | "most_intervals" | "hilliest";
   sport?: "run" | "ride";
 } | {
@@ -126,7 +126,13 @@ type SuperlativeIntent = {
   filterType?: "race" | "workout";
 } | null;
 
-function detectSuperlativeIntent(query: string): { intent: SuperlativeIntent; remainingTokens: string[] } {
+export type IntentClassification = {
+  intent: SuperlativeIntent;
+  remainingTokens: string[];
+  isDeterministic: boolean;
+};
+
+function detectSuperlativeIntent(query: string): IntentClassification {
   const tokens = tokenize(query);
   let intent: SuperlativeIntent = null;
   let consumedIndices = new Set<number>();
@@ -208,7 +214,14 @@ function detectSuperlativeIntent(query: string): { intent: SuperlativeIntent; re
   }
 
   const remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
-  return { intent, remainingTokens };
+  // Deterministic if we have an intent and no remaining semantic tokens
+  // (pure superlative or pure place filter)
+  const isDeterministic = intent !== null && remainingTokens.length === 0;
+  return { intent, remainingTokens, isDeterministic };
+}
+
+export function classifyIntent(query: string): IntentClassification {
+  return detectSuperlativeIntent(query);
 }
 
 export function buildIndex(activities: Activity[]): IndexedActivity[] {
@@ -269,12 +282,8 @@ export function searchActivities(
   query: string,
   limit = 200,
 ): SearchHit[] {
-  const { intent, remainingTokens } = detectSuperlativeIntent(query);
+  const { intent, remainingTokens, isDeterministic } = detectSuperlativeIntent(query);
   const tokens = Array.from(new Set(remainingTokens.length > 0 ? remainingTokens : tokenize(query)));
-  
-  // For pure superlative queries with no remaining keywords, we skip keyword matching
-  // and apply the superlative directly
-  const isPureSuperlative = intent && remainingTokens.length === 0;
 
   let candidates: IndexedActivity[] = index;
 
@@ -309,8 +318,8 @@ export function searchActivities(
     }
   }
 
-  if (isPureSuperlative) {
-    // Pure superlative: no keyword matching, just sort by metric
+  if (isDeterministic) {
+    // Deterministic intent: no keyword matching, just apply metric/filter sorting
     const hits = candidates.map(({ activity }): SearchHit => ({
       activity,
       score: 1,

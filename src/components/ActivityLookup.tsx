@@ -4,6 +4,7 @@ import { Chip } from "./Chip";
 import snapshot from "../activities.json";
 import {
   buildIndex,
+  classifyIntent,
   formatDuration,
   isRide,
   isRun,
@@ -78,6 +79,11 @@ export function ActivityLookup() {
 
   const trimmed = query.trim();
 
+  const intentClassification = useMemo(() => {
+    if (!trimmed) return null;
+    return classifyIntent(trimmed);
+  }, [trimmed]);
+
   const localHits: SearchHit[] = useMemo(() => {
     if (!trimmed) return [];
     return searchActivities(index, trimmed, 500).filter((h) => matchesSport(h.activity, sport));
@@ -89,8 +95,11 @@ export function ActivityLookup() {
   );
   const candidateKey = candidateIds.join(",");
 
+  // Skip Jev for deterministic intents (pure superlatives and place filters)
+  const shouldUseJev = jevAvailable && !intentClassification?.isDeterministic;
+
   useEffect(() => {
-    if (!jevAvailable || !trimmed || candidateIds.length === 0) {
+    if (!shouldUseJev || !trimmed || candidateIds.length === 0) {
       setJev({ status: "idle" });
       return;
     }
@@ -122,7 +131,7 @@ export function ActivityLookup() {
       controller.abort();
     };
     // candidateKey stands in for candidateIds so identical shortlists don't refetch.
-  }, [jevAvailable, trimmed, candidateKey]);
+  }, [shouldUseJev, trimmed, candidateKey]);
 
   const jevScores = jev.status === "done" && jev.query === trimmed ? jev.scores : null;
 
@@ -132,22 +141,46 @@ export function ActivityLookup() {
         .filter((a) => matchesSport(a, sport))
         .map((activity): SearchHit => ({ activity, score: 0, kind: "keyword", matched: [] }));
     }
-    if (!jevScores) return localHits;
+    // For deterministic intents, don't apply Jev reranking - use local search order
+    if (intentClassification?.isDeterministic || !jevScores) return localHits;
     const reranked = localHits
       .filter((h) => jevScores[h.activity.id] !== undefined)
       .sort((a, b) => jevScores[b.activity.id] - jevScores[a.activity.id]);
     const rest = localHits.filter((h) => jevScores[h.activity.id] === undefined);
     return [...reranked, ...rest];
-  }, [trimmed, sport, localHits, jevScores]);
+  }, [trimmed, sport, localHits, jevScores, intentClassification]);
 
   useEffect(() => setVisible(PAGE_SIZE), [trimmed, sport]);
 
   const shown = results.slice(0, visible);
 
   let status: string;
-  if (!trimmed) status = `${results.length.toLocaleString()} activities · most recent first`;
-  else if (results.length === 0) status = `No activities match “${trimmed}”`;
-  else {
+  if (!trimmed) {
+    status = `${results.length.toLocaleString()} activities · most recent first`;
+  } else if (results.length === 0) {
+    status = `No activities match "${trimmed}"`;
+  } else if (intentClassification?.isDeterministic) {
+    // Deterministic intent status
+    const intent = intentClassification.intent;
+    if (intent) {
+      if (intent.kind === "longest") {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by distance`;
+      } else if (intent.kind === "fastest") {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by pace`;
+      } else if (intent.kind === "most_intervals") {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by interval intensity`;
+      } else if (intent.kind === "hilliest") {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by elevation`;
+      } else if (intent.kind === "place_filter") {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · filtered by place${intent.filterType ? ` and ${intent.filterType}` : ""}`;
+      } else {
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · deterministic sort`;
+      }
+    } else {
+      status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}`;
+    }
+  } else {
+    // Semantic search with optional Jev
     const jevNote = !jevAvailable
       ? ""
       : jevScores
