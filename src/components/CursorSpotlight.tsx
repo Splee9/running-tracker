@@ -1,4 +1,4 @@
-import { motion, useReducedMotion, useTransform } from "framer-motion";
+import { motion, useReducedMotion, useTransform } from "motion/react";
 import { usePointer } from "../hooks/usePointer";
 import styles from "./CursorSpotlight.module.css";
 

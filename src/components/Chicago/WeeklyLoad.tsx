@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "motion/react";
 import { AnimatedNumber } from "../AnimatedNumber";
 import { data, PHASE_VAR, TYPE_VAR, type WeekDatum } from "../../lib/chicago-data";
 import { fmt1, formatDate } from "../../lib/chicago-format";

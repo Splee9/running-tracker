@@ -1,7 +1,7 @@
-import { motion } from "framer-motion";
+import { motion, type Variants } from "motion/react";
 import styles from "./Colophon.module.css";
 
-const reveal = {
+const reveal: Variants = {
   hidden: { opacity: 0, y: 18 },
   show: {
     opacity: 1,

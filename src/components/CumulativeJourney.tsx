@@ -6,7 +6,7 @@ import {
   useMotionValueEvent,
   useReducedMotion,
   type MotionValue,
-} from "framer-motion";
+} from "motion/react";
 import { data, lifetime } from "../lib/data";
 import { fmt } from "../lib/format";
 import styles from "./CumulativeJourney.module.css";

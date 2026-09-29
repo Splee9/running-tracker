@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, type Variants } from "motion/react";
 import { Chip } from "./Chip";
 import snapshot from "../activities.json";
 import gradeFile from "../activity-grades.json";
@@ -77,7 +77,7 @@ const EXAMPLES = [
   "hilly ride",
 ];
 
-const rise = {
+const rise: Variants = {
   hidden: { opacity: 0, y: 16 },
   show: (i: number) => ({
     opacity: 1,

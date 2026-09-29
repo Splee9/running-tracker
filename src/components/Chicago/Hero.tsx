@@ -1,10 +1,10 @@
-import { motion } from "framer-motion";
+import { motion, type Variants } from "motion/react";
 import { AnimatedNumber } from "../AnimatedNumber";
 import { data, PHASE_VAR } from "../../lib/chicago-data";
 import { fmt1, formatDate } from "../../lib/chicago-format";
 import styles from "./Hero.module.css";
 
-const rise = {
+const rise: Variants = {
   hidden: { opacity: 0, y: 16 },
   show: (i: number) => ({
     opacity: 1,

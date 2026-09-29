@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { formatDate } from "../lib/format";
 import { BANDS, BAND_COLOR, fmtTv, toDays, type TvPoint } from "../lib/training";
 import styles from "./TvChart.module.css";
