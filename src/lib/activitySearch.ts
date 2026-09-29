@@ -117,6 +117,143 @@ function tokenize(text: string): string[] {
     .filter(Boolean);
 }
 
+// Parse date window from tokens, returning window and indices to consume
+// Assumes America/Chicago timezone; today is 2026-09-29
+function parseDateWindow(tokens: string[]): { window: DateWindow | null; consumedIndices: Set<number> } {
+  const consumedIndices = new Set<number>();
+  
+  // Helper to format date as YYYY-MM-DD
+  const formatDate = (d: Date): string => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  
+  // Reference date: 2026-09-29 (America/Chicago)
+  const today = new Date('2026-09-29T12:00:00-05:00');
+  const currentYear = today.getFullYear();
+  
+  // Check for "this year" or "ytd"
+  const thisIdx = tokens.indexOf("this");
+  const yearIdx = tokens.indexOf("year");
+  const ytdIdx = tokens.indexOf("ytd");
+  
+  if ((thisIdx >= 0 && yearIdx === thisIdx + 1) || ytdIdx >= 0) {
+    if (thisIdx >= 0 && yearIdx === thisIdx + 1) {
+      consumedIndices.add(thisIdx);
+      consumedIndices.add(yearIdx);
+    }
+    if (ytdIdx >= 0) {
+      consumedIndices.add(ytdIdx);
+    }
+    return {
+      window: { start: `${currentYear}-01-01`, end: formatDate(today) },
+      consumedIndices
+    };
+  }
+  
+  // Check for "last year"
+  const lastIdx = tokens.indexOf("last");
+  if (lastIdx >= 0 && yearIdx === lastIdx + 1) {
+    consumedIndices.add(lastIdx);
+    consumedIndices.add(yearIdx);
+    const lastYear = currentYear - 1;
+    return {
+      window: { start: `${lastYear}-01-01`, end: `${lastYear}-12-31` },
+      consumedIndices
+    };
+  }
+  
+  // Check for "this month"
+  const monthIdx = tokens.indexOf("month");
+  if (thisIdx >= 0 && monthIdx === thisIdx + 1) {
+    consumedIndices.add(thisIdx);
+    consumedIndices.add(monthIdx);
+    const year = today.getFullYear();
+    const month = today.getMonth() + 1;
+    const lastDay = new Date(year, month, 0).getDate();
+    return {
+      window: { 
+        start: `${year}-${String(month).padStart(2, '0')}-01`, 
+        end: formatDate(today)
+      },
+      consumedIndices
+    };
+  }
+  
+  // Check for "last N months" - must have "last", a number, and "month"/"months"
+  let monthsIdx = tokens.indexOf("months");
+  if (monthsIdx < 0) monthsIdx = tokens.indexOf("month");
+  
+  if (lastIdx >= 0 && monthsIdx >= 0) {
+    // Find number between "last" and "month(s)"
+    for (let i = lastIdx + 1; i < monthsIdx; i++) {
+      const num = parseInt(tokens[i], 10);
+      if (!isNaN(num) && num > 0 && num <= 24) {
+        consumedIndices.add(lastIdx);
+        consumedIndices.add(i);
+        consumedIndices.add(monthsIdx);
+        const startDate = new Date(today);
+        startDate.setMonth(startDate.getMonth() - num);
+        return {
+          window: { start: formatDate(startDate), end: formatDate(today) },
+          consumedIndices
+        };
+      }
+    }
+  }
+  
+  // Check for named month + year (e.g., "march 2024") - CHECK THIS BEFORE standalone year
+  const monthNames = [
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december"
+  ];
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const monthNum = monthNames.indexOf(tokens[i]);
+    if (monthNum >= 0) {
+      const year = parseInt(tokens[i + 1], 10);
+      if (tokens[i + 1].length === 4 && year >= 2000 && year <= currentYear + 1) {
+        consumedIndices.add(i);
+        consumedIndices.add(i + 1);
+        const month = monthNum + 1;
+        const lastDay = new Date(year, month, 0).getDate();
+        return {
+          window: { 
+            start: `${year}-${String(month).padStart(2, '0')}-01`,
+            end: `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+          },
+          consumedIndices
+        };
+      }
+    }
+  }
+  
+  // Check for standalone year (e.g., "2024", "2025")
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const year = parseInt(token, 10);
+    if (token.length === 4 && year >= 2000 && year <= currentYear + 1) {
+      consumedIndices.add(i);
+      // Also consume "in" if it precedes the year
+      if (i > 0 && tokens[i - 1] === "in") {
+        consumedIndices.add(i - 1);
+      }
+      return {
+        window: { start: `${year}-01-01`, end: `${year}-12-31` },
+        consumedIndices
+      };
+    }
+  }
+  
+  return { window: null, consumedIndices };
+}
+
+export type DateWindow = {
+  start: string; // ISO date string (YYYY-MM-DD)
+  end: string;   // ISO date string (YYYY-MM-DD)
+};
+
 export type SuperlativeIntent = {
   kind: "longest" | "fastest" | "most_intervals" | "hilliest";
   sport?: "run" | "ride";
@@ -128,6 +265,7 @@ export type SuperlativeIntent = {
 
 export type IntentClassification = {
   intent: SuperlativeIntent;
+  dateWindow: DateWindow | null;
   remainingTokens: string[];
   isDeterministic: boolean;
 };
@@ -136,6 +274,10 @@ function detectSuperlativeIntent(query: string): IntentClassification {
   const tokens = tokenize(query);
   let intent: SuperlativeIntent = null;
   let consumedIndices = new Set<number>();
+
+  // Parse date window first
+  const { window: dateWindow, consumedIndices: dateIndices } = parseDateWindow(tokens);
+  dateIndices.forEach(i => consumedIndices.add(i));
 
   // Detect longest/farthest
   const longestIdx = tokens.findIndex(t => ["longest", "farthest"].includes(t));
@@ -215,9 +357,9 @@ function detectSuperlativeIntent(query: string): IntentClassification {
 
   const remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
   // Deterministic if we have an intent and no remaining semantic tokens
-  // (pure superlative or pure place filter)
+  // (pure superlative or pure place filter, optionally with date window)
   const isDeterministic = intent !== null && remainingTokens.length === 0;
-  return { intent, remainingTokens, isDeterministic };
+  return { intent, dateWindow, remainingTokens, isDeterministic };
 }
 
 export function classifyIntent(query: string): IntentClassification {
@@ -282,10 +424,18 @@ export function searchActivities(
   query: string,
   limit = 200,
 ): SearchHit[] {
-  const { intent, remainingTokens, isDeterministic } = detectSuperlativeIntent(query);
+  const { intent, dateWindow, remainingTokens, isDeterministic } = detectSuperlativeIntent(query);
   const tokens = Array.from(new Set(remainingTokens.length > 0 ? remainingTokens : tokenize(query)));
 
   let candidates: IndexedActivity[] = index;
+
+  // Apply date window filter first (before any other filtering)
+  if (dateWindow) {
+    candidates = candidates.filter(({ activity }) => {
+      const activityDate = activity.start_date_local.slice(0, 10); // YYYY-MM-DD
+      return activityDate >= dateWindow.start && activityDate <= dateWindow.end;
+    });
+  }
 
   // Apply intent-based filtering
   if (intent) {
