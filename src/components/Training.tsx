@@ -8,12 +8,13 @@ import { formatDate } from "../lib/format";
 import {
   BANDS,
   BAND_COLOR,
-  HORIZONS,
+  DATE_RANGES,
   SPORTS,
   fmtTv,
   tv,
-  weekly,
+  filterToRange,
   type Band,
+  type DateRange,
   type Horizon,
   type Sport,
 } from "../lib/training";
@@ -35,29 +36,12 @@ const BAND_RANGE: Record<Band, string> = {
   Erratic: "80+",
 };
 
-const SHORT_NAME: Record<Horizon, string> = { short: "Short", medium: "Medium", long: "Long" };
-
 export function Training() {
   const [sport, setSport] = useState<Sport>("run");
-  const [horizon, setHorizon] = useState<Horizon>("medium");
+  const horizon: Horizon = "long"; // Fixed to 52-week rolling window for meaningful signal
+  const [dateRange, setDateRange] = useState<DateRange>("52wk"); // Default to 52 weeks viewport
   const [showHours, setShowHours] = useState(false);
   const current = tv.current[sport];
-
-  // Slice weeks and hours to match the selected horizon's lookback window
-  const horizonWeeks = tv.horizons[horizon].weeks;
-  const lastCompleteWeek = tv.last_complete_week_end;
-  const lastWeekIdx = weekly.weeks.lastIndexOf(lastCompleteWeek);
-  const startIdx = lastWeekIdx >= 0 ? Math.max(0, lastWeekIdx - horizonWeeks + 1) : 0;
-  const endIdx = lastWeekIdx >= 0 ? lastWeekIdx + 1 : weekly.weeks.length;
-  const visibleWeeks = weekly.weeks.slice(startIdx, endIdx);
-  const visibleHours = weekly.hours[sport].slice(startIdx, endIdx);
-
-  // Filter TV points to only include those within the visible weeks range
-  const firstVisibleWeek = visibleWeeks[0];
-  const lastVisibleWeek = visibleWeeks[visibleWeeks.length - 1];
-  const visiblePoints = tv.series[sport][horizon].filter(
-    (p) => p.week_end >= firstVisibleWeek && p.week_end <= lastVisibleWeek
-  );
 
   return (
     <div className={styles.page}>
@@ -115,24 +99,22 @@ export function Training() {
         </div>
 
         <div className={styles.folder}>
-          <div className={styles.tabs} role="tablist" aria-label="Choose a window">
-            {HORIZONS.map((h) => {
-              const p = current[h];
-              const active = horizon === h;
+          <div className={styles.tabs} role="tablist" aria-label="Choose a date range">
+            {DATE_RANGES.map((range) => {
+              const p = current[horizon];
+              const active = dateRange === range.id;
               return (
                 <button
-                  key={h}
+                  key={range.id}
                   type="button"
                   role="tab"
-                  id={`tv-tab-${h}`}
+                  id={`tv-tab-${range.id}`}
                   aria-selected={active}
                   aria-controls="tv-panel"
                   className={`${styles.tab} ${active ? styles.tabActive : ""}`}
-                  onClick={() => setHorizon(h)}
+                  onClick={() => setDateRange(range.id)}
                 >
-                  <span className={styles.tabLabel}>
-                    {SHORT_NAME[h]} · {tv.horizons[h].weeks} wk
-                  </span>
+                  <span className={styles.tabLabel}>{range.label}</span>
                   <span className={styles.tabNum} style={{ color: BAND_COLOR[p.band] }}>
                     <AnimatedNumber value={p.tv} format={fmtTv} duration={0.5} />
                   </span>
@@ -154,21 +136,31 @@ export function Training() {
             className={styles.panel}
             role="tabpanel"
             id="tv-panel"
-            aria-labelledby={`tv-tab-${horizon}`}
-            data-edge={horizon === "short" ? "left" : horizon === "long" ? "right" : undefined}
+            aria-labelledby={`tv-tab-${dateRange}`}
+            data-edge={dateRange === "12wk" ? "left" : dateRange === "all" ? "right" : undefined}
           >
-            <p className={styles.panelMeta}>
-              {tv.filters[sport].label} · rolling {tv.horizons[horizon].weeks}-week window · now as
-              of week ending {formatDate(tv.last_complete_week_end)}
-            </p>
-            <TvChart
-              points={visiblePoints}
-              weeks={visibleWeeks}
-              hours={visibleHours}
-              showHours={showHours}
-              drawKey={`${sport}-${horizon}`}
-              label={`${tv.filters[sport].label}, ${tv.horizons[horizon].label}`}
-            />
+            {(() => {
+              const rangePreset = DATE_RANGES.find((r) => r.id === dateRange)!;
+              const { weeks, hours, points } = filterToRange(sport, horizon, rangePreset);
+              const rangeLabel = rangePreset.weeks ? `${rangePreset.weeks}-week` : "full-history";
+              
+              return (
+                <>
+                  <p className={styles.panelMeta}>
+                    {tv.filters[sport].label} · rolling {tv.horizons[horizon].weeks}-week window ·{" "}
+                    {rangePreset.label} view · now as of week ending {formatDate(tv.last_complete_week_end)}
+                  </p>
+                  <TvChart
+                    points={points}
+                    weeks={weeks}
+                    hours={hours}
+                    showHours={showHours}
+                    drawKey={`${sport}-${horizon}-${dateRange}`}
+                    label={`${tv.filters[sport].label}, ${tv.horizons[horizon].label}, ${rangeLabel} view`}
+                  />
+                </>
+              );
+            })()}
 
             <div className={styles.legend}>
               {BANDS.map((b) => (
@@ -188,7 +180,7 @@ export function Training() {
         </div>
 
         <p className={styles.cue}>
-          Pick a window above; hover or tap the chart to read any week.
+          Pick a date range above; hover or tap the chart to read any week.
         </p>
       </motion.section>
 
