@@ -47,6 +47,15 @@ export function Home() {
             <span className={styles.projectArrow}>→</span>
           </Link>
 
+          <Link href="/activity-lookup" className={styles.projectCard}>
+            <h3 className={styles.projectName}>Activity lookup</h3>
+            <p className={styles.projectDesc}>
+              Search every logged session by name, type, distance or date — typo-tolerant and
+              reranked by Jev.
+            </p>
+            <span className={styles.projectArrow}>→</span>
+          </Link>
+
           <a
             href="https://chicagomarathon2026.netlify.app/"
             className={styles.projectCard}

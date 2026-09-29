@@ -3,6 +3,9 @@ node_modules/
 dist/
 dist-ssr/
 
+# Generated at build time from spencer-brain (scripts/fetch-activities.mjs)
+src/activities.json
+
 # TypeScript incremental build cache
 *.tsbuildinfo
 
