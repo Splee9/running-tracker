@@ -204,8 +204,12 @@ function distanceTags(a: Activity): string[] {
   return tags;
 }
 
+function localStart(a: Activity): Date {
+  return new Date(a.start_date_local.replace(/Z$/, ""));
+}
+
 function derivedTags(a: Activity): string[] {
-  const d = new Date(a.start_date_local.replace(/Z$/, ""));
+  const d = localStart(a);
   const hour = d.getHours();
   const tags = [
     sportLabel(a.sport_type),
@@ -419,16 +423,17 @@ function parseDateWindow(tokens: string[], now?: Date): { window: DateWindow | n
     };
   }
   
-  // "last month" / "past month" = the previous calendar month, not a rolling 30 days.
+  // "last month" matches "last 1 month": the trailing month through today,
+  // not the previous calendar month (which hid every run since the 1st).
   const monthLead = ["last", "previous", "past"];
   const monthLeadIdx = tokens.findIndex((t, i) => monthLead.includes(t) && tokens[i + 1] === "month");
   if (monthLeadIdx >= 0) {
     consumedIndices.add(monthLeadIdx);
     consumedIndices.add(monthLeadIdx + 1);
-    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const end = new Date(today.getFullYear(), today.getMonth(), 0);
+    const start = new Date(today);
+    start.setMonth(start.getMonth() - 1);
     return {
-      window: { start: formatDate(start), end: formatDate(end) },
+      window: { start: formatDate(start), end: formatDate(today) },
       consumedIndices,
     };
   }
@@ -529,8 +534,16 @@ export type IntentClassification = {
   distanceBand: DistanceBand | null;
   /** "in Chicago" / "near Chicago", or the place on a place filter. */
   place: string | null;
+  /** "on a Tuesday" → "tuesday". Null when the query does not name a weekday. */
+  weekday: string | null;
   remainingTokens: string[];
   isDeterministic: boolean;
+  /**
+   * Place-scoped fastest/longest queries. Metric order is the fallback;
+   * Jev may reorder the shortlist because place text is often a neighborhood
+   * or missing from the name.
+   */
+  jevRanks: boolean;
 };
 
 const SPEED_WORDS = ["fastest", "quickest", "speedy", "fast", "quick", "swift", "rapid"];
@@ -559,11 +572,75 @@ function parsePlacePhrase(
   return { place: placeTokens.join(" "), consumedIndices };
 }
 
+function parseWeekday(
+  tokens: string[],
+  consumed: Set<number>,
+): { weekday: string | null; consumedIndices: Set<number> } {
+  const consumedIndices = new Set<number>();
+  const weekdayIndex = new Map<string, string>();
+  WEEKDAYS.forEach((name) => {
+    weekdayIndex.set(name, name);
+    weekdayIndex.set(`${name}s`, name);
+  });
+  const idx = tokens.findIndex((token, i) => !consumed.has(i) && weekdayIndex.has(token));
+  if (idx < 0) return { weekday: null, consumedIndices };
+  consumedIndices.add(idx);
+  let cursor = idx - 1;
+  while (cursor >= 0 && consumed.has(cursor)) cursor--;
+  if (cursor >= 0 && ["a", "an", "the", "every"].includes(tokens[cursor])) {
+    consumedIndices.add(cursor);
+    cursor--;
+    while (cursor >= 0 && consumed.has(cursor)) cursor--;
+  }
+  if (cursor >= 0 && tokens[cursor] === "on") consumedIndices.add(cursor);
+  return { weekday: weekdayIndex.get(tokens[idx]) ?? null, consumedIndices };
+}
+
 function activityMatchesPlace(activity: Activity, place: string): boolean {
   const words = place.toLowerCase().split(/\s+/).filter((token) => token && !PLACE_FILLERS.has(token));
   if (words.length === 0) return false;
   const hay = `${activity.place ?? ""} ${activity.name}`.toLowerCase();
   return words.every((word) => hay.includes(word));
+}
+
+/** Metric order within each group, place hits before the rest. */
+function placeMatchesFirst(hits: SearchHit[], place: string): SearchHit[] {
+  const matched: SearchHit[] = [];
+  const rest: SearchHit[] = [];
+  for (const hit of hits) {
+    (activityMatchesPlace(hit.activity, place) ? matched : rest).push(hit);
+  }
+  return [...matched, ...rest];
+}
+
+/**
+ * Ids sent to Jev. Place-scoped fastest/longest reserve half the window for
+ * place hits and half for the metric leaders, so a long run tagged only as a
+ * neighborhood still gets scored.
+ */
+export function selectJevCandidates(
+  hits: SearchHit[],
+  classification: IntentClassification | null,
+  limit = 25,
+): number[] {
+  const place = classification?.place;
+  if (!classification?.jevRanks || !place || hits.length <= limit) {
+    return hits.slice(0, limit).map((hit) => hit.activity.id);
+  }
+  const matched = hits.filter((hit) => activityMatchesPlace(hit.activity, place));
+  const unmatched = hits.filter((hit) => !activityMatchesPlace(hit.activity, place));
+  const ids: number[] = [];
+  const seen = new Set<number>();
+  const push = (hit: SearchHit) => {
+    if (seen.has(hit.activity.id) || ids.length >= limit) return;
+    seen.add(hit.activity.id);
+    ids.push(hit.activity.id);
+  };
+  const placeSlots = Math.min(matched.length, Math.floor(limit / 2));
+  for (let i = 0; i < placeSlots; i++) push(matched[i]);
+  for (const hit of unmatched) push(hit);
+  for (const hit of matched) push(hit);
+  return ids;
 }
 
 function detectSuperlativeIntent(query: string, now?: Date): IntentClassification {
@@ -800,6 +877,10 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     if (QUERY_FILLERS.has(token)) consumedIndices.add(i);
   });
 
+  const parsedWeekday = parseWeekday(tokens, consumedIndices);
+  const weekday = parsedWeekday.weekday;
+  parsedWeekday.consumedIndices.forEach((i) => consumedIndices.add(i));
+
   // Detect list intent: pure date window with optional sport, optional "activities/workouts/rides/runs"
   // Synonyms: activities, workouts, rides, runs
   if (!intent && dateWindow) {
@@ -852,10 +933,30 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     if (distanceBand.runsOnly && !intent.sport) intent.sport = "run";
   }
 
-  const remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
+  let remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
+  // "runs on a Tuesday" has no date window, so the list detector above skips it.
+  if (!intent && weekday) {
+    const listWords = ["run", "runs", "running", "ride", "rides", "bike", "cycling", "activities", "activity", "workouts", "workout"];
+    if (remainingTokens.every((token) => listWords.includes(token))) {
+      const sport: "run" | "ride" | undefined = remainingTokens.some((token) => ["run", "runs", "running"].includes(token))
+        ? "run"
+        : remainingTokens.some((token) => ["ride", "rides", "bike", "cycling"].includes(token))
+          ? "ride"
+          : undefined;
+      tokens.forEach((token, i) => {
+        if (listWords.includes(token)) consumedIndices.add(i);
+      });
+      remainingTokens = [];
+      intent = { kind: "list", sport };
+    }
+  }
   // Deterministic if we have an intent and no remaining semantic tokens
   const isDeterministic = intent !== null && remainingTokens.length === 0;
-  return { intent, dateWindow, distanceBand, place, remainingTokens, isDeterministic };
+  const jevRanks =
+    isDeterministic &&
+    place !== null &&
+    (intent?.kind === "longest" || intent?.kind === "fastest");
+  return { intent, dateWindow, distanceBand, place, weekday, remainingTokens, isDeterministic, jevRanks };
 }
 
 export function classifyIntent(query: string, now?: Date): IntentClassification {
@@ -883,6 +984,7 @@ export function describeIntent(c: IntentClassification): string {
   }
   if (intent && "sport" in intent && intent.sport) bits.push(`${intent.sport}s only`);
   if (c.place) bits.push(`in ${c.place}`);
+  if (c.weekday) bits.push(`on ${c.weekday}`);
   if (c.dateWindow) bits.push(`dated ${c.dateWindow.start} through ${c.dateWindow.end}`);
   return bits.join("; ");
 }
@@ -946,7 +1048,7 @@ export function searchActivities(
   limit = 200,
   now?: Date,
 ): SearchHit[] {
-  const { intent, dateWindow, remainingTokens, isDeterministic, distanceBand, place } = detectSuperlativeIntent(query, now);
+  const { intent, dateWindow, remainingTokens, isDeterministic, distanceBand, place, weekday, jevRanks } = detectSuperlativeIntent(query, now);
   const tokens = Array.from(new Set(remainingTokens.length > 0 ? remainingTokens : tokenize(query)));
 
   let candidates: IndexedActivity[] = index;
@@ -957,6 +1059,11 @@ export function searchActivities(
       const activityDate = activity.start_date_local.slice(0, 10); // YYYY-MM-DD
       return activityDate >= dateWindow.start && activityDate <= dateWindow.end;
     });
+  }
+
+  if (weekday) {
+    const dayIndex = WEEKDAYS.indexOf(weekday);
+    candidates = candidates.filter(({ activity }) => localStart(activity).getDay() === dayIndex);
   }
 
   // Apply intent-based filtering
@@ -1007,7 +1114,10 @@ export function searchActivities(
     }
   }
 
-  if (place) {
+  // Place-scoped fastest/longest keeps non-matches so Jev can recover a long
+  // Chicago run whose place field is a neighborhood or blank. Other place
+  // queries still require a place or name hit.
+  if (place && !jevRanks) {
     candidates = candidates.filter(({ activity }) => activityMatchesPlace(activity, place));
   }
 
@@ -1033,7 +1143,9 @@ export function searchActivities(
       kind: "keyword",
       matched: [],
     }));
-    return applySuperlativeSorting(hits, intent, limit, distanceBand);
+    const sorted = applySuperlativeSorting(hits, intent, limit, distanceBand);
+    if (jevRanks && place) return placeMatchesFirst(sorted, place);
+    return sorted;
   }
 
   // Regular keyword/fuzzy search with optional superlative sorting
@@ -1184,25 +1296,149 @@ function daysAgoLabel(activityDate: string, now?: Date): string {
   return `${diff} days ago`;
 }
 
-function runPacePerMile(a: Activity): string {
-  if (!isRun(a) || a.distance_m <= 0 || a.moving_time_s <= 0) return "";
+function weekdayName(a: Activity): string {
+  const name = WEEKDAYS[localStart(a).getDay()];
+  if (!name) return "";
+  return name.replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function runPaceParts(a: Activity): { text: string; pace: string; label: string } | null {
+  if (!isRun(a) || a.distance_m <= 0 || a.moving_time_s <= 0) return null;
   const speedMps = a.average_speed && a.average_speed > 0
     ? a.average_speed
     : a.distance_m / a.moving_time_s;
-  if (!Number.isFinite(speedMps) || speedMps <= 0) return "";
+  if (!Number.isFinite(speedMps) || speedMps <= 0) return null;
   const secondsPerMile = Math.round(1609.344 / speedMps);
-  const quality = secondsPerMile <= 7 * 60 + 30 ? "fast pace" : secondsPerMile <= 9 * 60 ? "moderate pace" : "easy pace";
-  return `${formatDuration(secondsPerMile)} /mi, ${quality}`;
+  const label = secondsPerMile <= 7 * 60 + 30 ? "fast pace" : secondsPerMile <= 9 * 60 ? "moderate pace" : "easy pace";
+  const pace = `${formatDuration(secondsPerMile)} /mi`;
+  return { text: `${pace}, ${label}`, pace, label };
 }
 
-function rankingDescription(description: string | undefined): string {
+function clippedDescription(description: string | undefined): string {
   if (!description) return "";
   const clean = description.replace(/\s+/g, " ").trim();
   if (!clean) return "";
-  const clipped = clean.length > MAX_RANKING_DESCRIPTION
+  return clean.length > MAX_RANKING_DESCRIPTION
     ? `${clean.slice(0, MAX_RANKING_DESCRIPTION - 3)}...`
     : clean;
-  return `description: ${clipped}`;
+}
+
+function rankingDescription(description: string | undefined): string {
+  const clipped = clippedDescription(description);
+  return clipped ? `description: ${clipped}` : "";
+}
+
+export type ActivityFacts = {
+  name: string;
+  sport: string;
+  date: string;
+  weekday?: string;
+  year?: string;
+  days_ago?: string;
+  distance_km?: number;
+  moving_time?: string;
+  pace?: string;
+  pace_label?: string;
+  climbing_m?: number;
+  workout?: string;
+  indoor?: true;
+  stimulus?: string;
+  modifiers?: string[];
+  place?: string;
+  intervals?: string;
+  heart_rate?: string;
+  power?: string;
+  best_20min_watts?: number;
+  description?: string;
+};
+
+/** Structured activity fields for one packed Jev call. Empty fields are omitted. */
+export function activityFacts(a: Activity, now?: Date): ActivityFacts {
+  const date = a.start_date_local.slice(0, 10);
+  const year = date.slice(0, 4);
+  const km = a.distance_m / 1000;
+  const pace = runPaceParts(a);
+  const weekday = weekdayName(a);
+  const daysAgo = daysAgoLabel(date, now);
+  const notes = clippedDescription(a.description);
+  const facts: ActivityFacts = {
+    name: a.name,
+    sport: sportLabel(a.sport_type),
+    date,
+  };
+  if (weekday) facts.weekday = weekday;
+  if (/^\d{4}$/.test(year)) facts.year = year;
+  if (daysAgo) facts.days_ago = daysAgo;
+  if (km > 0) facts.distance_km = Math.round(km * 10) / 10;
+  if (a.moving_time_s > 0) facts.moving_time = formatDuration(a.moving_time_s);
+  if (pace) {
+    facts.pace = pace.pace;
+    facts.pace_label = pace.label;
+  }
+  if (a.elevation_gain_m > 0) facts.climbing_m = a.elevation_gain_m;
+  const workout = WORKOUT_TAGS[a.workout_type ?? -1]?.[0];
+  if (workout) facts.workout = workout;
+  if (a.trainer) facts.indoor = true;
+  if (a.primary_stimulus) facts.stimulus = a.primary_stimulus;
+  if (a.modifiers && a.modifiers.length > 0) facts.modifiers = a.modifiers.slice(0, 3);
+  if (a.place) facts.place = a.place;
+  if (a.has_intervals) facts.intervals = a.hard_lap_count ? `${a.hard_lap_count} hard laps` : "intervals";
+  if (a.average_heartrate) {
+    facts.heart_rate = a.max_heartrate
+      ? `${Math.round(a.average_heartrate)} bpm avg (max ${Math.round(a.max_heartrate)})`
+      : `${Math.round(a.average_heartrate)} bpm avg`;
+  }
+  if (a.average_watts || a.weighted_average_watts) {
+    const watts = Math.round(a.weighted_average_watts ?? a.average_watts ?? 0);
+    facts.power = a.weighted_average_watts ? `${watts}W weighted avg` : `${watts}W avg`;
+  }
+  if (a.best_watts_20m) facts.best_20min_watts = Math.round(a.best_watts_20m);
+  if (notes) facts.description = notes;
+  return facts;
+}
+
+const HOW_TO_JUDGE =
+  "Sport, place, weekday, and dates must fit the interpreted query. The dates in interpreted_query are the window; do not substitute a different month. Last week is the previous Monday–Sunday. Last month is the trailing month through today. Speedy, fast, and quick mean a fast pace: trust a fast pace label, or a run around 7:30/mi or quicker. An easy pace is not speedy. Fastest matches a genuinely quick effort. Longest matches a long effort, well over 20 km for a run. A city counts from place, name, or description, including when place is only a neighborhood. A list or date-window query matches every activity of the right sport inside that window. A race is marked race, not merely mentioned.";
+
+export type JevNoul = {
+  type: "noul";
+  instructions: string;
+  criteria: { true: string; false: string };
+};
+
+/** One shared state and one noul per activity. Questions do not see each other. */
+export function buildJevRequest(query: string, activities: Activity[], now?: Date): {
+  state: {
+    search_query: string;
+    interpreted_query: string;
+    how_to_judge: string;
+    activities: Record<string, ActivityFacts>;
+  };
+  questions: Record<string, JevNoul>;
+} {
+  const packed: Record<string, ActivityFacts> = {};
+  const questions: Record<string, JevNoul> = {};
+  for (const activity of activities) {
+    const key = `a${activity.id}`;
+    packed[key] = activityFacts(activity, now);
+    questions[key] = {
+      type: "noul",
+      instructions: `Does activities.${key} match interpreted_query? Apply how_to_judge. Ignore every other activity.`,
+      criteria: {
+        true: "This activity fits interpreted_query under how_to_judge.",
+        false: "A required part of interpreted_query does not fit this activity.",
+      },
+    };
+  }
+  return {
+    state: {
+      search_query: query,
+      interpreted_query: describeIntent(classifyIntent(query, now)),
+      how_to_judge: HOW_TO_JUDGE,
+      activities: packed,
+    },
+    questions,
+  };
 }
 
 export function describeActivity(a: Activity, now?: Date): string {
@@ -1213,11 +1449,12 @@ export function describeActivity(a: Activity, now?: Date): string {
     `"${a.name}"`,
     sportLabel(a.sport_type),
     date,
+    weekdayName(a),
     /^\d{4}$/.test(year) ? `year ${year}` : "",
     daysAgoLabel(date, now),
     km > 0 ? `${km.toFixed(1)} km` : "",
     formatDuration(a.moving_time_s),
-    runPacePerMile(a),
+    runPaceParts(a)?.text ?? "",
     a.elevation_gain_m > 0 ? `${a.elevation_gain_m} m climbing` : "",
     ...(WORKOUT_TAGS[a.workout_type ?? -1]?.slice(0, 1) ?? []),
     a.trainer ? "indoor" : "",

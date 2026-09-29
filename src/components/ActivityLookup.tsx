@@ -9,6 +9,7 @@ import {
   isRide,
   isRun,
   searchActivities,
+  selectJevCandidates,
   sportLabel,
   type Activity,
   type SearchHit,
@@ -25,8 +26,9 @@ type JevState =
 
 const JEV_ENDPOINT = "/.netlify/functions/jev-rerank";
 const JEV_CANDIDATES = 25;
+const JEV_BADGE_CANDIDATES = 10;
 const JEV_DEBOUNCE_MS = 300;
-const JEV_CONFIDENCE_FLOOR = 0.55; // Only reorder when max score >= this threshold
+const JEV_CONFIDENCE_FLOOR = 0.55; // Membership bar. Not a sort key for metric queries.
 const PAGE_SIZE = 50;
 
 const activities = snapshot.activities as Activity[];
@@ -90,14 +92,18 @@ export function ActivityLookup() {
     return searchActivities(index, trimmed, 500).filter((h) => matchesSport(h.activity, sport));
   }, [trimmed, sport]);
 
+  const candidateLimit =
+    intentClassification?.isDeterministic && !intentClassification.jevRanks
+      ? JEV_BADGE_CANDIDATES
+      : JEV_CANDIDATES;
   const candidateIds = useMemo(
-    () => localHits.slice(0, JEV_CANDIDATES).map((h) => h.activity.id),
-    [localHits],
+    () => selectJevCandidates(localHits, intentClassification, candidateLimit),
+    [localHits, intentClassification, candidateLimit],
   );
   const candidateKey = candidateIds.join(",");
 
-  // Score every shortlist, including deterministic metric and place queries.
-  // Those keep localHits order; only semantic queries may reorder.
+  // One packed score call. Metric and date lists only badge the first screen.
+  // Place-scoped fastest/longest drop low scores and keep the metric order.
   const shouldScoreWithJev = jevAvailable;
 
   useEffect(() => {
@@ -150,19 +156,24 @@ export function ActivityLookup() {
         .filter((a) => matchesSport(a, sport))
         .map((activity): SearchHit => ({ activity, score: 0, kind: "keyword", matched: [] }));
     }
-    // Deterministic metric and place order stays put even when Jev scores are in.
-    if (intentClassification?.isDeterministic || !jevScores) return localHits;
-    
-    // Check if any Jev score meets the confidence floor
+    // Distance, pace, and date stay in local order. A place-scoped metric query
+    // uses Jev only to drop activities that miss the membership bar.
+    const jevFilters = Boolean(intentClassification?.jevRanks);
+    if ((intentClassification?.isDeterministic && !jevFilters) || !jevScores) return localHits;
+
     const maxScore = Math.max(...Object.values(jevScores));
-    const shouldReorder = maxScore >= JEV_CONFIDENCE_FLOOR;
-    
-    if (!shouldReorder) {
-      // Below confidence floor: keep keyword/fuzzy order, Jev badges shown but muted
-      return localHits;
+    const jevConfident = maxScore >= JEV_CONFIDENCE_FLOOR;
+
+    if (!jevConfident) return localHits;
+
+    if (jevFilters) {
+      return localHits.filter((h) => {
+        const score = jevScores[h.activity.id];
+        return score === undefined || score >= JEV_CONFIDENCE_FLOOR;
+      });
     }
-    
-    // Above confidence floor: apply Jev reranking
+
+    // Keyword search has no metric, so the probability is the order.
     const reranked = localHits
       .filter((h) => jevScores[h.activity.id] !== undefined)
       .sort((a, b) => jevScores[b.activity.id] - jevScores[a.activity.id]);
@@ -182,7 +193,8 @@ export function ActivityLookup() {
   } else if (intentClassification?.isDeterministic) {
     // Deterministic intent status
     const intent = intentClassification.intent;
-    const where = intentClassification.place ? ` · ${intentClassification.place}` : "";
+    const whereBits = [intentClassification.place, intentClassification.weekday].filter(Boolean);
+    const where = whereBits.length > 0 ? ` · ${whereBits.join(" · ")}` : "";
     if (intent) {
       if (intent.kind === "longest") {
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${where} · sorted by distance`;
@@ -219,7 +231,16 @@ export function ActivityLookup() {
       status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}`;
     }
     if (jevAvailable) {
-      if (jevScores) status += " · Jev scored";
+      if (intentClassification.jevRanks) {
+        if (jevScores) {
+          const maxScore = Math.max(...Object.values(jevScores));
+          status +=
+            maxScore >= JEV_CONFIDENCE_FLOOR
+              ? " · Jev filtered, order unchanged"
+              : " · Jev confidence low, not filtering";
+        } else if (jev.status === "error" && jev.query === trimmed) status += " · Jev unavailable";
+        else if (candidateIds.length > 0) status += " · Jev checking place…";
+      } else if (jevScores) status += " · Jev scored";
       else if (jev.status === "error" && jev.query === trimmed) status += " · Jev unavailable";
       else if (candidateIds.length > 0) status += " · scoring with Jev";
     }
@@ -251,8 +272,9 @@ export function ActivityLookup() {
         </motion.h1>
         <motion.p className={styles.intro} variants={rise} custom={2} initial="hidden" animate="show">
           Search every logged activity by name, stimulus, place, or workout type. Keyword and fuzzy
-          matching run as you type. <b>Jev</b> then scores the shortlist. Metric searches such as
-          "longest run" or "fastest 10k" keep that order; other searches rerank when Jev is confident.
+          matching run as you type. <b>Jev</b> then scores the shortlist in one pass. Distance, pace,
+          and date stay in that order. A place search hides activities Jev rejects. Keyword searches
+          rerank when Jev is confident.
         </motion.p>
       </header>
 
@@ -323,6 +345,7 @@ export function ActivityLookup() {
                 jevScore={jevScores?.[hit.activity.id]}
                 jevLowConfidence={jevLowConfidence}
                 metricOrder={Boolean(intentClassification?.isDeterministic)}
+                jevFilters={Boolean(intentClassification?.jevRanks)}
               />
             ))}
           </ul>
@@ -354,6 +377,7 @@ function ActivityRow({
   jevScore,
   jevLowConfidence,
   metricOrder,
+  jevFilters,
 }: {
   hit: SearchHit;
   units: Units;
@@ -361,6 +385,7 @@ function ActivityRow({
   jevScore?: number;
   jevLowConfidence?: boolean;
   metricOrder?: boolean;
+  jevFilters?: boolean;
 }) {
   const a = hit.activity;
   const date = new Date(a.start_date_local.replace(/Z$/, ""));
@@ -475,11 +500,13 @@ function ActivityRow({
                   opacity: jevLowConfidence ? 0.5 : 1
                 }}
                 title={
-                  metricOrder
-                    ? "Jev match score. This list stays in metric order."
-                    : jevLowConfidence
-                      ? "Jev's calibrated probability (low confidence - not used for ranking)"
-                      : "Jev's calibrated probability that this activity matches your search"
+                  jevFilters
+                    ? "Jev match score. A low score hides the activity. Distance or pace still sets the order."
+                    : metricOrder
+                      ? "Jev match score. This list stays in metric order."
+                      : jevLowConfidence
+                        ? "Jev's calibrated probability (low confidence - not used for ranking)"
+                        : "Jev's calibrated probability that this activity matches your search"
                 }
               >
                 Jev {Math.round(jevScore * 100)}%

@@ -1,7 +1,7 @@
 // Intent, distance-band sort, and describeActivity checks.
 // Run: node --experimental-strip-types test-intent.mjs
 
-import { buildIndex, classifyIntent, describeActivity, describeIntent, searchActivities } from "./src/lib/activitySearch.ts";
+import { activityFacts, buildIndex, buildJevRequest, classifyIntent, describeActivity, describeIntent, searchActivities, selectJevCandidates } from "./src/lib/activitySearch.ts";
 import { toActivity } from "./scripts/strava-activity.mjs";
 
 const testClock = new Date("2026-09-29T12:00:00-05:00");
@@ -45,6 +45,8 @@ const activities = [
   act({ id: 25, name: "Chicago stride", start_date_local: "2026-08-08T08:00:00", distance_m: 800, moving_time_s: 120, place: "Chicago" }),
   act({ id: 26, name: "Chicago long", start_date_local: "2026-06-15T08:00:00", distance_m: 32000, moving_time_s: 12000, place: "Chicago" }),
   act({ id: 27, name: "Thursday run", start_date_local: "2026-09-24T08:00:00", distance_m: 10000, moving_time_s: 3600 }),
+  act({ id: 30, name: "Monday long", start_date_local: "2026-09-28T08:00:00", distance_m: 42000, moving_time_s: 14000 }),
+  act({ id: 31, name: "easy miles", start_date_local: "2026-09-01T08:00:00", distance_m: 28000, moving_time_s: 10000 }),
 ];
 
 const index = buildIndex(activities);
@@ -93,13 +95,18 @@ const classTests = [
   ["fastest 50k", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: "numeric", label: "50 km" }],
   ["longest run last year", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: { start: "2025-01-01", end: "2025-12-31" }, band: null }],
   ["10k this year", { isDeterministic: false, kind: null, dateWindow: { start: "2026-01-01", end: "2026-09-29" }, band: null }],
-  ["Fastest run in Chicago", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, place: "chicago" }],
-  ["Longest run in Chicago", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: null, band: null, place: "chicago" }],
-  ["Speedy runs last month", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: { start: "2026-08-01", end: "2026-08-31" }, band: null, place: null }],
-  ["Runs last week", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-09-21", end: "2026-09-27" }, band: null, place: null }],
-  ["fast runs near Chicago", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, place: "chicago" }],
-  ["quickest run in Chicago last month", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: { start: "2026-08-01", end: "2026-08-31" }, band: null, place: "chicago" }],
+  ["Fastest run in Chicago", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, place: "chicago", jevRanks: true }],
+  ["Longest run in Chicago", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: null, band: null, place: "chicago", jevRanks: true }],
+  ["Speedy runs last month", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: { start: "2026-08-29", end: "2026-09-29" }, band: null, place: null, jevRanks: false }],
+  ["Runs last month", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-08-29", end: "2026-09-29" }, band: null, place: null, jevRanks: false }],
+  ["Runs last week", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-09-21", end: "2026-09-27" }, band: null, place: null, jevRanks: false }],
+  ["fast runs near Chicago", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, place: "chicago", jevRanks: true }],
+  ["quickest run in Chicago last month", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: { start: "2026-08-29", end: "2026-09-29" }, band: null, place: "chicago", jevRanks: true }],
   ["runs in Chicago last week", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-09-21", end: "2026-09-27" }, band: null, place: "chicago" }],
+  ["longest run on a Tuesday", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: null, band: null, place: null, weekday: "tuesday", jevRanks: false }],
+  ["longest Tuesday run", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: null, band: null, weekday: "tuesday" }],
+  ["runs on Tuesdays", { isDeterministic: true, kind: "list", sport: "run", dateWindow: null, band: null, weekday: "tuesday", jevRanks: false }],
+  ["fastest run on a Tuesday", { isDeterministic: true, kind: "fastest", sport: "run", dateWindow: null, band: null, weekday: "tuesday" }],
 ];
 
 for (const [query, expected] of classTests) {
@@ -113,16 +120,18 @@ for (const [query, expected] of classTests) {
   if (expected.band !== undefined && (result.distanceBand?.kind ?? null) !== expected.band) pass = false;
   if (expected.label !== undefined && result.distanceBand?.label !== expected.label) pass = false;
   if (expected.place !== undefined && result.place !== expected.place) pass = false;
+  if (expected.weekday !== undefined && result.weekday !== expected.weekday) pass = false;
+  if (expected.jevRanks !== undefined && result.jevRanks !== expected.jevRanks) pass = false;
   const detail = pass
     ? ""
-    : `got deterministic=${result.isDeterministic} kind=${result.intent?.kind ?? "null"} sport=${result.intent?.sport ?? "-"} band=${result.distanceBand?.kind ?? "null"} label=${result.distanceBand?.label ?? "-"} place=${result.place ?? "null"} window=${result.dateWindow ? `${result.dateWindow.start}..${result.dateWindow.end}` : "null"} remaining=${result.remainingTokens.join(",")}`;
+    : `got deterministic=${result.isDeterministic} kind=${result.intent?.kind ?? "null"} sport=${result.intent?.sport ?? "-"} band=${result.distanceBand?.kind ?? "null"} label=${result.distanceBand?.label ?? "-"} place=${result.place ?? "null"} weekday=${result.weekday ?? "null"} window=${result.dateWindow ? `${result.dateWindow.start}..${result.dateWindow.end}` : "null"} remaining=${result.remainingTokens.join(",")}`;
   check(`"${query}"`, pass, detail);
 }
 
 const speedyGloss = describeIntent(classifyIntent("Speedy runs last month", testClock));
 check(
   "Jev gloss for speedy runs last month",
-  speedyGloss.includes("fastest pace") && speedyGloss.includes("runs only") && speedyGloss.includes("2026-08-01") && speedyGloss.includes("2026-08-31"),
+  speedyGloss.includes("fastest pace") && speedyGloss.includes("runs only") && speedyGloss.includes("2026-08-29") && speedyGloss.includes("2026-09-29"),
   speedyGloss,
 );
 const chicagoGloss = describeIntent(classifyIntent("Fastest run in Chicago", testClock));
@@ -136,6 +145,12 @@ check(
   "Jev gloss for runs last week",
   weekGloss.includes("list") && weekGloss.includes("2026-09-21") && weekGloss.includes("2026-09-27"),
   weekGloss,
+);
+const tuesdayGloss = describeIntent(classifyIntent("longest run on a Tuesday", testClock));
+check(
+  "Jev gloss for longest run on a Tuesday",
+  tuesdayGloss.includes("longest distance") && tuesdayGloss.includes("runs only") && tuesdayGloss.includes("on tuesday"),
+  tuesdayGloss,
 );
 const longestGloss = describeIntent(classifyIntent("Longest run in Chicago", testClock));
 check(
@@ -160,7 +175,7 @@ function order(name, query, expected, absent = []) {
 // 9800m/2300s beats 10300m/2400s on time and loses on pace. Time order is required.
 order("fastest 10k this year sorts by time inside the band", "fastest 10k this year", [22, 2, 3, 19, 15], [1, 5, 6, 7, 13]);
 order("fastest marathon sorts by moving time", "fastest marathon", [11, 7], [2, 10, 13]);
-order("longest run this year sorts by distance after the date window", "longest run this year", [17, 7, 9], [8, 6, 5]);
+order("longest run this year sorts by distance after the date window", "longest run this year", [17, 7, 30], [8, 6, 5]);
 order("longest run 2024 keeps the date window ahead of distance", "longest run 2024", [8, 12, 5], [7, 9]);
 order("fastest run without a band still sorts by pace", "fastest run", [5], []);
 
@@ -173,10 +188,53 @@ check(
 
 order("fastest 10k chicago keeps time order inside the keyword set", "fastest 10k chicago", [19, 15, 16], [2, 6, 22]);
 order("fastest 50k stays on runs and sorts by time", "fastest 50k", [17, 8], [18]);
-order("fastest run in Chicago ignores other cities and strides", "fastest run in Chicago", [19], [22, 25, 7]);
-order("longest run in Chicago sorts by distance", "longest run in Chicago", [26], [7, 17, 22]);
-order("speedy runs last month is pace within August", "speedy runs last month", [22, 19], [21, 25, 6]);
+order("fastest run in Chicago leads with the quickest Chicago run", "fastest run in Chicago", [19], [25]);
+const chicagoFast = ids("fastest run in Chicago");
+check(
+  "fastest run in Chicago keeps other cities behind place matches",
+  chicagoFast.indexOf(19) < chicagoFast.indexOf(22),
+  `got [${chicagoFast.join(", ")}]`,
+);
+const chicagoLong = ids("longest run in Chicago");
+check(
+  "longest run in Chicago leads with the longest Chicago run and still lists longer runs elsewhere",
+  chicagoLong[0] === 26 && chicagoLong.indexOf(7) > 0 && chicagoLong.indexOf(17) > chicagoLong.indexOf(26),
+  `got [${chicagoLong.join(", ")}]`,
+);
+order("speedy runs last month is pace within the trailing month", "speedy runs last month", [21, 24], [22, 19, 25]);
+order("runs last month is the trailing month, newest first", "runs last month", [30, 27, 23, 24], [17, 19, 22]);
 order("runs last week is the previous week, newest first", "runs last week", [27, 23], [24, 21]);
+order("longest run on a Tuesday uses the calendar day", "longest run on a Tuesday", [31], [30, 26]);
+order("longest Tuesday run matches the on-a-Tuesday wording", "longest Tuesday run", [31], [30]);
+order("fastest run on a Tuesday ignores other weekdays", "fastest run on a Tuesday", [22], [30]);
+order("runs on a Tuesday is newest first", "runs on a Tuesday", [23, 24], [27, 30]);
+
+const chicagoHeavy = [];
+for (let i = 0; i < 30; i++) {
+  chicagoHeavy.push(act({
+    id: 1000 + i,
+    name: "Chicago easy",
+    start_date_local: "2026-06-01T08:00:00",
+    distance_m: 8000 + i * 100,
+    moving_time_s: 3000,
+    place: "Chicago",
+  }));
+}
+chicagoHeavy.push(act({
+  id: 2000,
+  name: "Morning Run",
+  start_date_local: "2026-06-02T08:00:00",
+  distance_m: 40000,
+  moving_time_s: 14000,
+  place: "Lincoln Park",
+}));
+const heavyHits = searchActivities(buildIndex(chicagoHeavy), "longest run in Chicago", 500, testClock);
+const jevIds = selectJevCandidates(heavyHits, classifyIntent("longest run in Chicago", testClock), 25);
+check(
+  "Jev still sees a long run whose place is only a neighborhood",
+  heavyHits[0]?.activity.place === "Chicago" && jevIds.includes(2000) && jevIds.some((id) => id >= 1000 && id < 1030),
+  `head=${heavyHits[0]?.activity.id} jev=[${jevIds.join(", ")}]`,
+);
 
 console.log("\ndescribeActivity:\n");
 
@@ -227,6 +285,7 @@ const blankNotes = describeActivity(
 );
 check("describeActivity drops whitespace-only descriptions", !blankNotes.includes("description:"), blankNotes);
 check("describeActivity says today for a same-day run", blankNotes.includes("today"), blankNotes);
+check("describeActivity includes the weekday", blankNotes.includes("Tuesday"), blankNotes);
 
 const longNote = "x".repeat(600);
 const clipped = describeActivity(
@@ -242,6 +301,49 @@ const clipped = describeActivity(
 );
 const notes = clipped.split("description: ")[1] ?? "";
 check("describeActivity caps long descriptions", notes.endsWith("...") && notes.length <= 500, `notes length ${notes.length}`);
+
+const tuesdayFacts = activityFacts(
+  act({
+    id: 31,
+    name: "easy miles",
+    start_date_local: "2026-09-01T08:00:00",
+    distance_m: 28000,
+    moving_time_s: 10000,
+    place: "Lincoln Park",
+    description: "Lakefront",
+  }),
+  testClock,
+);
+check(
+  "activityFacts keeps weekday, distance, pace, and place as fields",
+  tuesdayFacts.weekday === "Tuesday" &&
+    tuesdayFacts.distance_km === 28 &&
+    tuesdayFacts.pace_label === "easy pace" &&
+    tuesdayFacts.place === "Lincoln Park" &&
+    tuesdayFacts.description === "Lakefront",
+  JSON.stringify(tuesdayFacts),
+);
+
+const packed = buildJevRequest(
+  "longest run on a Tuesday",
+  [
+    act({ id: 31, name: "easy miles", start_date_local: "2026-09-01T08:00:00", distance_m: 28000, moving_time_s: 10000 }),
+    act({ id: 30, name: "Monday long", start_date_local: "2026-09-28T08:00:00", distance_m: 42000, moving_time_s: 14000 }),
+  ],
+  testClock,
+);
+check(
+  "Jev request packs one noul per activity against one shared rubric",
+  packed.state.interpreted_query.includes("on tuesday") &&
+    packed.state.how_to_judge.includes("weekday") &&
+    packed.questions.a31?.type === "noul" &&
+    packed.questions.a30?.type === "noul" &&
+    packed.questions.a31.instructions.includes("activities.a31") &&
+    !packed.questions.a31.instructions.includes("Last month") &&
+    packed.state.activities.a31.weekday === "Tuesday" &&
+    packed.state.activities.a30.weekday === "Monday",
+  JSON.stringify({ interpreted: packed.state.interpreted_query, q: packed.questions.a31 }),
+);
 
 console.log("\nexport mapping:\n");
 
