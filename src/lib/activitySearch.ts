@@ -24,6 +24,12 @@ export type Activity = {
   max_speed?: number; // m/s
   average_watts?: number;
   weighted_average_watts?: number;
+  // MMP fields (optional, public-activities-v4 schema)
+  best_watts_5s?: number;
+  best_watts_1m?: number;
+  best_watts_5m?: number;
+  best_watts_20m?: number;
+  best_watts_60m?: number;
 };
 
 export type MatchKind = "keyword" | "fuzzy";
@@ -148,12 +154,104 @@ function parseDateWindow(tokens: string[]): { window: DateWindow | null; consume
     return `${year}-${month}-${day}`;
   };
   
-  // Reference date: 2026-09-29 (America/Chicago)
+  // Reference date: 2026-09-29 (America/Chicago) is a Monday
   const today = new Date('2026-09-29T12:00:00-05:00');
   const currentYear = today.getFullYear();
   
-  // Check for "this year" or "ytd"
+  // Check for "today"
+  const todayIdx = tokens.indexOf("today");
+  if (todayIdx >= 0) {
+    consumedIndices.add(todayIdx);
+    return {
+      window: { start: formatDate(today), end: formatDate(today) },
+      consumedIndices
+    };
+  }
+  
+  // Check for "yesterday"
+  const yesterdayIdx = tokens.indexOf("yesterday");
+  if (yesterdayIdx >= 0) {
+    consumedIndices.add(yesterdayIdx);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    return {
+      window: { start: formatDate(yesterday), end: formatDate(yesterday) },
+      consumedIndices
+    };
+  }
+  
+  // Check for "this week"
   const thisIdx = tokens.indexOf("this");
+  const weekIdx = tokens.indexOf("week");
+  if (thisIdx >= 0 && weekIdx === thisIdx + 1) {
+    consumedIndices.add(thisIdx);
+    consumedIndices.add(weekIdx);
+    // "This week" = Monday to today of the current America/Chicago week
+    const dayOfWeek = today.getDay();
+    const isoDayOfWeek = dayOfWeek === 0 ? 7 : dayOfWeek;
+    const daysToMonday = isoDayOfWeek - 1;
+    const weekStart = new Date(today);
+    weekStart.setDate(weekStart.getDate() - daysToMonday);
+    return {
+      window: { start: formatDate(weekStart), end: formatDate(today) },
+      consumedIndices
+    };
+  }
+  
+  // Check for "last week" or "previous week"
+  const lastIdx = tokens.indexOf("last");
+  const previousIdx = tokens.indexOf("previous");
+  const weekIdx2 = tokens.indexOf("week");
+  
+  if ((lastIdx >= 0 && weekIdx2 === lastIdx + 1) || (previousIdx >= 0 && weekIdx2 === previousIdx + 1)) {
+    if (lastIdx >= 0 && weekIdx2 === lastIdx + 1) {
+      consumedIndices.add(lastIdx);
+      consumedIndices.add(weekIdx2);
+    }
+    if (previousIdx >= 0 && weekIdx2 === previousIdx + 1) {
+      consumedIndices.add(previousIdx);
+      consumedIndices.add(weekIdx2);
+    }
+    // "Last week" = the complete Monday-Sunday week containing (today-14 days)
+    const fourteenDaysAgo = new Date(today);
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+    const dayOfWeek = fourteenDaysAgo.getDay();
+    const isoDayOfWeek = dayOfWeek === 0 ? 7 : dayOfWeek;
+    const daysToMonday = isoDayOfWeek - 1;
+    const lastWeekStart = new Date(fourteenDaysAgo);
+    lastWeekStart.setDate(lastWeekStart.getDate() - daysToMonday);
+    const lastWeekEnd = new Date(lastWeekStart);
+    lastWeekEnd.setDate(lastWeekEnd.getDate() + 6);
+    return {
+      window: { start: formatDate(lastWeekStart), end: formatDate(lastWeekEnd) },
+      consumedIndices
+    };
+  }
+  
+  // Check for "last N days"
+  const daysIdx = tokens.indexOf("days");
+  const dayIdx = tokens.indexOf("day");
+  const finalDayIdx = daysIdx >= 0 ? daysIdx : dayIdx;
+  
+  if (lastIdx >= 0 && finalDayIdx >= 0) {
+    // Find number between "last" and "day(s)"
+    for (let i = lastIdx + 1; i < finalDayIdx; i++) {
+      const num = parseInt(tokens[i], 10);
+      if (!isNaN(num) && num > 0 && num <= 365) {
+        consumedIndices.add(lastIdx);
+        consumedIndices.add(i);
+        consumedIndices.add(finalDayIdx);
+        const startDate = new Date(today);
+        startDate.setDate(startDate.getDate() - num);
+        return {
+          window: { start: formatDate(startDate), end: formatDate(today) },
+          consumedIndices
+        };
+      }
+    }
+  }
+  
+  // Check for "this year" or "ytd"
   const yearIdx = tokens.indexOf("year");
   const ytdIdx = tokens.indexOf("ytd");
   
@@ -172,7 +270,6 @@ function parseDateWindow(tokens: string[]): { window: DateWindow | null; consume
   }
   
   // Check for "last year"
-  const lastIdx = tokens.indexOf("last");
   if (lastIdx >= 0 && yearIdx === lastIdx + 1) {
     consumedIndices.add(lastIdx);
     consumedIndices.add(yearIdx);
@@ -272,12 +369,20 @@ export type DateWindow = {
 };
 
 export type SuperlativeIntent = {
-  kind: "longest" | "fastest" | "most_intervals" | "hilliest" | "highest_hr" | "highest_power";
+  kind: "longest" | "fastest" | "most_intervals" | "hilliest" | "highest_hr";
   sport?: "run" | "ride";
 } | {
   kind: "place_filter";
   place: string;
   filterType?: "race" | "workout";
+} | {
+  kind: "mmp_power";
+  field: "best_watts_5s" | "best_watts_1m" | "best_watts_5m" | "best_watts_20m" | "best_watts_60m";
+} | {
+  kind: "highest_power";
+} | {
+  kind: "list";
+  sport?: "run" | "ride";
 } | null;
 
 export type IntentClassification = {
@@ -296,55 +401,162 @@ function detectSuperlativeIntent(query: string): IntentClassification {
   const { window: dateWindow, consumedIndices: dateIndices } = parseDateWindow(tokens);
   dateIndices.forEach(i => consumedIndices.add(i));
 
-  // Detect longest/farthest
-  const longestIdx = tokens.findIndex(t => ["longest", "farthest"].includes(t));
-  if (longestIdx >= 0) {
-    intent = { kind: "longest" };
-    consumedIndices.add(longestIdx);
-    // Check for sport (e.g., "longest run")
-    const sportIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
-    if (sportIdx >= 0) {
-      intent.sport = "run";
-      consumedIndices.add(sportIdx);
+  // Detect MMP power queries: "top/best/highest/max" + duration + optional "power/watts"
+  // Durations: 5s, 5 sec, 1 min, 5 min, 20 min, 20m, 60 min, 1 hour, ftp (→ 20m)
+  const powerTriggers = ["top", "best", "highest", "max"];
+  const powerTriggerIdx = tokens.findIndex(t => powerTriggers.includes(t));
+  
+  if (powerTriggerIdx >= 0) {
+    consumedIndices.add(powerTriggerIdx);
+    
+    // Look for duration tokens
+    let mmpField: "best_watts_5s" | "best_watts_1m" | "best_watts_5m" | "best_watts_20m" | "best_watts_60m" | null = null;
+    
+    // Check for "ftp" (maps to 20m)
+    const ftpIdx = tokens.indexOf("ftp");
+    if (ftpIdx >= 0) {
+      mmpField = "best_watts_20m";
+      consumedIndices.add(ftpIdx);
     }
-    const bikeIdx = tokens.findIndex(t => ["ride", "rides", "bike", "cycling"].includes(t));
-    if (bikeIdx >= 0) {
-      intent.sport = "ride";
-      consumedIndices.add(bikeIdx);
+    
+    // Check for duration patterns like "5s", "1m", "20m", "5 sec", "1 min", "20 min", "1 hour"
+    for (let i = 0; i < tokens.length; i++) {
+      if (consumedIndices.has(i)) continue;
+      
+      const token = tokens[i];
+      const nextToken = i + 1 < tokens.length ? tokens[i + 1] : "";
+      
+      // Pattern: number + unit (e.g., "5s", "1m", "20m")
+      if (/^(\d+)(s|sec|seconds?|m|min|minutes?|h|hour|hours?)$/.test(token)) {
+        const match = token.match(/^(\d+)(s|sec|seconds?|m|min|minutes?|h|hour|hours?)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          const unit = match[2];
+          
+          if ((unit === "s" || unit === "sec" || unit.startsWith("second")) && num === 5) {
+            mmpField = "best_watts_5s";
+            consumedIndices.add(i);
+          } else if ((unit === "m" || unit === "min" || unit.startsWith("minute")) && num === 1) {
+            mmpField = "best_watts_1m";
+            consumedIndices.add(i);
+          } else if ((unit === "m" || unit === "min" || unit.startsWith("minute")) && num === 5) {
+            mmpField = "best_watts_5m";
+            consumedIndices.add(i);
+          } else if ((unit === "m" || unit === "min" || unit.startsWith("minute")) && num === 20) {
+            mmpField = "best_watts_20m";
+            consumedIndices.add(i);
+          } else if ((unit === "m" || unit === "min" || unit.startsWith("minute")) && num === 60) {
+            mmpField = "best_watts_60m";
+            consumedIndices.add(i);
+          } else if ((unit === "h" || unit === "hour" || unit.startsWith("hour")) && num === 1) {
+            mmpField = "best_watts_60m";
+            consumedIndices.add(i);
+          }
+        }
+      }
+      
+      // Pattern: number followed by separate unit token (e.g., "5 sec", "1 min", "20 min")
+      const num = parseInt(token, 10);
+      if (!isNaN(num) && nextToken) {
+        if ((nextToken === "s" || nextToken === "sec" || nextToken.startsWith("second")) && num === 5) {
+          mmpField = "best_watts_5s";
+          consumedIndices.add(i);
+          consumedIndices.add(i + 1);
+        } else if ((nextToken === "m" || nextToken === "min" || nextToken.startsWith("minute")) && num === 1) {
+          mmpField = "best_watts_1m";
+          consumedIndices.add(i);
+          consumedIndices.add(i + 1);
+        } else if ((nextToken === "m" || nextToken === "min" || nextToken.startsWith("minute")) && num === 5) {
+          mmpField = "best_watts_5m";
+          consumedIndices.add(i);
+          consumedIndices.add(i + 1);
+        } else if ((nextToken === "m" || nextToken === "min" || nextToken.startsWith("minute")) && num === 20) {
+          mmpField = "best_watts_20m";
+          consumedIndices.add(i);
+          consumedIndices.add(i + 1);
+        } else if ((nextToken === "m" || nextToken === "min" || nextToken.startsWith("minute")) && num === 60) {
+          mmpField = "best_watts_60m";
+          consumedIndices.add(i);
+          consumedIndices.add(i + 1);
+        } else if ((nextToken === "h" || nextToken === "hour" || nextToken.startsWith("hour")) && num === 1) {
+          mmpField = "best_watts_60m";
+          consumedIndices.add(i);
+          consumedIndices.add(i + 1);
+        }
+      }
+    }
+    
+    // Consume optional "power" or "watts"
+    const powerIdx = tokens.indexOf("power");
+    const wattsIdx = tokens.indexOf("watts");
+    if (powerIdx >= 0) consumedIndices.add(powerIdx);
+    if (wattsIdx >= 0) consumedIndices.add(wattsIdx);
+    
+    if (mmpField) {
+      intent = { kind: "mmp_power", field: mmpField };
+    } else {
+      // No duration specified, use average/weighted fallback (existing "highest power" behavior)
+      intent = { kind: "highest_power" };
     }
   }
 
-  // Detect most intervals/reps
-  const mostIdx = tokens.findIndex(t => t === "most");
-  const intervalIdx = tokens.findIndex(t => ["intervals", "reps", "repeats"].includes(t));
-  if (mostIdx >= 0 && intervalIdx >= 0) {
-    intent = { kind: "most_intervals" };
-    consumedIndices.add(mostIdx);
-    consumedIndices.add(intervalIdx);
+  // Detect longest/farthest (only if no power intent)
+  if (!intent) {
+    const longestIdx = tokens.findIndex(t => ["longest", "farthest"].includes(t));
+    if (longestIdx >= 0) {
+      intent = { kind: "longest" };
+      consumedIndices.add(longestIdx);
+      const sportIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
+      if (sportIdx >= 0) {
+        intent.sport = "run";
+        consumedIndices.add(sportIdx);
+      }
+      const bikeIdx = tokens.findIndex(t => ["ride", "rides", "bike", "cycling"].includes(t));
+      if (bikeIdx >= 0) {
+        intent.sport = "ride";
+        consumedIndices.add(bikeIdx);
+      }
+    }
+  }
+
+  // Detect most intervals
+  if (!intent) {
+    const mostIdx = tokens.findIndex(t => t === "most");
+    const intervalIdx = tokens.findIndex(t => ["intervals", "reps", "repeats"].includes(t));
+    if (mostIdx >= 0 && intervalIdx >= 0) {
+      intent = { kind: "most_intervals" };
+      consumedIndices.add(mostIdx);
+      consumedIndices.add(intervalIdx);
+    }
   }
 
   // Detect fastest
-  const fastestIdx = tokens.findIndex(t => ["fastest", "quickest"].includes(t));
-  if (fastestIdx >= 0) {
-    intent = { kind: "fastest" };
-    consumedIndices.add(fastestIdx);
-    const sportIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
-    if (sportIdx >= 0) {
-      intent.sport = "run";
-      consumedIndices.add(sportIdx);
+  if (!intent) {
+    const fastestIdx = tokens.findIndex(t => ["fastest", "quickest"].includes(t));
+    if (fastestIdx >= 0) {
+      intent = { kind: "fastest" };
+      consumedIndices.add(fastestIdx);
+      const sportIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
+      if (sportIdx >= 0) {
+        intent.sport = "run";
+        consumedIndices.add(sportIdx);
+      }
     }
   }
 
   // Detect hilliest/most climbing
-  const hilliestIdx = tokens.findIndex(t => ["hilliest", "climbing"].includes(t));
-  const mostClimbingIdx = mostIdx >= 0 && tokens.findIndex(t => t === "climbing") >= 0;
-  if (hilliestIdx >= 0 || mostClimbingIdx) {
-    intent = { kind: "hilliest" };
-    if (hilliestIdx >= 0) consumedIndices.add(hilliestIdx);
-    if (mostClimbingIdx) {
-      consumedIndices.add(mostIdx);
-      const climbIdx = tokens.findIndex(t => t === "climbing");
-      consumedIndices.add(climbIdx);
+  if (!intent) {
+    const hilliestIdx = tokens.findIndex(t => ["hilliest", "climbing"].includes(t));
+    const mostIdx = tokens.findIndex(t => t === "most");
+    const mostClimbingIdx = mostIdx >= 0 && tokens.findIndex(t => t === "climbing") >= 0;
+    if (hilliestIdx >= 0 || mostClimbingIdx) {
+      intent = { kind: "hilliest" };
+      if (hilliestIdx >= 0) consumedIndices.add(hilliestIdx);
+      if (mostClimbingIdx) {
+        consumedIndices.add(mostIdx);
+        const climbIdx = tokens.findIndex(t => t === "climbing");
+        consumedIndices.add(climbIdx);
+      }
     }
   }
 
@@ -375,32 +587,65 @@ function detectSuperlativeIntent(query: string): IntentClassification {
   }
 
   // Detect place filters (e.g., "Chicago races")
-  const raceIdx = tokens.findIndex(t => ["race", "races"].includes(t));
-  const workoutIdx = tokens.findIndex(t => ["workout", "workouts", "session", "sessions"].includes(t));
-  
-  // If we have remaining tokens that could be place names
-  const remainingAfterSuperlative = tokens.filter((_, i) => !consumedIndices.has(i));
-  if (remainingAfterSuperlative.length > 0 && (raceIdx >= 0 || workoutIdx >= 0)) {
-    // Try to extract place: anything that's not race/workout
-    const placeTokens = remainingAfterSuperlative.filter(t => 
-      !["race", "races", "workout", "workouts", "session", "sessions", "run", "runs", "running", "ride", "rides", "bike", "cycling"].includes(t)
-    );
-    if (placeTokens.length > 0) {
-      const place = placeTokens.join(" ");
-      const filterType = raceIdx >= 0 ? "race" as const : workoutIdx >= 0 ? "workout" as const : undefined;
-      intent = { kind: "place_filter", place, filterType };
-      consumedIndices.add(raceIdx >= 0 ? raceIdx : workoutIdx);
-      // Consume place tokens
-      placeTokens.forEach(pt => {
-        const idx = tokens.indexOf(pt);
-        if (idx >= 0) consumedIndices.add(idx);
-      });
+  if (!intent) {
+    const raceIdx = tokens.findIndex(t => ["race", "races"].includes(t));
+    const workoutIdx = tokens.findIndex(t => ["workout", "workouts", "session", "sessions"].includes(t));
+    
+    // If we have remaining tokens that could be place names
+    const remainingAfterSuperlative = tokens.filter((_, i) => !consumedIndices.has(i));
+    if (remainingAfterSuperlative.length > 0 && (raceIdx >= 0 || workoutIdx >= 0)) {
+      // Try to extract place: anything that's not race/workout
+      const placeTokens = remainingAfterSuperlative.filter(t => 
+        !["race", "races", "workout", "workouts", "session", "sessions", "run", "runs", "running", "ride", "rides", "bike", "cycling"].includes(t)
+      );
+      if (placeTokens.length > 0) {
+        const place = placeTokens.join(" ");
+        const filterType = raceIdx >= 0 ? "race" as const : workoutIdx >= 0 ? "workout" as const : undefined;
+        intent = { kind: "place_filter", place, filterType };
+        consumedIndices.add(raceIdx >= 0 ? raceIdx : workoutIdx);
+        // Consume place tokens
+        placeTokens.forEach(pt => {
+          const idx = tokens.indexOf(pt);
+          if (idx >= 0) consumedIndices.add(idx);
+        });
+      }
+    }
+  }
+
+  // Detect list intent: pure date window with optional sport, optional "activities/workouts/rides/runs"
+  // Synonyms: activities, workouts, rides, runs
+  if (!intent && dateWindow) {
+    const listSynonyms = ["activities", "activity", "workouts", "workout", "rides", "runs"];
+    const listIdx = tokens.findIndex(t => listSynonyms.includes(t));
+    if (listIdx >= 0) consumedIndices.add(listIdx);
+    
+    // Check for sport
+    let sport: "run" | "ride" | undefined = undefined;
+    const runIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
+    const rideIdx = tokens.findIndex(t => ["ride", "rides", "bike", "cycling"].includes(t));
+    if (runIdx >= 0) {
+      sport = "run";
+      consumedIndices.add(runIdx);
+    } else if (rideIdx >= 0) {
+      sport = "ride";
+      consumedIndices.add(rideIdx);
+    }
+    
+    // Also consume possessive "'s" if present
+    const possessiveIdx = tokens.indexOf("s");
+    if (possessiveIdx >= 0 && possessiveIdx > 0) {
+      // Check if it follows a date window token (e.g., "week's")
+      consumedIndices.add(possessiveIdx);
+    }
+    
+    const remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
+    if (remainingTokens.length === 0) {
+      intent = { kind: "list", sport };
     }
   }
 
   const remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
   // Deterministic if we have an intent and no remaining semantic tokens
-  // (pure superlative or pure place filter, optionally with date window)
   const isDeterministic = intent !== null && remainingTokens.length === 0;
   return { intent, dateWindow, remainingTokens, isDeterministic };
 }
@@ -500,6 +745,16 @@ export function searchActivities(
         }
         return true;
       });
+    } else if (intent.kind === "mmp_power") {
+      // Filter to rides that have the MMP field
+      candidates = candidates.filter(({ activity }) => 
+        isRide(activity) && activity[intent.field] != null
+      );
+    } else if (intent.kind === "highest_power") {
+      // Filter to rides that have average_watts or weighted_average_watts
+      candidates = candidates.filter(({ activity }) => 
+        isRide(activity) && (activity.average_watts != null || activity.weighted_average_watts != null)
+      );
     } else if (intent.kind === "longest" && intent.sport) {
       candidates = candidates.filter(({ activity }) => 
         intent.sport === "run" ? isRun(activity) : isRide(activity)
@@ -508,6 +763,13 @@ export function searchActivities(
       candidates = candidates.filter(({ activity }) => 
         intent.sport === "run" ? isRun(activity) : isRide(activity)
       );
+    } else if (intent.kind === "list") {
+      // Filter by sport if specified
+      if (intent.sport) {
+        candidates = candidates.filter(({ activity }) => 
+          intent.sport === "run" ? isRun(activity) : isRide(activity)
+        );
+      }
     }
   }
 
@@ -606,6 +868,13 @@ function applySuperlativeSorting(
     const withHr = sorted.filter(h => h.activity.average_heartrate !== undefined);
     withHr.sort((a, b) => (b.activity.average_heartrate ?? 0) - (a.activity.average_heartrate ?? 0));
     return withHr.slice(0, limit);
+  } else if (intent.kind === "mmp_power") {
+    // Sort by MMP field descending
+    sorted.sort((a, b) => {
+      const valA = a.activity[intent.field] ?? 0;
+      const valB = b.activity[intent.field] ?? 0;
+      return valB - valA;
+    });
   } else if (intent.kind === "highest_power") {
     // Sort by weighted average watts (or average watts if weighted not available), filter out activities without power data
     const withPower = sorted.filter(h => 
@@ -617,6 +886,9 @@ function applySuperlativeSorting(
       return powerB - powerA;
     });
     return withPower.slice(0, limit);
+  } else if (intent.kind === "list") {
+    // Sort by start_date_local descending (most recent first)
+    sorted.sort((a, b) => b.activity.start_date_local.localeCompare(a.activity.start_date_local));
   }
 
   return sorted.slice(0, limit);
@@ -660,6 +932,8 @@ export function describeActivity(a: Activity): string {
       : `${watts}W avg`;
     parts.push(powerDesc);
   }
+  // MMP data (show best 20m when present)
+  if (a.best_watts_20m) parts.push(`${Math.round(a.best_watts_20m)}W 20min`);
   return parts.filter(Boolean).join(", ");
 }
 
