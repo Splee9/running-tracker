@@ -197,7 +197,8 @@ export function ActivityLookup() {
   } else if (intentClassification?.isDeterministic) {
     // Deterministic intent status
     const intent = intentClassification.intent;
-    const where = intentClassification.place ? ` · ${intentClassification.place}` : "";
+    const whereBits = [intentClassification.place, intentClassification.weekday].filter(Boolean);
+    const where = whereBits.length > 0 ? ` · ${whereBits.join(" · ")}` : "";
     if (intent) {
       if (intent.kind === "longest") {
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${where} · sorted by distance`;

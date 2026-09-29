@@ -204,8 +204,12 @@ function distanceTags(a: Activity): string[] {
   return tags;
 }
 
+function localStart(a: Activity): Date {
+  return new Date(a.start_date_local.replace(/Z$/, ""));
+}
+
 function derivedTags(a: Activity): string[] {
-  const d = new Date(a.start_date_local.replace(/Z$/, ""));
+  const d = localStart(a);
   const hour = d.getHours();
   const tags = [
     sportLabel(a.sport_type),
@@ -530,6 +534,8 @@ export type IntentClassification = {
   distanceBand: DistanceBand | null;
   /** "in Chicago" / "near Chicago", or the place on a place filter. */
   place: string | null;
+  /** "on a Tuesday" → "tuesday". Null when the query does not name a weekday. */
+  weekday: string | null;
   remainingTokens: string[];
   isDeterministic: boolean;
   /**
@@ -564,6 +570,30 @@ function parsePlacePhrase(
   if (placeTokens.length === 0) return { place: null, consumedIndices };
   indices.forEach((i) => consumedIndices.add(i));
   return { place: placeTokens.join(" "), consumedIndices };
+}
+
+function parseWeekday(
+  tokens: string[],
+  consumed: Set<number>,
+): { weekday: string | null; consumedIndices: Set<number> } {
+  const consumedIndices = new Set<number>();
+  const weekdayIndex = new Map<string, string>();
+  WEEKDAYS.forEach((name) => {
+    weekdayIndex.set(name, name);
+    weekdayIndex.set(`${name}s`, name);
+  });
+  const idx = tokens.findIndex((token, i) => !consumed.has(i) && weekdayIndex.has(token));
+  if (idx < 0) return { weekday: null, consumedIndices };
+  consumedIndices.add(idx);
+  let cursor = idx - 1;
+  while (cursor >= 0 && consumed.has(cursor)) cursor--;
+  if (cursor >= 0 && ["a", "an", "the", "every"].includes(tokens[cursor])) {
+    consumedIndices.add(cursor);
+    cursor--;
+    while (cursor >= 0 && consumed.has(cursor)) cursor--;
+  }
+  if (cursor >= 0 && tokens[cursor] === "on") consumedIndices.add(cursor);
+  return { weekday: weekdayIndex.get(tokens[idx]) ?? null, consumedIndices };
 }
 
 function activityMatchesPlace(activity: Activity, place: string): boolean {
@@ -847,6 +877,10 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     if (QUERY_FILLERS.has(token)) consumedIndices.add(i);
   });
 
+  const parsedWeekday = parseWeekday(tokens, consumedIndices);
+  const weekday = parsedWeekday.weekday;
+  parsedWeekday.consumedIndices.forEach((i) => consumedIndices.add(i));
+
   // Detect list intent: pure date window with optional sport, optional "activities/workouts/rides/runs"
   // Synonyms: activities, workouts, rides, runs
   if (!intent && dateWindow) {
@@ -899,14 +933,30 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     if (distanceBand.runsOnly && !intent.sport) intent.sport = "run";
   }
 
-  const remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
+  let remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
+  // "runs on a Tuesday" has no date window, so the list detector above skips it.
+  if (!intent && weekday) {
+    const listWords = ["run", "runs", "running", "ride", "rides", "bike", "cycling", "activities", "activity", "workouts", "workout"];
+    if (remainingTokens.every((token) => listWords.includes(token))) {
+      const sport: "run" | "ride" | undefined = remainingTokens.some((token) => ["run", "runs", "running"].includes(token))
+        ? "run"
+        : remainingTokens.some((token) => ["ride", "rides", "bike", "cycling"].includes(token))
+          ? "ride"
+          : undefined;
+      tokens.forEach((token, i) => {
+        if (listWords.includes(token)) consumedIndices.add(i);
+      });
+      remainingTokens = [];
+      intent = { kind: "list", sport };
+    }
+  }
   // Deterministic if we have an intent and no remaining semantic tokens
   const isDeterministic = intent !== null && remainingTokens.length === 0;
   const jevRanks =
     isDeterministic &&
     place !== null &&
     (intent?.kind === "longest" || intent?.kind === "fastest");
-  return { intent, dateWindow, distanceBand, place, remainingTokens, isDeterministic, jevRanks };
+  return { intent, dateWindow, distanceBand, place, weekday, remainingTokens, isDeterministic, jevRanks };
 }
 
 export function classifyIntent(query: string, now?: Date): IntentClassification {
@@ -934,6 +984,7 @@ export function describeIntent(c: IntentClassification): string {
   }
   if (intent && "sport" in intent && intent.sport) bits.push(`${intent.sport}s only`);
   if (c.place) bits.push(`in ${c.place}`);
+  if (c.weekday) bits.push(`on ${c.weekday}`);
   if (c.dateWindow) bits.push(`dated ${c.dateWindow.start} through ${c.dateWindow.end}`);
   return bits.join("; ");
 }
@@ -997,7 +1048,7 @@ export function searchActivities(
   limit = 200,
   now?: Date,
 ): SearchHit[] {
-  const { intent, dateWindow, remainingTokens, isDeterministic, distanceBand, place, jevRanks } = detectSuperlativeIntent(query, now);
+  const { intent, dateWindow, remainingTokens, isDeterministic, distanceBand, place, weekday, jevRanks } = detectSuperlativeIntent(query, now);
   const tokens = Array.from(new Set(remainingTokens.length > 0 ? remainingTokens : tokenize(query)));
 
   let candidates: IndexedActivity[] = index;
@@ -1008,6 +1059,11 @@ export function searchActivities(
       const activityDate = activity.start_date_local.slice(0, 10); // YYYY-MM-DD
       return activityDate >= dateWindow.start && activityDate <= dateWindow.end;
     });
+  }
+
+  if (weekday) {
+    const dayIndex = WEEKDAYS.indexOf(weekday);
+    candidates = candidates.filter(({ activity }) => localStart(activity).getDay() === dayIndex);
   }
 
   // Apply intent-based filtering
@@ -1269,6 +1325,7 @@ export function describeActivity(a: Activity, now?: Date): string {
     `"${a.name}"`,
     sportLabel(a.sport_type),
     date,
+    WEEKDAYS[localStart(a).getDay()] ? WEEKDAYS[localStart(a).getDay()].replace(/^./, (c) => c.toUpperCase()) : "",
     /^\d{4}$/.test(year) ? `year ${year}` : "",
     daysAgoLabel(date, now),
     km > 0 ? `${km.toFixed(1)} km` : "",
