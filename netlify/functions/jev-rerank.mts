@@ -22,7 +22,7 @@ function getProvider(): Provider | null {
   if (openrouter) {
     return {
       url: env("JEV_API_URL") ?? "https://openrouter.ai/api/alpha/decisions",
-      model: env("JEV_MODEL") ?? "typesafe/jev-1.13",
+      model: env("JEV_MODEL") ?? "typesafe/jev-1.13-20260917",
       key: openrouter,
       headers: { "HTTP-Referer": "https://iamspencerlee.com", "X-Title": "Activity Lookup" },
     };

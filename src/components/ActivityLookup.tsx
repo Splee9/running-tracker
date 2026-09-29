@@ -26,6 +26,7 @@ type JevState =
 const JEV_ENDPOINT = "/.netlify/functions/jev-rerank";
 const JEV_CANDIDATES = 25;
 const JEV_DEBOUNCE_MS = 300;
+const JEV_CONFIDENCE_FLOOR = 0.55; // Only reorder when max score >= this threshold
 const PAGE_SIZE = 50;
 
 const activities = snapshot.activities as Activity[];
@@ -135,6 +136,13 @@ export function ActivityLookup() {
 
   const jevScores = jev.status === "done" && jev.query === trimmed ? jev.scores : null;
 
+  // Check if Jev confidence is below floor (for badge dimming)
+  const jevLowConfidence = useMemo(() => {
+    if (!jevScores) return false;
+    const maxScore = Math.max(...Object.values(jevScores));
+    return maxScore < JEV_CONFIDENCE_FLOOR;
+  }, [jevScores]);
+
   const results = useMemo(() => {
     if (!trimmed) {
       return activities
@@ -143,6 +151,17 @@ export function ActivityLookup() {
     }
     // For deterministic intents, don't apply Jev reranking - use local search order
     if (intentClassification?.isDeterministic || !jevScores) return localHits;
+    
+    // Check if any Jev score meets the confidence floor
+    const maxScore = Math.max(...Object.values(jevScores));
+    const shouldReorder = maxScore >= JEV_CONFIDENCE_FLOOR;
+    
+    if (!shouldReorder) {
+      // Below confidence floor: keep keyword/fuzzy order, Jev badges shown but muted
+      return localHits;
+    }
+    
+    // Above confidence floor: apply Jev reranking
     const reranked = localHits
       .filter((h) => jevScores[h.activity.id] !== undefined)
       .sort((a, b) => jevScores[b.activity.id] - jevScores[a.activity.id]);
@@ -199,7 +218,12 @@ export function ActivityLookup() {
     const jevNote = !jevAvailable
       ? ""
       : jevScores
-        ? ` · top ${Math.min(results.length, JEV_CANDIDATES)} reranked by Jev`
+        ? (() => {
+            const maxScore = Math.max(...Object.values(jevScores));
+            return maxScore >= JEV_CONFIDENCE_FLOOR
+              ? ` · top ${Math.min(results.length, JEV_CANDIDATES)} reranked by Jev`
+              : ` · Jev confidence low, not reordering`;
+          })()
         : jev.status === "error"
           ? " · Jev unavailable"
           : " · Jev reranking…";
@@ -288,6 +312,7 @@ export function ActivityLookup() {
                 units={units}
                 showMatch={Boolean(trimmed)}
                 jevScore={jevScores?.[hit.activity.id]}
+                jevLowConfidence={jevLowConfidence}
               />
             ))}
           </ul>
@@ -317,11 +342,13 @@ function ActivityRow({
   units,
   showMatch,
   jevScore,
+  jevLowConfidence,
 }: {
   hit: SearchHit;
   units: Units;
   showMatch: boolean;
   jevScore?: number;
+  jevLowConfidence?: boolean;
 }) {
   const a = hit.activity;
   const date = new Date(a.start_date_local.replace(/Z$/, ""));
@@ -426,8 +453,13 @@ function ActivityRow({
             {jevScore !== undefined && (
               <span
                 className={`${styles.badge} ${styles.badgeJev}`}
-                style={{ background: jevScore >= 0.7 ? "#1f9d6b" : jevScore >= 0.4 ? "#c98a1a" : "#8a8a82" }}
-                title="Jev's calibrated probability that this activity matches your search"
+                style={{ 
+                  background: jevScore >= 0.7 ? "#1f9d6b" : jevScore >= 0.4 ? "#c98a1a" : "#8a8a82",
+                  opacity: jevLowConfidence ? 0.5 : 1
+                }}
+                title={jevLowConfidence 
+                  ? "Jev's calibrated probability (low confidence - not used for ranking)"
+                  : "Jev's calibrated probability that this activity matches your search"}
               >
                 Jev {Math.round(jevScore * 100)}%
               </span>
