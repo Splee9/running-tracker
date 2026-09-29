@@ -12,11 +12,11 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: clamp(40px, 8vw, 80px) 0;
+  padding: var(--section-space) 0;
 }
 
 .total {
-  margin: 16px 0 clamp(28px, 5vw, 44px);
+  margin: 14px 0 clamp(24px, 4vw, 32px);
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
@@ -24,7 +24,7 @@
 }
 
 .totalNum {
-  font-size: clamp(48px, 11vw, 96px);
+  font-size: clamp(46px, 7vw, 72px);
   font-weight: 600;
   letter-spacing: -0.035em;
   line-height: 1;
@@ -32,7 +32,7 @@
 }
 
 .totalUnit {
-  font-size: clamp(16px, 2.6vw, 24px);
+  font-size: clamp(15px, 2vw, 20px);
   color: var(--muted);
 }
 
@@ -157,7 +157,7 @@
 }
 
 .cue {
-  margin-top: clamp(28px, 5vw, 44px);
+  margin-top: clamp(24px, 4vw, 32px);
   color: var(--muted);
   font-size: 13px;
   letter-spacing: 0.02em;
@@ -169,5 +169,22 @@
   }
   .yearLabel {
     font-size: 16px;
+  }
+}
+
+@media (min-width: 768px) {
+  .section {
+    height: 220vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .section {
+    height: auto;
+  }
+
+  .sticky {
+    position: relative;
+    min-height: auto;
   }
 }

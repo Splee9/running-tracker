@@ -240,12 +240,13 @@ export function WeeklyLoad() {
             w.easyEF != null ? (
               <g
                 key={w.week}
+                className={styles.efPoint}
                 onMouseEnter={() => setSelected(i)}
                 onFocus={() => setSelected(i)}
                 tabIndex={0}
                 role="button"
                 aria-label={`Week ${w.week} aerobic efficiency ${w.easyEF.toFixed(3)}`}
-                style={{ cursor: "pointer", outline: "none" }}
+                style={{ cursor: "pointer" }}
               >
                 {/* hit area */}
                 <rect x={cx(i) - slot / 2} y={0} width={slot} height={104} fill="transparent" />

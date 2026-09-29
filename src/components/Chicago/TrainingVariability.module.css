@@ -1,12 +1,12 @@
 .section {
-  padding: clamp(48px, 8vw, 88px) 0;
-  border-bottom: 1px solid var(--line);
+  padding: var(--section-space) 0;
+  border-top: 1px solid var(--line);
 }
 
 .heading {
-  font-size: clamp(20px, 3.4vw, 30px);
+  font-size: var(--text-section);
   line-height: 1.2;
-  margin: 12px 0 clamp(28px, 5vw, 40px);
+  margin: 10px 0 clamp(24px, 4vw, 32px);
   max-width: 32ch;
 }
 
@@ -14,9 +14,9 @@
 .h2h {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: clamp(16px, 3vw, 24px);
-  margin-bottom: clamp(28px, 5vw, 44px);
+  border-radius: var(--radius-card);
+  padding: clamp(16px, 2.5vw, 20px);
+  margin-bottom: clamp(24px, 4vw, 32px);
 }
 
 .h2hNote {
@@ -33,7 +33,7 @@
 
 .h2hCol {
   flex: 1;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   padding: 16px;
   background: var(--bg);
   border: 1px solid var(--line);
@@ -69,7 +69,7 @@
 }
 
 .h2hVal {
-  font-size: clamp(20px, 3.6vw, 28px);
+  font-size: clamp(20px, 3vw, 26px);
   font-weight: 600;
   font-family: var(--mono);
   letter-spacing: -0.02em;
@@ -137,9 +137,9 @@
 
 /* table */
 .table {
-  margin-top: clamp(28px, 5vw, 44px);
+  margin-top: clamp(24px, 4vw, 32px);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   overflow: hidden;
 }
 
@@ -191,7 +191,7 @@
 .footnote {
   font-size: 13px;
   color: var(--muted);
-  margin-top: clamp(20px, 4vw, 32px);
+  margin-top: clamp(20px, 3vw, 24px);
   line-height: 1.5;
   max-width: 56ch;
 }

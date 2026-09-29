@@ -1,13 +1,13 @@
 .section {
   position: relative;
   z-index: 1;
-  padding: clamp(60px, 12vw, 120px) 0 clamp(20px, 4vw, 36px);
+  padding: var(--section-space) 0 clamp(20px, 4vw, 32px);
   border-top: 1px solid var(--line);
 }
 
 .body {
-  margin-top: 18px;
-  font-size: clamp(18px, 2.8vw, 23px);
+  margin-top: 14px;
+  font-size: clamp(17px, 2vw, 18px);
   font-weight: 400;
   line-height: 1.5;
   letter-spacing: -0.01em;

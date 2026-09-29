@@ -3,11 +3,6 @@
   z-index: 1;
 }
 
-.nav {
-  display: flex;
-}
-
-.navLink,
 .crosslink a {
   color: var(--ink);
   font-size: 14px;
@@ -18,36 +13,33 @@
   transition: border-color 0.2s ease;
 }
 
-.navLink:hover,
 .crosslink a:hover {
   border-bottom-color: var(--accent);
 }
 
-.navArrow,
 .arrow {
   display: inline-block;
   transition: transform 0.2s ease;
 }
 
-.navLink:hover .navArrow,
 .crosslink a:hover .arrow {
   transform: translateX(-3px);
 }
 
 .header {
-  padding: clamp(48px, 10vw, 104px) 0 clamp(48px, 9vw, 88px);
+  padding: clamp(24px, 4vw, 40px) 0 clamp(40px, 5vw, 48px);
 }
 
 .title {
-  font-size: clamp(28px, 5vw, 44px);
-  margin: 10px 0 18px;
+  font-size: var(--text-page);
+  margin: 8px 0 16px;
 }
 
 .intro {
-  max-width: 46ch;
+  max-width: 52ch;
   color: var(--muted);
-  font-size: clamp(16px, 2.4vw, 19px);
-  line-height: 1.5;
+  font-size: clamp(16px, 1.8vw, var(--text-lede));
+  line-height: 1.55;
 }
 
 .intro b {
@@ -55,7 +47,7 @@
 }
 
 .section {
-  padding: clamp(40px, 8vw, 72px) 0 0;
+  padding: clamp(40px, 5vw, 48px) 0 0;
   border-top: 1px solid var(--line);
 }
 
@@ -65,7 +57,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: clamp(24px, 5vw, 36px);
+  margin-bottom: 24px;
 }
 
 .chips {
@@ -107,6 +99,7 @@
   font-weight: 500;
   color: var(--muted);
   cursor: pointer;
+  min-height: 36px;
   padding: 6px 0;
   transition: color 0.18s ease;
 }
@@ -138,7 +131,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--on-accent);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
 
@@ -160,9 +153,9 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
-  padding: clamp(14px, 2.4vw, 20px) clamp(12px, 2.6vw, 24px) clamp(16px, 2.6vw, 22px);
+  padding: 12px 16px 14px;
   margin-bottom: -1px;
   font: inherit;
   text-align: left;
@@ -170,7 +163,7 @@
   background: transparent;
   border: 1px solid transparent;
   border-bottom: none;
-  border-radius: 16px 16px 0 0;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
   cursor: pointer;
   transition: background 0.25s ease, border-color 0.25s ease;
 }
@@ -196,7 +189,7 @@
 }
 
 .tabNum {
-  font-size: clamp(28px, 7vw, 56px);
+  font-size: clamp(28px, 4vw, 40px);
   font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1;
@@ -228,8 +221,8 @@
 .tabIndicator {
   position: absolute;
   top: -1px;
-  left: clamp(12px, 2.6vw, 24px);
-  right: clamp(12px, 2.6vw, 24px);
+  left: 16px;
+  right: 16px;
   height: 3px;
   border-radius: 0 0 3px 3px;
 }
@@ -238,8 +231,8 @@
   position: relative;
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: clamp(18px, 3.4vw, 32px) clamp(12px, 3vw, 28px) clamp(18px, 3vw, 26px);
+  border-radius: var(--radius-card);
+  padding: clamp(16px, 2.5vw, 20px);
 }
 
 .panel[data-edge="left"] {
@@ -260,7 +253,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px 18px;
-  margin-top: clamp(14px, 3vw, 22px);
+  margin-top: 16px;
 }
 
 .legendItem {
@@ -298,15 +291,15 @@
 }
 
 .cue {
-  margin-top: clamp(28px, 5vw, 44px);
+  margin-top: clamp(24px, 4vw, 32px);
   color: var(--muted);
   font-size: 13px;
   letter-spacing: 0.02em;
 }
 
 .footer {
-  margin-top: clamp(48px, 9vw, 80px);
-  padding-top: 24px;
+  margin-top: clamp(40px, 5vw, 56px);
+  padding-top: 20px;
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 13px;

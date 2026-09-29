@@ -454,7 +454,12 @@ function ActivityRow({
               <span
                 className={`${styles.badge} ${styles.badgeJev}`}
                 style={{ 
-                  background: jevScore >= 0.7 ? "#1f9d6b" : jevScore >= 0.4 ? "#c98a1a" : "#8a8a82",
+                  background:
+                    jevScore >= 0.7
+                      ? "var(--status-good)"
+                      : jevScore >= 0.4
+                        ? "var(--status-warn)"
+                        : "var(--status-neutral)",
                   opacity: jevLowConfidence ? 0.5 : 1
                 }}
                 title={jevLowConfidence 

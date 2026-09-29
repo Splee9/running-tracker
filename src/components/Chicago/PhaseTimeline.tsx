@@ -6,7 +6,7 @@ import styles from "./PhaseTimeline.module.css";
 
 // Geometry for the volume-arc SVG.
 const W = 1000;
-const H = 300;
+const H = 260;
 const PAD = { t: 24, r: 16, b: 44, l: 40 };
 const plotW = W - PAD.l - PAD.r;
 const plotH = H - PAD.t - PAD.b;

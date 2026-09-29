@@ -1,5 +1,6 @@
 import { data } from "../../lib/chicago-data";
 import { fmt1, formatDate } from "../../lib/chicago-format";
+import { Link } from "../../lib/router";
 import styles from "./Footer.module.css";
 
 export function Footer() {
@@ -15,9 +16,9 @@ export function Footer() {
         training log. Aggregate weekly figures only — no pace, GPS, heart rate, or health data.
       </p>
       <p className={styles.crosslink}>
-        <a href="/">
+        <Link href="/miles">
           Zoom out to a decade of lifetime mileage <span className={styles.arrow}>→</span>
-        </a>
+        </Link>
       </p>
     </footer>
   );

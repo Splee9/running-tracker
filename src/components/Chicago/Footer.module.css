@@ -1,11 +1,11 @@
 .footer {
   position: relative;
   z-index: 1;
-  margin-top: clamp(40px, 8vw, 72px);
-  padding-top: 24px;
+  margin-top: clamp(32px, 5vw, 56px);
+  padding-top: 20px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-meta);
 }
 
 .footer b {

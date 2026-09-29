@@ -39,7 +39,7 @@ export function TvChart(props: Props) {
     return () => ro.disconnect();
   }, []);
 
-  const height = width < 560 ? 280 : Math.round(Math.min(420, Math.max(320, width * 0.44)));
+  const height = width < 560 ? 280 : Math.round(Math.min(360, Math.max(300, width * 0.36)));
 
   return (
     <div ref={wrapRef} className={styles.wrap} style={{ minHeight: height }}>

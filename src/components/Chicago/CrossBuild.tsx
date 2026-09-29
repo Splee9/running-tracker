@@ -5,7 +5,7 @@ import { fmt1 } from "../../lib/chicago-format";
 import styles from "./CrossBuild.module.css";
 
 const W = 1000;
-const H = 420;
+const H = 360;
 const PAD = { t: 30, r: 30, b: 56, l: 52 };
 const plotW = W - PAD.l - PAD.r;
 const plotH = H - PAD.t - PAD.b;
