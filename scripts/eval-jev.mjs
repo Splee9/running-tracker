@@ -62,6 +62,8 @@ if (!dryRun && !provider) {
 }
 
 async function askJev(request) {
+  // Like the function: no candidates and no facets to ask means nothing to send.
+  if (Object.keys(request.questions).length === 0) return { answers: {} };
   const body = JSON.stringify({ model: provider.model, state: request.state, questions: request.questions });
   const file = path.join(CACHE, `${createHash("sha256").update(body).digest("hex").slice(0, 32)}.json`);
   try {
