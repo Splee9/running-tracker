@@ -37,7 +37,7 @@ const SPORT_FILTERS: { key: SportFilter; label: string }[] = [
   { key: "other", label: "Other" },
 ];
 
-const EXAMPLES = ["quality session", "long run", "threshold", "hilly ride", "zwift", "race 2024"];
+const EXAMPLES = ["longest run", "most intervals", "Chicago races", "quality session", "hilly ride", "zwift"];
 
 const rise = {
   hidden: { opacity: 0, y: 16 },
@@ -168,8 +168,10 @@ export function ActivityLookup() {
           Find any session.
         </motion.h1>
         <motion.p className={styles.intro} variants={rise} custom={2} initial="hidden" animate="show">
-          Search every logged activity. Keyword and fuzzy matching run as you type; then{" "}
-          <b>Jev</b> reranks the shortlist by what you meant, not just what you typed.
+          Search every logged activity by name, stimulus, place, or workout type. Keyword and fuzzy
+          matching run as you type; then <b>Jev</b> reranks the shortlist by what you meant, not
+          just what you typed. Try superlatives like "longest run" or "most intervals", or combine
+          place with type like "Chicago races".
         </motion.p>
       </header>
 
@@ -254,8 +256,8 @@ export function ActivityLookup() {
 
       <footer className={styles.footer}>
         <p>
-          Public activities only, rebuilt from the Strava log. Names, dates, distance, time and
-          elevation — no routes, locations or heart-rate data.
+          Public activities only, rebuilt from the Strava log. Names, dates, distance, time,
+          elevation, stimulus, place and intervals — no routes, polylines or heart-rate data.
         </p>
       </footer>
     </div>
@@ -283,6 +285,17 @@ function ActivityRow({
     pace = isRun(a)
       ? `${formatDuration(Math.round(a.moving_time_s / dist))} /${units}`
       : `${(dist / (a.moving_time_s / 3600)).toFixed(1)} ${units === "mi" ? "mph" : "km/h"}`;
+  }
+
+  // Build enrichment chips
+  const enrichmentChips: string[] = [];
+  if (a.place) enrichmentChips.push(a.place);
+  if (a.primary_stimulus && !["other", "easy"].includes(a.primary_stimulus)) {
+    enrichmentChips.push(a.primary_stimulus);
+  }
+  if (a.has_intervals) {
+    const intervalLabel = a.hard_lap_count ? `${a.hard_lap_count} hard laps` : "intervals";
+    enrichmentChips.push(intervalLabel);
   }
 
   return (
@@ -315,6 +328,11 @@ function ActivityRow({
                 {elev.toLocaleString()} {units === "mi" ? "ft" : "m"}
               </span>
             )}
+            {enrichmentChips.map((chip, i) => (
+              <span key={i} style={{ opacity: 0.7, fontStyle: "italic" }}>
+                {chip}
+              </span>
+            ))}
           </span>
         </span>
         {showMatch && (
