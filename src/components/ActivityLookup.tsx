@@ -181,7 +181,8 @@ export function ActivityLookup() {
     // fan-out readings are called out separately so a pace sort is not
     // described as if it included the related tail.
     const intent = intentClassification.intent;
-    const where = intentClassification.place ? ` · ${intentClassification.place}` : "";
+    const whereBits = [intentClassification.place, intentClassification.weekday].filter(Boolean);
+    const where = whereBits.length > 0 ? ` · ${whereBits.join(" · ")}` : "";
     const primaryId =
       intent?.kind === "fastest" || intent?.kind === "longest" || intent?.kind === "most_intervals" ||
       intent?.kind === "hilliest" || intent?.kind === "highest_hr" || intent?.kind === "highest_power" ||
