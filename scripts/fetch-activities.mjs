@@ -11,7 +11,8 @@
 //   BRAIN_REF              optional branch/tag/sha (default: the repo's default branch)
 //
 // Without BRAIN_GITHUB_TOKEN it keeps an existing src/activities.json, so local builds work
-// offline. With a token, any download or format problem fails the build rather than
+// offline; if there is none it writes an empty placeholder (except on Netlify, where that
+// would ship an empty lookup, so it fails instead). With a token, any download or format problem fails the build rather than
 // shipping a stale or partial list.
 //
 // Accepts a JSON array of Strava activities, an object with an `activities` array, or JSONL.
@@ -85,10 +86,17 @@ async function main() {
   if (!token) {
     try {
       await access(OUT);
+      console.log(`BRAIN_GITHUB_TOKEN not set; keeping existing ${OUT}`);
+      return;
     } catch {
-      throw new Error(`No BRAIN_GITHUB_TOKEN and no existing ${OUT} to fall back to`);
+      // A deploy without the token must not ship an empty /activity-lookup.
+      if (process.env.NETLIFY) {
+        throw new Error(`No BRAIN_GITHUB_TOKEN and no existing ${OUT} to fall back to`);
+      }
     }
-    console.log(`BRAIN_GITHUB_TOKEN not set; keeping existing ${OUT}`);
+    // Fresh clones and CI: an empty list lets the site type-check and build.
+    await writeFile(OUT, JSON.stringify({ exported_at: null, activities: [] }) + "\n");
+    console.log(`BRAIN_GITHUB_TOKEN not set; wrote an empty placeholder ${OUT}`);
     return;
   }
   const records = parseRecords(await download(token, filePath, ref));

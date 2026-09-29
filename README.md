@@ -7,53 +7,73 @@ line and cursor-reactive polish.
 
 ## About the data
 
-The running log and training pages show **aggregate totals only** — yearly and
-lifetime mileage, run counts, monthly cumulative distance, and the date of the
-first logged run.
+The running log, training, and Chicago pages show **aggregate figures only** —
+yearly and lifetime mileage, run counts, monthly cumulative distance, weekly
+hours and load, and the date of the first logged run.
 
 `/activity-lookup` is the exception: it lists individual **public** Strava
 activities (name, date, sport, distance, moving time, elevation gain, workout
-type). Private activities are dropped at export. There is no location, GPS,
-route, heart-rate, or other health data anywhere on the site.
+type, stimulus labels, and — when Strava has them — average/max heart rate,
+speed, and a city-level place name). Private activities are dropped at export.
+There is no GPS, route, or map data anywhere on the site.
 
-All numbers live in `src/data.json`, which is regenerated from a private training
-pipeline (the source data never ships here — only the aggregate JSON does).
+The aggregate numbers live in `src/data.json`, `src/chicago-data.json`, and the
+`src/training-*.json` files, all regenerated from a private training pipeline
+(the source data never ships here — only the derived JSON does).
 
 ## Develop
 
 ```bash
 npm install
-npm run dev      # local dev server with hot reload
-npm run build    # type-check + production bundle to dist/
-npm run preview  # serve the production build locally
+npm run fetch:activities  # build src/activities.json (see below)
+npm run dev               # local dev server with hot reload
+npm run build             # type-check + production bundle to dist/
+npm run preview           # serve the production build locally
+npm run test:intent       # Activity Lookup search/intent tests
 ```
+
+`fetch:activities` downloads the real activity list when `BRAIN_GITHUB_TOKEN` is
+set. Without it, it keeps an existing `src/activities.json` or writes an empty
+placeholder, so a fresh clone builds (the Lookup page is just empty). On Netlify
+a missing token with no file fails the build instead.
+
+CI (`.github/workflows/ci.yml`) runs the intent tests and the production build
+on every pull request and on pushes to `main`, using the empty placeholder.
 
 ## Project layout
 
 ```
 src/
-  App.tsx                 routes (/ and /training) + home section composition
+  App.tsx                 route switch + per-page titles
   data.json               aggregate stats (generated; do not hand-edit)
+  chicago-data.json       Chicago 2026 build: phases, weekly load, prior builds
+                          (generated)
   training-variability.json  weekly training-variability series (generated)
+  training-weekly-hours.json weekly hours derived from the TV series
+                          (scripts/derive_weekly_hours.py)
   activities.json         public activity list for /activity-lookup (built from
                           spencer-brain at deploy time; gitignored)
   activity-grades.json    offline Jev "standout" Score per activity (committed;
                           scripts/grade-activities.mjs)
-  components/             Hero, YearChart, CumulativeJourney, Comparisons, Footer,
-                          Training + TvChart (the /training page)
+  components/             Nav, Home (/), Miles + Hero, YearChart, CumulativeJourney,
+                          Comparisons, MarathonTimes (/miles), Training + TvChart
+                          (/training), ActivityLookup (/activity-lookup), NotFound
+  components/Chicago/     ChicagoTracker and its sections (/training/chicago)
   hooks/usePointer.ts     spring-smoothed cursor tracking
   lib/                    data types, formatting, comparisons, tiny history router,
                           activitySearch (keyword + fuzzy index), lookupView
-                          (status and "Read as" text), jevProvider (API routing)
+                          (status and "Read as" text), jevProvider (API routing),
+                          chicago-data / chicago-format (Chicago page)
+  styles/global.css       design tokens + base styles
 netlify/functions/
   jev-rerank.mts          Jev reranking for /activity-lookup (holds the API key)
-  styles/global.css       design tokens + base styles
+scripts/                  data export, grading, and eval scripts (see below)
 ```
 
 ## Routes
 
-- `/` — the running log.
-- `/miles` — the running log (same as `/`).
+- `/` — projects home page linking to the pages below.
+- `/miles` — the running log: lifetime and per-year mileage reframed as journeys.
 - `/training` — training variability: how much weekly hours swing around their
   mean over rolling 8 / 12 / 52-week windows, for Run, Bike, or All. Lower is
   steadier (Steady < 35, Moderate 35–55, Uneven 55–80, Erratic ≥ 80). One
@@ -63,17 +83,6 @@ netlify/functions/
   plan, weekly load by workout type, aerobic efficiency trend, and head-to-head
   comparison against prior marathon builds. Aggregate weekly figures only — no
   pace, GPS, heart rate, or health data.
-- `/activity-lookup` — label filters, fan-out, then Jev. Full behavior below.
-
-`src/training-weekly-hours.json` is derived from `src/training-variability.json`
-(the export carries only rolling stats). Regenerate it whenever the TV file
-changes:
-
-```bash
-pip install numpy scipy
-python3 scripts/derive_weekly_hours.py
-```
-
 - `/activity-lookup` — search every public activity. Three stages:
   1. **Label hard filters**, in the browser: modality, date, distance, place,
      weekday, and stimulus words (`easy`, `intervals`, `quality`, `long`,
@@ -111,6 +120,15 @@ python3 scripts/derive_weekly_hours.py
   removed parts live in the URL (`?q=&sport=&u=&sort=&drop=`). `?debug=1` shows
   match kind, branch, and Jev score on each row.
 
+`src/training-weekly-hours.json` is derived from `src/training-variability.json`
+(the export carries only rolling stats). Regenerate it whenever the TV file
+changes:
+
+```bash
+pip install numpy scipy
+python3 scripts/derive_weekly_hours.py
+```
+
 Offline Jev work (same `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY` as the function):
 
 ```bash
@@ -135,7 +153,8 @@ export (`scripts/strava-activity.mjs`):
 BRAIN_GITHUB_TOKEN=... node scripts/fetch-activities.mjs   # BRAIN_ACTIVITIES_PATH overrides the path
 ```
 
-Without `BRAIN_GITHUB_TOKEN` it keeps an existing local file. To build that file
+Without `BRAIN_GITHUB_TOKEN` it keeps an existing local file (or writes an empty
+placeholder off Netlify). To build that file
 straight from Strava instead (incremental by default; `--full` re-downloads
 everything and waits out 429s):
 
