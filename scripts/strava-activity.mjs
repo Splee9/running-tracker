@@ -33,5 +33,11 @@ export function toActivity(a) {
   if (a.max_speed !== undefined) base.max_speed = a.max_speed;
   if (a.average_watts !== undefined) base.average_watts = a.average_watts;
   if (a.weighted_average_watts !== undefined) base.weighted_average_watts = a.weighted_average_watts;
+  // MMP fields (public-activities-v4 schema)
+  if (a.best_watts_5s !== undefined) base.best_watts_5s = a.best_watts_5s;
+  if (a.best_watts_1m !== undefined) base.best_watts_1m = a.best_watts_1m;
+  if (a.best_watts_5m !== undefined) base.best_watts_5m = a.best_watts_5m;
+  if (a.best_watts_20m !== undefined) base.best_watts_20m = a.best_watts_20m;
+  if (a.best_watts_60m !== undefined) base.best_watts_60m = a.best_watts_60m;
   return base;
 }
