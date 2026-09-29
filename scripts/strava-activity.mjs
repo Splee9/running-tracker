@@ -39,5 +39,10 @@ export function toActivity(a) {
   if (a.best_watts_5m !== undefined) base.best_watts_5m = a.best_watts_5m;
   if (a.best_watts_20m !== undefined) base.best_watts_20m = a.best_watts_20m;
   if (a.best_watts_60m !== undefined) base.best_watts_60m = a.best_watts_60m;
+  // Public description only. Ranking text for Jev — the lookup cards do not render it.
+  // Leave out GPS, polylines, and streams; those stay off the public site.
+  if (typeof a.description === "string" && a.description.trim()) {
+    base.description = a.description.trim();
+  }
   return base;
 }

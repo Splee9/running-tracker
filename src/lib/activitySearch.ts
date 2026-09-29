@@ -30,6 +30,8 @@ export type Activity = {
   best_watts_5m?: number;
   best_watts_20m?: number;
   best_watts_60m?: number;
+  // Public Strava description. Used only when ranking (Jev); never shown on cards.
+  description?: string;
 };
 
 export type MatchKind = "keyword" | "fuzzy";
@@ -73,15 +75,125 @@ export function isRide(a: Activity) {
   return /Ride$/.test(a.sport_type);
 }
 
+// Same windows as the distance tags below, so a band filter and a "10k" tag agree.
+const RACE_SPECS = [
+  { kind: "5k", label: "5k", targetKm: 5, tolKm: 0.3, tags: ["5k"] },
+  { kind: "10k", label: "10k", targetKm: 10, tolKm: 0.4, tags: ["10k"] },
+  { kind: "half", label: "half marathon", targetKm: 21.1, tolKm: 0.6, tags: ["half", "half marathon"] },
+  { kind: "marathon", label: "marathon", targetKm: 42.2, tolKm: 1, tags: ["marathon"] },
+] as const;
+
+export type DistanceBand = {
+  kind: "5k" | "10k" | "half" | "marathon" | "numeric";
+  label: string;
+  targetKm: number;
+  tolKm: number;
+  /** Named race distances are runs unless the query explicitly asks for a ride. */
+  runsOnly: boolean;
+};
+
+const MI_IN_KM = 1.609344;
+const MAX_RANKING_DESCRIPTION = 500;
+
+function withinKm(distanceM: number, targetKm: number, tolKm: number): boolean {
+  return distanceM > 0 && Math.abs(distanceM / 1000 - targetKm) <= tolKm;
+}
+
+function raceBand(kind: (typeof RACE_SPECS)[number]["kind"]): DistanceBand {
+  const spec = RACE_SPECS.find((s) => s.kind === kind)!;
+  return {
+    kind: spec.kind,
+    label: spec.label,
+    targetKm: spec.targetKm,
+    tolKm: spec.tolKm,
+    runsOnly: true,
+  };
+}
+
+// "6.2 mi" / "10 km" collapse onto the race window when they land on one.
+function snapRace(targetKm: number): DistanceBand | null {
+  let best: (typeof RACE_SPECS)[number] | null = null;
+  let bestDelta = 0.25;
+  for (const spec of RACE_SPECS) {
+    const delta = Math.abs(targetKm - spec.targetKm);
+    if (delta <= bestDelta) {
+      best = spec;
+      bestDelta = delta;
+    }
+  }
+  return best ? raceBand(best.kind) : null;
+}
+
+function numericBand(value: number, unitRaw: string): DistanceBand {
+  const miles = unitRaw === "mi" || unitRaw.startsWith("mile");
+  // "50k" is race shorthand for a run. "50 km" / "30 mi" stay open to the named sport.
+  const raceStyleK = unitRaw === "k";
+  const targetKm = miles ? value * MI_IN_KM : value;
+  const snapped = snapRace(targetKm);
+  if (snapped) return snapped;
+  const tolKm = Math.max(0.3, targetKm * 0.03);
+  return {
+    kind: "numeric",
+    label: `${value} ${miles ? "mi" : "km"}`,
+    targetKm,
+    tolKm,
+    runsOnly: raceStyleK,
+  };
+}
+
+function inDistanceBand(distanceM: number, band: DistanceBand): boolean {
+  return withinKm(distanceM, band.targetKm, band.tolKm);
+}
+
+// Token spans share indexes with tokenize(), including decimals split on ".".
+function tokenSpans(query: string): { start: number; end: number }[] {
+  const norm = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const spans: { start: number; end: number }[] = [];
+  const re = /[a-z0-9]+/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(norm))) {
+    spans.push({ start: match.index, end: match.index + match[0].length });
+  }
+  return spans;
+}
+
+function parseDistanceBand(query: string): { band: DistanceBand | null; consumedIndices: Set<number> } {
+  const norm = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const spans = tokenSpans(query);
+  const patterns: { re: RegExp; build: (m: RegExpExecArray) => DistanceBand }[] = [
+    { re: /\bhalf(?:[-\s]*marathon)?\b/, build: () => raceBand("half") },
+    { re: /\bmarathon\b/, build: () => raceBand("marathon") },
+    { re: /\b5\s*k\b/, build: () => raceBand("5k") },
+    { re: /\b10\s*k\b/, build: () => raceBand("10k") },
+    {
+      re: /\b(\d+(?:\.\d+)?)\s*(km|kilometers?|mi|miles?|k)\b/,
+      build: (m) => numericBand(Number(m[1]), m[2]),
+    },
+  ];
+
+  let best: { start: number; end: number; band: DistanceBand } | null = null;
+  for (const pattern of patterns) {
+    const match = pattern.re.exec(norm);
+    if (!match) continue;
+    if (!best || match.index < best.start) {
+      best = { start: match.index, end: match.index + match[0].length, band: pattern.build(match) };
+    }
+  }
+  const consumedIndices = new Set<number>();
+  if (!best) return { band: null, consumedIndices };
+  spans.forEach((span, index) => {
+    if (span.end > best!.start && span.start < best!.end) consumedIndices.add(index);
+  });
+  return { band: best.band, consumedIndices };
+}
+
 function distanceTags(a: Activity): string[] {
   const km = a.distance_m / 1000;
   const tags: string[] = [];
   if (isRun(a)) {
-    const near = (target: number, tol: number) => Math.abs(km - target) <= tol;
-    if (near(5, 0.3)) tags.push("5k");
-    if (near(10, 0.4)) tags.push("10k");
-    if (near(21.1, 0.6)) tags.push("half", "half marathon");
-    if (near(42.2, 1)) tags.push("marathon");
+    for (const spec of RACE_SPECS) {
+      if (Math.abs(km - spec.targetKm) <= spec.tolKm) tags.push(...spec.tags);
+    }
     if (km >= 25) tags.push("long");
     if (km > 0 && km < 6) tags.push("short");
   }
@@ -390,6 +502,8 @@ export type SuperlativeIntent = {
 export type IntentClassification = {
   intent: SuperlativeIntent;
   dateWindow: DateWindow | null;
+  /** Set for fastest/longest when the query names a distance. Other intents leave it null. */
+  distanceBand: DistanceBand | null;
   remainingTokens: string[];
   isDeterministic: boolean;
 };
@@ -543,6 +657,11 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
         intent.sport = "run";
         consumedIndices.add(sportIdx);
       }
+      const bikeIdx = tokens.findIndex(t => ["ride", "rides", "bike", "cycling"].includes(t));
+      if (bikeIdx >= 0) {
+        intent.sport = "ride";
+        consumedIndices.add(bikeIdx);
+      }
     }
   }
 
@@ -646,10 +765,24 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     }
   }
 
+  // Consume a distance band only for fastest/longest, so a plain "10k" search
+  // still matches the tag instead of becoming an empty list query.
+  const parsedBand = parseDistanceBand(query);
+  let distanceBand: DistanceBand | null = null;
+  if (
+    parsedBand.band &&
+    intent &&
+    (intent.kind === "fastest" || intent.kind === "longest")
+  ) {
+    distanceBand = parsedBand.band;
+    parsedBand.consumedIndices.forEach((i) => consumedIndices.add(i));
+    if (distanceBand.runsOnly && !intent.sport) intent.sport = "run";
+  }
+
   const remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
   // Deterministic if we have an intent and no remaining semantic tokens
   const isDeterministic = intent !== null && remainingTokens.length === 0;
-  return { intent, dateWindow, remainingTokens, isDeterministic };
+  return { intent, dateWindow, distanceBand, remainingTokens, isDeterministic };
 }
 
 export function classifyIntent(query: string, now?: Date): IntentClassification {
@@ -715,7 +848,7 @@ export function searchActivities(
   limit = 200,
   now?: Date,
 ): SearchHit[] {
-  const { intent, dateWindow, remainingTokens, isDeterministic } = detectSuperlativeIntent(query, now);
+  const { intent, dateWindow, remainingTokens, isDeterministic, distanceBand } = detectSuperlativeIntent(query, now);
   const tokens = Array.from(new Set(remainingTokens.length > 0 ? remainingTokens : tokenize(query)));
 
   let candidates: IndexedActivity[] = index;
@@ -776,6 +909,20 @@ export function searchActivities(
     }
   }
 
+  // Date window is already applied. Band filter is next, still before sorting.
+  if (
+    distanceBand &&
+    intent &&
+    (intent.kind === "fastest" || intent.kind === "longest")
+  ) {
+    const sport = intent.sport;
+    candidates = candidates.filter(({ activity }) => {
+      if (!inDistanceBand(activity.distance_m, distanceBand)) return false;
+      if (distanceBand.runsOnly && sport !== "ride" && !isRun(activity)) return false;
+      return true;
+    });
+  }
+
   if (isDeterministic) {
     // Deterministic intent: no keyword matching, just apply metric/filter sorting
     const hits = candidates.map(({ activity }): SearchHit => ({
@@ -784,7 +931,7 @@ export function searchActivities(
       kind: "keyword",
       matched: [],
     }));
-    return applySuperlativeSorting(hits, intent, limit);
+    return applySuperlativeSorting(hits, intent, limit, distanceBand);
   }
 
   // Regular keyword/fuzzy search with optional superlative sorting
@@ -825,7 +972,7 @@ export function searchActivities(
   
   // Apply superlative sorting if intent exists
   if (intent && intent.kind !== "place_filter") {
-    return applySuperlativeSorting(results, intent, limit);
+    return applySuperlativeSorting(results, intent, limit, distanceBand);
   }
 
   return results.slice(0, limit);
@@ -835,6 +982,7 @@ function applySuperlativeSorting(
   hits: SearchHit[],
   intent: SuperlativeIntent,
   limit: number,
+  distanceBand: DistanceBand | null,
 ): SearchHit[] {
   if (!intent || intent.kind === "place_filter") return hits.slice(0, limit);
 
@@ -843,12 +991,22 @@ function applySuperlativeSorting(
   if (intent.kind === "longest") {
     sorted.sort((a, b) => b.activity.distance_m - a.activity.distance_m);
   } else if (intent.kind === "fastest") {
-    // Sort by pace (ascending time per distance for runs with sufficient distance)
-    sorted.sort((a, b) => {
-      const paceA = a.activity.distance_m > 0 ? a.activity.moving_time_s / a.activity.distance_m : Infinity;
-      const paceB = b.activity.distance_m > 0 ? b.activity.moving_time_s / b.activity.distance_m : Infinity;
-      return paceA - paceB;
-    });
+    if (distanceBand) {
+      // Inside a fixed band, the shorter moving time is the faster effort.
+      // Pace would still prefer a slightly short GPS file over the quicker clocking.
+      sorted.sort((a, b) => {
+        const timeA = a.activity.moving_time_s > 0 ? a.activity.moving_time_s : Infinity;
+        const timeB = b.activity.moving_time_s > 0 ? b.activity.moving_time_s : Infinity;
+        return timeA - timeB || b.activity.distance_m - a.activity.distance_m;
+      });
+    } else {
+      // No band: pace is the only comparison that isn't "shortest workout".
+      sorted.sort((a, b) => {
+        const paceA = a.activity.distance_m > 0 ? a.activity.moving_time_s / a.activity.distance_m : Infinity;
+        const paceB = b.activity.distance_m > 0 ? b.activity.moving_time_s / b.activity.distance_m : Infinity;
+        return paceA - paceB;
+      });
+    }
   } else if (intent.kind === "most_intervals") {
     // Sort by interval_score (desc), then hard_lap_count (desc), then has_intervals
     sorted.sort((a, b) => {
@@ -897,14 +1055,61 @@ function applySuperlativeSorting(
   return sorted.slice(0, limit);
 }
 
-export function describeActivity(a: Activity): string {
+function chicagoClock(now?: Date): Date {
+  return now ?? new Date(new Date().toLocaleString("en-US", { timeZone: "America/Chicago" }));
+}
+
+function formatISODate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function daysAgoLabel(activityDate: string, now?: Date): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(activityDate)) return "";
+  const today = formatISODate(chicagoClock(now));
+  const [ys, ms, ds] = activityDate.split("-").map(Number);
+  const [ye, me, de] = today.split("-").map(Number);
+  const diff = Math.round((Date.UTC(ye, me - 1, de) - Date.UTC(ys, ms - 1, ds)) / 86_400_000);
+  if (!Number.isFinite(diff)) return "";
+  if (diff <= 0) return "today";
+  if (diff === 1) return "1 day ago";
+  return `${diff} days ago`;
+}
+
+function runPacePerMile(a: Activity): string {
+  if (!isRun(a) || a.distance_m <= 0 || a.moving_time_s <= 0) return "";
+  const speedMps = a.average_speed && a.average_speed > 0
+    ? a.average_speed
+    : a.distance_m / a.moving_time_s;
+  if (!Number.isFinite(speedMps) || speedMps <= 0) return "";
+  return `${formatDuration(Math.round(1609.344 / speedMps))} /mi`;
+}
+
+function rankingDescription(description: string | undefined): string {
+  if (!description) return "";
+  const clean = description.replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  const clipped = clean.length > MAX_RANKING_DESCRIPTION
+    ? `${clean.slice(0, MAX_RANKING_DESCRIPTION - 3)}...`
+    : clean;
+  return `description: ${clipped}`;
+}
+
+export function describeActivity(a: Activity, now?: Date): string {
   const km = a.distance_m / 1000;
+  const date = a.start_date_local.slice(0, 10);
+  const year = date.slice(0, 4);
   const parts = [
     `"${a.name}"`,
     sportLabel(a.sport_type),
-    a.start_date_local.slice(0, 10),
+    date,
+    /^\d{4}$/.test(year) ? `year ${year}` : "",
+    daysAgoLabel(date, now),
     km > 0 ? `${km.toFixed(1)} km` : "",
     formatDuration(a.moving_time_s),
+    runPacePerMile(a),
     a.elevation_gain_m > 0 ? `${a.elevation_gain_m} m climbing` : "",
     ...(WORKOUT_TAGS[a.workout_type ?? -1]?.slice(0, 1) ?? []),
     a.trainer ? "indoor" : "",
@@ -937,6 +1142,8 @@ export function describeActivity(a: Activity): string {
   }
   // MMP data (show best 20m when present)
   if (a.best_watts_20m) parts.push(`${Math.round(a.best_watts_20m)}W 20min`);
+  const notes = rankingDescription(a.description);
+  if (notes) parts.push(notes);
   return parts.filter(Boolean).join(", ");
 }
 

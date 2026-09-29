@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:intent": "node --experimental-strip-types test-intent.mjs"
   },
   "dependencies": {
     "framer-motion": "^11.15.0",
