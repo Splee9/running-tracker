@@ -3,6 +3,7 @@
 
 import { activityFacts, applyJevIntent, buildIndex, buildJevRequest, classifyIntent, describeActivity, describeIntent, jevCacheScope, MEMBERSHIP_DEMOTE_BELOW, needsIntentFacets, planShortlist, rerankUnlockedHits, resolveInterpretation, searchActivities, settledIntentPayload, splitJevAnswers } from "./src/lib/activitySearch.ts";
 import { toActivity } from "./scripts/strava-activity.mjs";
+import { formatHours, formatWindow, interpretationParts, lookupStatus, primaryHits, resultTotals } from "./src/lib/lookupView.ts";
 
 const testClock = new Date("2026-09-29T12:00:00-05:00");
 
@@ -705,6 +706,68 @@ check(
   pacePacked.questions.a19.criteria.true.includes("in chicago") &&
     !pacePacked.questions.a19.criteria.true.includes("race-labeled"),
   pacePacked.questions.a19.criteria.true,
+);
+
+console.log("\nlookup view:\n");
+
+const idle = { available: true, scored: false, pending: false, error: false };
+const fastestChicago = classifyIntent("fastest run in Chicago", testClock);
+check(
+  "read-as parts name the sort, sport, and place a code parse settled",
+  JSON.stringify(interpretationParts(fastestChicago, fastestChicago).map((p) => [p.key, p.value, p.fromJev])) ===
+    JSON.stringify([["sort", "Fastest", false], ["sport", "Runs", false], ["place", "Chicago", false]]),
+  JSON.stringify(interpretationParts(fastestChicago, fastestChicago)),
+);
+const fartlekCode = classifyIntent("fartlek", testClock);
+const fartlekReadAs = applyJevIntent(fartlekCode, { is_intervals: 0.91 });
+const fartlekParts = interpretationParts(fartlekReadAs, fartlekCode);
+check(
+  "a part Jev filled in is marked as Jev's",
+  fartlekParts.some((p) => p.key === "stimulus" && p.value === "intervals" && p.fromJev) &&
+    fartlekParts.some((p) => p.key === "words" && !p.fromJev),
+  JSON.stringify(fartlekParts),
+);
+check(
+  "a full calendar year reads as the year; a week reads as a range",
+  formatWindow("2024-01-01", "2024-12-31") === "2024" &&
+    formatWindow("2026-09-21", "2026-09-27") === "Sep 21 – Sep 27, 2026",
+  formatWindow("2026-09-21", "2026-09-27"),
+);
+const statusIndex = buildIndex(activities);
+const fastestHits = searchActivities(statusIndex, "fastest run in Chicago", 500, testClock, fastestChicago);
+check(
+  "a locked metric status reads as count and order, without Jev noise",
+  /^\d+ match(es)? · by pace( · \d+ related)?$/.test(lookupStatus("fastest run in Chicago", fastestHits, fastestChicago, { ...idle, pending: true })),
+  lookupStatus("fastest run in Chicago", fastestHits, fastestChicago, { ...idle, pending: true }),
+);
+const keywordQuery = classifyIntent("steady", testClock);
+const keywordHits = searchActivities(statusIndex, "steady", 500, testClock, keywordQuery);
+check(
+  "an unlocked status says when Jev is ranking and when it has",
+  lookupStatus("steady", keywordHits, keywordQuery, { ...idle, pending: true }).endsWith("best match first · ranking…") &&
+    lookupStatus("steady", keywordHits, keywordQuery, { ...idle, scored: true }).endsWith("ranked by Jev") &&
+    lookupStatus("steady", keywordHits, keywordQuery, { ...idle, error: true }).endsWith("Jev unavailable"),
+  lookupStatus("steady", keywordHits, keywordQuery, { ...idle, pending: true }),
+);
+check(
+  "empty and no-result statuses stay plain",
+  lookupStatus("", [], null, idle) === "0 activities · most recent first" &&
+    lookupStatus("zzz", [], classifyIntent("zzz", testClock), idle) === 'No activities match "zzz"',
+  "",
+);
+const totals = resultTotals([activities[1], activities[2]]);
+check(
+  "totals add distance and time and give run pace when every hit is a run",
+  totals.count === 2 && totals.distanceM === 20100 && totals.movingS === 4700 &&
+    Math.abs(totals.runPaceSPerM - 4700 / 20100) < 1e-9 &&
+    resultTotals([activities[1], activities[5]]).runPaceSPerM === null &&
+    formatHours(4700) === "1h 18m",
+  JSON.stringify(totals),
+);
+check(
+  "primary hits drop the related tail",
+  primaryHits(fastestHits, fastestChicago).every((h) => h.branch === "metric"),
+  "",
 );
 
 console.log("\nexport mapping:\n");

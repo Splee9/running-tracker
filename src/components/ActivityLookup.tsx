@@ -20,7 +20,7 @@ import {
   type MembershipCompanions,
   type SearchHit,
 } from "../lib/activitySearch";
-import { stimulusSummary } from "../lib/stimulus";
+import { formatHours, interpretationParts, lookupStatus, primaryHits, resultTotals } from "../lib/lookupView";
 import styles from "./ActivityLookup.module.css";
 
 type SportFilter = "all" | "run" | "ride" | "other";
@@ -66,6 +66,18 @@ const rise = {
   }),
 };
 
+function readParams() {
+  const params = new URLSearchParams(window.location.search);
+  const sport = params.get("sport");
+  return {
+    query: params.get("q") ?? "",
+    sport: (SPORT_FILTERS.some((f) => f.key === sport) ? sport : "all") as SportFilter,
+    units: (params.get("u") === "km" ? "km" : "mi") as Units,
+    // Match kind, branch, and Jev scores are for tuning. ?debug=1 shows them on each row.
+    debug: params.has("debug"),
+  };
+}
+
 function matchesSport(a: Activity, filter: SportFilter) {
   if (filter === "all") return true;
   if (filter === "run") return isRun(a);
@@ -74,14 +86,34 @@ function matchesSport(a: Activity, filter: SportFilter) {
 }
 
 export function ActivityLookup() {
-  const [query, setQuery] = useState("");
-  const [sport, setSport] = useState<SportFilter>("all");
-  const [units, setUnits] = useState<Units>("mi");
+  const [initial] = useState(readParams);
+  const [query, setQuery] = useState(initial.query);
+  const [sport, setSport] = useState<SportFilter>(initial.sport);
+  const [units, setUnits] = useState<Units>(initial.units);
+  const debug = initial.debug;
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [jev, setJev] = useState<JevState>({ status: "idle" });
   // Flips off for the session once the function reports Jev isn't configured.
   const [jevAvailable, setJevAvailable] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  // Keep the search in the URL so it can be shared or bookmarked. Other params (debug) are left alone.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const q = query.trim();
+    if (q) params.set("q", q);
+    else params.delete("q");
+    if (sport !== "all") params.set("sport", sport);
+    else params.delete("sport");
+    if (units !== "mi") params.set("u", units);
+    else params.delete("u");
+    const search = params.toString();
+    const url = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`;
+    if (url !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+      window.history.replaceState(window.history.state, "", url);
+    }
+  }, [query, sport, units]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -196,95 +228,39 @@ export function ActivityLookup() {
 
   const shown = results.slice(0, visible);
 
-  let status: string;
-  if (!trimmed) {
-    status = `${results.length.toLocaleString()} activities · most recent first`;
-  } else if (results.length === 0) {
-    status = `No activities match "${trimmed}"`;
-  } else if (intentClassification?.isDeterministic) {
-    // Deterministic intent status. The count is the primary branch; other
-    // fan-out readings are called out separately so a pace sort is not
-    // described as if it included the related tail.
-    const intent = intentClassification.intent;
-    const stimulusBit = stimulusSummary(intentClassification.stimulus);
-    const whereBits = [intentClassification.place, intentClassification.weekday, stimulusBit].filter(Boolean);
-    const where = whereBits.length > 0 ? ` · ${whereBits.join(" · ")}` : "";
-    const primaryId =
-      intent?.kind === "fastest" || intent?.kind === "longest" || intent?.kind === "most_intervals" ||
-      intent?.kind === "hilliest" || intent?.kind === "highest_hr" || intent?.kind === "highest_power" ||
-      intent?.kind === "mmp_power"
-        ? "metric"
-        : intent?.kind === "list"
-          ? intentClassification.dateWindow ? "date-list" : "place-list"
-          : intent?.kind === "place_filter"
-            ? "place-list"
-            : null;
-    const primaryCount = primaryId ? results.filter((h) => h.branch === primaryId).length : results.length;
-    const related = primaryId ? results.length - primaryCount : 0;
-    const counted = primaryCount > 0 ? primaryCount : results.length;
-    if (intent && primaryCount === 0 && related > 0) {
-      status = `No strict ${intent.kind.replaceAll("_", " ")} matches${where} · ${related.toLocaleString()} related`;
-    } else if (intent) {
-      if (intent.kind === "longest") {
-        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"}${where} · sorted by distance`;
-      } else if (intent.kind === "fastest") {
-        const band = intentClassification.distanceBand;
-        status = band
-          ? `${counted.toLocaleString()} match${counted === 1 ? "" : "es"}${where} · ${band.label} · sorted by time`
-          : `${counted.toLocaleString()} match${counted === 1 ? "" : "es"}${where} · sorted by pace`;
-      } else if (intent.kind === "most_intervals") {
-        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by interval intensity`;
-      } else if (intent.kind === "hilliest") {
-        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by elevation`;
-      } else if (intent.kind === "highest_hr") {
-        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by heart rate`;
-      } else if (intent.kind === "highest_power") {
-        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by power`;
-      } else if (intent.kind === "place_filter") {
-        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · filtered by place${intent.filterType ? ` and ${intent.filterType}` : ""}`;
-      } else if (intent.kind === "mmp_power") {
-        const durationLabels: Record<string, string> = {
-          best_watts_5s: "5s",
-          best_watts_1m: "1min",
-          best_watts_5m: "5min",
-          best_watts_20m: "20min",
-          best_watts_60m: "60min",
-        };
-        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by ${durationLabels[intent.field]} power`;
-      } else if (intent.kind === "list") {
-        status = `${counted.toLocaleString()} activit${counted === 1 ? "y" : "ies"}${where} · most recent first`;
-      } else {
-        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · deterministic sort`;
-      }
-    } else {
-      status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"}`;
+  const status = lookupStatus(trimmed, results, intentClassification, {
+    available: jevAvailable,
+    scored: Boolean(jevScores),
+    pending: jev.status === "loading" || (jev.status !== "error" && candidateIds.length > 0),
+    error: jev.status === "error" && jev.query === trimmed,
+  });
+  const readAs = intentClassification ? interpretationParts(intentClassification, codeClassification) : [];
+  const totals = trimmed ? resultTotals(primaryHits(results, intentClassification).map((h) => h.activity)) : null;
+
+  function focusRow(index: number) {
+    const links = listRef.current?.querySelectorAll<HTMLAnchorElement>("a");
+    if (!links || links.length === 0) return;
+    links[Math.max(0, Math.min(index, links.length - 1))].focus();
+  }
+
+  function onSearchKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      focusRow(0);
+    } else if (e.key === "Escape" && query) {
+      e.preventDefault();
+      setQuery("");
     }
-    if (related > 0 && primaryCount > 0) status += ` · ${related.toLocaleString()} related`;
-    if (jevAvailable) {
-      if (jevScores) status += " · Jev scored";
-      else if (jev.status === "error" && jev.query === trimmed) status += " · Jev unavailable";
-      else if (candidateIds.length > 0) status += " · scoring with Jev";
-    }
-  } else {
-    // A metric branch in the fan-out stays locked. Unlocked rows sort by membership noul.
-    const unlocked = results.some((hit) => hit.locked === false);
-    const jevNote = !jevAvailable
-      ? ""
-      : jevScores
-        ? unlocked
-          ? " · reranked by Jev membership"
-          : " · Jev scored"
-        : jev.status === "error"
-          ? " · Jev unavailable"
-          : " · Jev reranking…";
-    const metricCount = results.filter((h) => h.branch === "metric").length;
-    if (metricCount > 0) {
-      const related = results.length - metricCount;
-      status = `${metricCount.toLocaleString()} match${metricCount === 1 ? "" : "es"} · metric order${related > 0 ? ` · ${related.toLocaleString()} related` : ""}`;
-      if (results.some((h) => h.locked === false)) status += jevNote;
-    } else {
-      status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · keyword + fuzzy${jevNote}`;
-    }
+  }
+
+  function onListKey(e: React.KeyboardEvent<HTMLUListElement>) {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const links = Array.from(listRef.current?.querySelectorAll<HTMLAnchorElement>("a") ?? []);
+    const at = links.indexOf(document.activeElement as HTMLAnchorElement);
+    if (at < 0) return;
+    e.preventDefault();
+    if (e.key === "ArrowUp" && at === 0) inputRef.current?.focus();
+    else focusRow(e.key === "ArrowDown" ? at + 1 : at - 1);
   }
 
   return (
@@ -297,11 +273,9 @@ export function ActivityLookup() {
           Find any session.
         </motion.h1>
         <motion.p className={styles.intro} variants={rise} custom={2} initial="hidden" animate="show">
-          Search every logged activity by name, stimulus, place, or workout type. Easy, intervals, and
-          the other stimulus words filter on labels. Keyword and fuzzy matching cover the rest. <b>Jev</b>{" "}
-          asks those intent questions in parallel, then scores the shortlist. Metric searches such as
-          "longest run" or "fastest 10k" keep that order. Keyword, best, and synonym searches sort by
-          Jev's membership score.
+          Ask for a session the way you'd describe it: a distance, a place, a date, a kind of workout.
+          Exact asks like "longest run" sort by the numbers; looser ones like "best Chicago runs" are
+          ranked by <b>Jev</b>.
         </motion.p>
       </header>
 
@@ -319,10 +293,27 @@ export function ActivityLookup() {
             placeholder={`Search ${activities.length.toLocaleString()} activities…`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onSearchKey}
             className={styles.search}
           />
           <kbd className={styles.kbd}>/</kbd>
         </div>
+        {readAs.length > 0 && (
+          <div className={styles.readAs} aria-label="Search read as">
+            <span>Read as</span>
+            {readAs.map((part) => (
+              <span
+                key={part.key}
+                className={`${styles.readPart} ${part.fromJev ? styles.readPartJev : ""}`}
+                title={part.fromJev ? "Filled in by Jev" : undefined}
+              >
+                <span className={styles.readLabel}>{part.label}</span>
+                {part.value}
+                {part.fromJev && <span className={styles.readJev}>Jev</span>}
+              </span>
+            ))}
+          </div>
+        )}
         {!trimmed && (
           <div className={styles.examples}>
             <span>Try</span>
@@ -360,15 +351,25 @@ export function ActivityLookup() {
         <p className={styles.status} role="status">
           {status}
         </p>
+        {totals && totals.count > 1 && (
+          <p className={styles.totals}>
+            {(units === "mi" ? totals.distanceM / 1609.344 : totals.distanceM / 1000).toLocaleString(undefined, {
+              maximumFractionDigits: 1,
+            })}{" "}
+            {units} · {formatHours(totals.movingS)}
+            {totals.runPaceSPerM !== null &&
+              ` · ${formatDuration(Math.round(totals.runPaceSPerM * (units === "mi" ? 1609.344 : 1000)))} /${units} avg`}
+          </p>
+        )}
 
         {shown.length > 0 && (
-          <ul className={styles.list}>
+          <ul className={styles.list} ref={listRef} onKeyDown={onListKey}>
             {shown.map((hit) => (
               <ActivityRow
                 key={hit.activity.id}
                 hit={hit}
                 units={units}
-                showMatch={Boolean(trimmed)}
+                showMatch={debug && Boolean(trimmed)}
                 jevScore={jevScores?.[hit.activity.id]}
                 demoted={
                   jevScores?.[hit.activity.id] !== undefined
@@ -446,12 +447,8 @@ function ActivityRow({
     const intervalLabel = a.hard_lap_count ? `${a.hard_lap_count} hard laps` : "intervals";
     enrichmentChips.push(intervalLabel);
   }
-  // Add power data for rides
-  if (isRide(a)) {
-    if (a.best_watts_20m) enrichmentChips.push(`${a.best_watts_20m}W 20min`);
-    else if (a.weighted_average_watts) enrichmentChips.push(`${a.weighted_average_watts}W avg`);
-    else if (a.average_watts) enrichmentChips.push(`${a.average_watts}W avg`);
-  }
+  // Average power is already a metric below. Best 20min is a different number, so it stays.
+  if (isRide(a) && a.best_watts_20m) enrichmentChips.push(`${Math.round(a.best_watts_20m)}W 20min`);
 
   // v3 metrics: HR and power
   const v3Chips: string[] = [];
@@ -479,10 +476,8 @@ function ActivityRow({
           <b>{date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</b>
           {date.getFullYear()}
         </span>
-        <span style={{ minWidth: 0 }}>
-          <span className={styles.name} style={{ display: "block" }}>
-            {a.name}
-          </span>
+        <span className={styles.main}>
+          <span className={styles.name}>{a.name}</span>
           <span className={styles.meta}>
             <span className={styles.sport}>{sportLabel(a.sport_type)}</span>
             {a.distance_m > 0 && (
@@ -498,12 +493,12 @@ function ActivityRow({
               </span>
             )}
             {v3Chips.map((chip, i) => (
-              <span key={`v3-${i}`} style={{ opacity: 0.85, fontWeight: 500 }}>
+              <span key={`v3-${i}`} className={styles.metaMetric}>
                 {chip}
               </span>
             ))}
             {enrichmentChips.map((chip, i) => (
-              <span key={i} style={{ opacity: 0.7, fontStyle: "italic" }}>
+              <span key={i} className={styles.metaTag}>
                 {chip}
               </span>
             ))}
@@ -512,20 +507,16 @@ function ActivityRow({
         {showMatch && (
           <span className={styles.badges}>
             <span className={`${styles.badge} ${hit.kind === "keyword" ? styles.badgeKeyword : ""}`}>
-              {hit.kind}
+              {hit.branch && hit.branch !== hit.kind ? `${hit.kind} · ${hit.branch}` : hit.kind}
             </span>
             {jevScore !== undefined && (
               <span
-                className={`${styles.badge} ${styles.badgeJev}`}
-                style={{ 
-                  background:
-                    jevScore >= 0.7
-                      ? "var(--status-good)"
-                      : jevScore >= 0.4
-                        ? "var(--status-warn)"
-                        : "var(--status-neutral)",
-                  opacity: demoted && !metricOrder ? 0.5 : 1
-                }}
+                className={[
+                  styles.badge,
+                  styles.badgeJev,
+                  jevScore >= 0.7 ? styles.jevHigh : jevScore >= 0.4 ? styles.jevMid : styles.jevLow,
+                  demoted && !metricOrder ? styles.jevDemoted : "",
+                ].join(" ")}
                 title={
                   metricOrder
                     ? "Jev membership score. This list stays in code order."
