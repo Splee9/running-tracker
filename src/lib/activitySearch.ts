@@ -1,3 +1,29 @@
+import {
+  calendarLabel,
+  calendarSearchTags,
+  holidayOf,
+  isSeasonTag,
+  matchesCalendarTag,
+  parseCalendarPhrase,
+  type CalendarTag,
+} from "./calendar.ts";
+
+/**
+ * Additive public-export fields. `toActivity` maps the spencer-brain export
+ * (`place_enriched`, `race.distance` / `official_distance_m` / `result_time_s`,
+ * `with.athlete_count`) onto these. Missing fields stay unset.
+ */
+export type ActivityRace = {
+  event_name?: string;
+  /** Band code from the export: "5k", "10k", "hm", "m", or a longer label. */
+  distance?: string;
+  /** Official race distance in metres. */
+  official_distance_m?: number;
+  /** Official result time in seconds. */
+  result_time_s?: number;
+  is_pr?: boolean;
+};
+
 export type Activity = {
   id: number;
   name: string;
@@ -37,15 +63,22 @@ export type Activity = {
   best_watts_60m?: number;
   // Public Strava description. Used only when ranking (Jev); never shown on cards.
   description?: string;
-  // public-activities-v5 enrichment (optional). Names only, never coordinates.
-  /** Reverse-geocoded from the outdoor GPS start. */
-  place_enriched?: { city?: string; region?: string; country?: string };
-  /** Official-distance races only. result_time_s is moving time; is_pr is the current best at that distance. */
-  race?: { event_name?: string; distance?: string; official_distance_m?: number; result_time_s?: number; is_pr?: boolean };
-  /** Lap summary such as "8×400m". */
+  /**
+   * GPS-derived place names. No coordinates.
+   * When city or country is set, place matching uses these instead of the activity name
+   * and the legacy `place` string (which may be a name guess).
+   */
+  place_city?: string;
+  place_region?: string;
+  place_country?: string;
+  race?: ActivityRace;
+  /** e.g. "8×400m". Keyword search only; it does not change a locked metric sort. */
   workout_structure?: string;
-  gear?: string[];
-  /** Strava athlete count, when more than one person was on the activity. */
+  /** Gear name, e.g. "Nike Vaporfly". */
+  gear?: string;
+  /** Companion names, when the export sends them. Brain's `with` is a count, mapped to `athlete_count`. */
+  with?: string[];
+  /** From `with.athlete_count` or a top-level `athlete_count`. */
   athlete_count?: number;
   /** Offline Jev Score, 0 (routine) to 3 (standout). From src/activity-grades.json; see scripts/grade-activities.mjs. */
   standout?: number;
@@ -267,24 +300,21 @@ function derivedTags(a: Activity): string[] {
   if (a.primary_stimulus) tags.push(a.primary_stimulus);
   if (a.modifiers) tags.push(...a.modifiers);
   if (a.stimulus_cluster) tags.push(...tokenize(a.stimulus_cluster));
-  tags.push(...tokenize(placeText(a)));
-  if (a.race) {
-    tags.push("race");
-    if (a.race.distance) tags.push(a.race.distance);
-    if (a.race.is_pr) tags.push("pr", "pb", "personal", "best", "record");
-  }
-  if (a.workout_structure) {
-    // "8×400m" is also typed "8x400m", "8 x 400m", or just "400m repeats".
-    const structure = a.workout_structure.replace(/×/g, "x");
-    tags.push(structure, ...tokenize(structure.replace(/x/g, " ")));
-    // "4×1mi" is also "mile repeats"; "5×1km" is "kilometer repeats"; "8×400m" is "400 meter".
-    // The rep distance's number stands alone too, so "2 mile repeats" finds "3×2mi".
-    const rep = /(\d+)(mi|km|m)$/.exec(a.workout_structure);
-    if (rep) tags.push(rep[1], ...STRUCTURE_UNIT_WORDS[rep[2]]);
-  }
-  if (a.gear) tags.push(...a.gear.flatMap((name) => tokenize(name)));
-  if (a.athlete_count && a.athlete_count > 1) tags.push("group");
+  if (a.place && !hasStructuredPlace(a)) tags.push(...tokenize(a.place));
   if (a.has_intervals) tags.push("intervals", "reps", "repeats");
+  tags.push(...calendarSearchTags(a.start_date_local));
+  if (a.place_city) tags.push(...tokenize(a.place_city));
+  if (a.place_region) tags.push(...tokenize(a.place_region));
+  if (a.place_country) tags.push(...tokenize(a.place_country));
+  if (a.race?.event_name) tags.push(...tokenize(a.race.event_name));
+  tags.push(...raceBandTags(a.race?.distance));
+  if (a.race?.is_pr) tags.push("pr", "prs", "pb", "pbs");
+  if (a.workout_structure) tags.push(...workoutStructureTags(a.workout_structure));
+  if (a.gear) tags.push(...tokenize(a.gear));
+  if (a.with) {
+    for (const name of a.with) tags.push(...tokenize(name));
+  }
+  if ((a.athlete_count ?? 0) > 1) tags.push("group");
   // v3 enrichment tags: HR zones, power zones
   if (a.average_heartrate) {
     tags.push("hr", "heartrate", "heart rate");
@@ -299,19 +329,75 @@ function derivedTags(a: Activity): string[] {
   return tags;
 }
 
-const STRUCTURE_UNIT_WORDS: Record<string, string[]> = {
-  mi: ["mile", "miles"],
-  km: ["k", "kilometer", "kilometers"],
-  m: ["meter", "meters"],
-};
+/** "hm" and "m" are band codes, not the letters themselves. "m" must not become a keyword. */
+function raceDistanceLabel(distance: string | undefined): string {
+  if (!distance) return "";
+  const code = distance.toLowerCase();
+  if (code === "hm") return "half marathon";
+  if (code === "m") return "marathon";
+  return distance;
+}
+
+function raceBandTags(distance: string | undefined): string[] {
+  if (!distance) return [];
+  const code = distance.toLowerCase();
+  if (code === "5k" || code === "10k") return [code];
+  if (code === "hm") return ["hm", "half", "marathon"];
+  if (code === "m") return ["marathon"];
+  return tokenize(distance);
+}
 
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/×/g, "x")
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
+}
+
+/**
+ * "8×400m" matches `8x400` and `400 repeats`. The rep distance and the compact
+ * form are both indexed. "repeats" is only added when a structure is present.
+ */
+function workoutStructureTags(structure: string): string[] {
+  const tags = new Set<string>(tokenize(structure));
+  const compact = structure.toLowerCase().replace(/×/g, "x").replace(/[^a-z0-9x]/g, "");
+  if (compact) tags.add(compact);
+  const noUnit = compact.replace(/m/g, "");
+  if (noUnit) tags.add(noUnit);
+  for (const match of compact.matchAll(/x(\d+)/g)) {
+    tags.add(match[1]);
+    tags.add(`${match[1]}m`);
+  }
+  tags.add("repeats");
+  tags.add("reps");
+  return [...tags];
+}
+
+/** "400 repeats" / "8x400" stay on the keyword path. "repeats" alone is still intervals. */
+function workoutStructureIndices(tokens: string[]): Set<number> {
+  const skip = new Set<number>();
+  const repWords = new Set(["repeats", "repeat", "reps", "rep"]);
+  for (let i = 0; i < tokens.length; i++) {
+    const compact = tokens[i].replace(/×/g, "x").replace(/m$/, "");
+    if (/^\d+x\d+$/.test(compact)) skip.add(i);
+    if (/^\d+m?$/.test(tokens[i]) && repWords.has(tokens[i + 1] ?? "")) {
+      skip.add(i);
+      skip.add(i + 1);
+    }
+    if (repWords.has(tokens[i]) && /^\d+m?$/.test(tokens[i + 1] ?? "")) {
+      skip.add(i);
+      skip.add(i + 1);
+    }
+    if (/^\d+$/.test(tokens[i]) && tokens[i + 1] === "x" && /^\d+m?$/.test(tokens[i + 2] ?? "")) {
+      skip.add(i);
+      skip.add(i + 1);
+      skip.add(i + 2);
+    }
+  }
+  return skip;
 }
 
 // Parse date window from tokens, returning window and indices to consume
@@ -617,6 +703,11 @@ export type IntentClassification = {
   stimulus: StimulusConstraint | null;
   /** The stimulus came from Jev, not the query's own words: it must not drop name matches. */
   softStimulus?: true;
+  /**
+   * Holiday or season settled from the query text. The activity date supplies the match.
+   * Jev is not asked which day Christmas is.
+   */
+  calendar: CalendarTag | null;
   remainingTokens: string[];
   isDeterministic: boolean;
 };
@@ -831,26 +922,42 @@ function parseWeekday(
   return { weekday: weekdayIndex.get(tokens[idx]) ?? null, consumedIndices };
 }
 
-// English names for the export's local-language places, so "in Spain" finds España.
-const PLACE_NAME_ALIASES: Record<string, string> = {
-  "espana": "spain",
-  "catalunya": "catalonia",
-  "united states": "usa united states america",
-};
+function hasStructuredPlace(activity: Activity): boolean {
+  return Boolean(activity.place_city || activity.place_country);
+}
 
-function placeText(activity: Activity): string {
-  const enriched = activity.place_enriched;
-  const parts = [activity.place, enriched?.city, enriched?.region, enriched?.country].filter(Boolean) as string[];
-  const text = parts.join(" ");
-  const folded = tokenize(text).join(" ");
-  const aliases = Object.entries(PLACE_NAME_ALIASES)
-    .filter(([name]) => ` ${folded} `.includes(` ${name} `))
-    .map(([, alias]) => alias);
-  return [text, ...aliases].join(" ");
+function companionText(activity: Activity): string {
+  const names = (activity.with ?? []).map((name) => name.trim()).filter(Boolean);
+  if (names.length > 0) {
+    const extra = activity.athlete_count && activity.athlete_count > names.length
+      ? ` (${activity.athlete_count} athletes)`
+      : "";
+    return `with ${names.join(", ")}${extra}`;
+  }
+  if (activity.athlete_count != null && activity.athlete_count > 1) return `${activity.athlete_count} athletes`;
+  return "";
+}
+
+function occasionLabels(activity: Activity): string[] {
+  const labels: string[] = [];
+  const holiday = holidayOf(activity.start_date_local);
+  if (holiday) labels.push(calendarLabel(holiday));
+  const tags = calendarSearchTags(activity.start_date_local);
+  const season = tags.find((tag) => isSeasonTag(tag));
+  if (season) labels.push(calendarLabel(season));
+  return labels;
+}
+
+/** City / region / country when the export sent them. Empty when it did not. */
+export function structuredPlaceText(activity: Activity): string {
+  if (!activity.place_city && !activity.place_region && !activity.place_country) return "";
+  return [activity.place_city, activity.place_region, activity.place_country].filter(Boolean).join(", ");
 }
 
 function activityMatchesPlace(activity: Activity, place: string): boolean {
-  return textHasPlace(`${placeText(activity)} ${activity.name}`, place);
+  // GPS names win over a title that merely mentions the city.
+  if (hasStructuredPlace(activity)) return textHasPlace(structuredPlaceText(activity), place);
+  return textHasPlace(`${activity.place ?? ""} ${activity.name}`, place);
 }
 
 function sportOfToken(token: string): Sport | undefined {
@@ -895,7 +1002,13 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   let consumedIndices = new Set<number>();
 
   // Parse date window first. Glue ("in the", "from", "during") is part of the date phrase.
-  const { window: dateWindow, consumedIndices: dateIndices } = parseDateWindow(tokens, now);
+  // A holiday phrase is hidden from it so "July 4" stays the holiday, not the month.
+  const holidayPhrase = parseCalendarPhrase(tokens, new Set());
+  const dateTokens =
+    holidayPhrase.tag && !isSeasonTag(holidayPhrase.tag)
+      ? tokens.map((t, i) => (holidayPhrase.consumedIndices.has(i) ? "" : t))
+      : tokens;
+  const { window: dateWindow, consumedIndices: dateIndices } = parseDateWindow(dateTokens, now);
   (dateWindow ? withDateGlue(tokens, dateIndices) : dateIndices).forEach(i => consumedIndices.add(i));
 
   // Detect MMP power queries: "top/best/highest/max" + duration + optional "power/watts"
@@ -1030,19 +1143,12 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   // Detect fastest
   if (!intent) {
     let fastestIdx = tokens.findIndex(t => SPEED_WORDS.includes(t));
-    let personalIdx = -1;
     if (fastestIdx < 0 && parseDistanceBand(query).band) {
       fastestIdx = tokens.findIndex(t => PR_WORDS.includes(t));
-      // "personal best half marathon" / "personal record 10k" are a PR too.
-      if (fastestIdx < 0) {
-        personalIdx = tokens.findIndex((t, i) => t === "personal" && ["best", "record", "records", "bests"].includes(tokens[i + 1]));
-        if (personalIdx >= 0) fastestIdx = personalIdx + 1;
-      }
     }
     if (fastestIdx >= 0) {
       intent = { kind: "fastest" };
       consumedIndices.add(fastestIdx);
-      if (personalIdx >= 0) consumedIndices.add(personalIdx);
       const sportIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
       if (sportIdx >= 0) {
         intent.sport = "run";
@@ -1109,12 +1215,19 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
 
   // Stimulus words are labels, not places and not name keywords.
   // "most intervals" already consumed its tokens; still apply the interval predicate.
-  const parsedStimulus = parseStimulusTokens(tokens, consumedIndices);
+  // "400 repeats" / "8x400" are a workout-structure keyword, not an interval hard filter.
+  const parsedStimulus = parseStimulusTokens(tokens, new Set([...consumedIndices, ...workoutStructureIndices(tokens)]));
   parsedStimulus.indices.forEach((i) => consumedIndices.add(i));
   let stimulus = parsedStimulus.stimulus;
   if (intent?.kind === "most_intervals") {
     stimulus = { intervals: true, modifiers: stimulus?.modifiers ?? [] };
   }
+
+  // Holidays and seasons settle in code from the activity date. Consumed before place
+  // detection so "Christmas races" is not a place named Christmas.
+  const parsedCalendar = parseCalendarPhrase(tokens, consumedIndices);
+  const calendar = parsedCalendar.tag;
+  parsedCalendar.consumedIndices.forEach((i) => consumedIndices.add(i));
 
   // Detect place filters (e.g., "Chicago races")
   if (!intent) {
@@ -1187,12 +1300,12 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     sportHit.indices.forEach((i) => consumedIndices.add(i));
   }
 
-  if (!intent && (dateWindow || place || stimulus)) {
+  if (!intent && (dateWindow || place || stimulus || calendar)) {
     const synonyms = listSynonymIndices(tokens, consumedIndices);
     const pending = tokens.filter(
       (_, i) => !consumedIndices.has(i) && !sportHit.indices.includes(i) && !synonyms.includes(i),
     );
-    if (pending.length === 0 && (dateWindow || sportHit.sport || stimulus)) {
+    if (pending.length === 0 && (dateWindow || sportHit.sport || stimulus || calendar)) {
       sportHit.indices.forEach((i) => consumedIndices.add(i));
       synonyms.forEach((i) => consumedIndices.add(i));
       intent = { kind: "list", sport: sportHit.sport };
@@ -1236,7 +1349,7 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   }
   // Deterministic if we have an intent and no remaining semantic tokens
   const isDeterministic = intent !== null && remainingTokens.length === 0;
-  return { intent, dateWindow, distanceBand, place: resolvedPlace, weekday, stimulus, remainingTokens, isDeterministic };
+  return { intent, dateWindow, distanceBand, place: resolvedPlace, weekday, stimulus, calendar, remainingTokens, isDeterministic };
 }
 
 export function classifyIntent(query: string, now?: Date): IntentClassification {
@@ -1259,6 +1372,7 @@ export function intentHardKey(c: IntentClassification): string {
     field,
     c.place ?? "",
     c.weekday ?? "",
+    c.calendar ?? "",
     c.dateWindow ? `${c.dateWindow.start}:${c.dateWindow.end}` : "",
     c.distanceBand?.kind ?? "",
     c.distanceBand?.label ?? "",
@@ -1422,6 +1536,7 @@ export function withoutParts(c: IntentClassification, removed: readonly IntentPa
     stimulus: drop.has("stimulus") ? null : c.stimulus,
     place: drop.has("place") ? null : c.place,
     weekday: drop.has("weekday") ? null : c.weekday,
+    calendar: drop.has("dates") ? null : c.calendar,
     dateWindow: drop.has("dates") ? null : c.dateWindow,
     remainingTokens: drop.has("words") ? [] : c.remainingTokens,
   };
@@ -1629,6 +1744,10 @@ export function describeIntent(c: IntentClassification): string {
   if (stimulusBit) bits.push(`stimulus ${stimulusBit}`);
   if (c.place) bits.push(`in ${c.place}`);
   if (c.weekday) bits.push(`on ${c.weekday}`);
+  if (c.calendar) {
+    const label = calendarLabel(c.calendar);
+    bits.push(isSeasonTag(c.calendar) ? `in ${label}` : `on ${label}`);
+  }
   if (c.dateWindow) bits.push(`dated ${c.dateWindow.start} through ${c.dateWindow.end}`);
   return bits.join("; ");
 }
@@ -1671,8 +1790,8 @@ function scoreToken(token: string, words: string[]): { score: number; fuzzy: boo
   let fuzzy = false;
   // Years and distances ("2025", "10k") must not fuzz into their neighbours.
   const maxEdits = /\d/.test(token) ? 0 : token.length >= 7 ? 2 : token.length >= 4 ? 1 : 0;
-  // "marathons" names a marathon and "PBs" a PB. A plural is not a typo, so it must not read as fuzzy.
-  const singular = token.length >= 3 && token.endsWith("s") ? token.slice(0, -1) : null;
+  // "marathons" names a marathon. A plural is not a typo, so it must not read as fuzzy.
+  const singular = token.length >= 4 && token.endsWith("s") ? token.slice(0, -1) : null;
   for (const w of words) {
     if (w === token) return { score: 1, fuzzy: false };
     if (singular && w === singular) {
@@ -1699,6 +1818,7 @@ type ShortlistBranch = {
   dateWindow: DateWindow | null;
   place: string | null;
   weekday: string | null;
+  calendar: CalendarTag | null;
   sport?: Sport;
   stimulus: StimulusConstraint | null;
   distanceBand: DistanceBand | null;
@@ -1725,6 +1845,7 @@ function buildShortlistBranches(c: IntentClassification, query: string): Shortli
     dateWindow: c.dateWindow,
     place: c.place,
     weekday: c.weekday,
+    calendar: c.calendar,
     sport,
     stimulus: c.stimulus,
   };
@@ -1798,7 +1919,7 @@ function buildShortlistBranches(c: IntentClassification, query: string): Shortli
       id: "keyword",
       distanceBand: null,
       intent: null,
-      tokens: keywordTokens,
+      tokens: compactWorkoutQueryTokens(keywordTokens),
     });
   }
 
@@ -1844,6 +1965,10 @@ function applyBranchFilters(index: IndexedActivity[], branch: ShortlistBranch): 
     if (dayIndex >= 0) {
       candidates = candidates.filter(({ activity }) => localStart(activity).getDay() === dayIndex);
     }
+  }
+  if (branch.calendar) {
+    const tag = branch.calendar;
+    candidates = candidates.filter(({ activity }) => matchesCalendarTag(activity.start_date_local, tag));
   }
   if (branch.intent?.kind === "mmp_power") {
     const field = branch.intent.field;
@@ -1898,6 +2023,38 @@ function raceNameBoost(activity: Activity, tokens: string[]): number {
   return 0;
 }
 
+function compactWorkoutQueryTokens(tokens: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    if (/^\d+$/.test(tokens[i]) && tokens[i + 1] === "x" && /^\d+m?$/.test(tokens[i + 2] ?? "")) {
+      out.push(`${tokens[i]}x${tokens[i + 2].replace(/m$/, "")}`);
+      i += 2;
+      continue;
+    }
+    out.push(tokens[i]);
+  }
+  return out;
+}
+
+/** Keyword-only. Locked metric sorts never call this. */
+function metadataBoost(activity: Activity, tokens: string[]): number {
+  let boost = 0;
+  if (activity.race?.is_pr && tokens.some((token) => PR_WORDS.includes(token))) boost += 3;
+  if (activity.gear) {
+    const gear = new Set(tokenize(activity.gear));
+    if (tokens.some((token) => gear.has(token))) boost += 2;
+  }
+  if (activity.workout_structure) {
+    const structure = new Set(workoutStructureTags(activity.workout_structure));
+    if (tokens.some((token) => structure.has(token))) boost += 2;
+  }
+  if (activity.race?.event_name) {
+    const name = new Set(tokenize(activity.race.event_name));
+    if (tokens.some((token) => name.has(token) && !RACE_DISTANCE_TOKENS.has(token))) boost += 1;
+  }
+  return boost;
+}
+
 function keywordHits(candidates: IndexedActivity[], tokens: string[]): SearchHit[] {
   const full: SearchHit[] = [];
   const partial: SearchHit[] = [];
@@ -1919,7 +2076,7 @@ function keywordHits(candidates: IndexedActivity[], tokens: string[]): SearchHit
     const hit: SearchHit = {
       activity,
       // low_confidence sinks the hit. It does not remove it.
-      score: total / tokens.length - 0.2 * labelConfidence(activity) + raceNameBoost(activity, tokens),
+      score: total / tokens.length - 0.2 * labelConfidence(activity) + raceNameBoost(activity, tokens) + metadataBoost(activity, tokens),
       kind: anyFuzzy ? "fuzzy" : "keyword",
       matched,
     };
@@ -2235,15 +2392,25 @@ export type ActivityFacts = {
   low_confidence?: true;
   modifiers?: string[];
   place?: string;
-  race?: string;
-  laps?: string;
-  gear?: string;
-  group_size?: number;
+  place_city?: string;
+  place_region?: string;
+  place_country?: string;
   intervals?: string;
   heart_rate?: string;
   power?: string;
   best_20min_watts?: number;
   description?: string;
+  race_name?: string;
+  race_distance?: string;
+  official_distance_m?: number;
+  race_time?: string;
+  race_pr?: true;
+  workout_structure?: string;
+  gear?: string;
+  with?: string[];
+  athlete_count?: number;
+  /** Holiday and season settled from the date, e.g. "Christmas", "winter". */
+  occasions?: string[];
 };
 
 /** Structured activity fields for one packed Jev call. Empty fields are omitted. */
@@ -2280,17 +2447,13 @@ export function activityFacts(a: Activity, now?: Date): ActivityFacts {
   if (a.modality) facts.modality = a.modality;
   if (a.low_confidence || a.primary_stimulus === "low_confidence") facts.low_confidence = true;
   if (a.modifiers && a.modifiers.length > 0) facts.modifiers = a.modifiers.slice(0, 3);
-  const places = [a.place, a.place_enriched?.city, a.place_enriched?.region, a.place_enriched?.country].filter(Boolean);
-  if (places.length > 0) facts.place = [...new Set(places)].join(", ");
-  if (a.race) {
-    const bits = [a.race.distance ? `${a.race.distance} race` : "race"];
-    if (a.race.result_time_s) bits.push(formatDuration(Math.round(a.race.result_time_s)));
-    if (a.race.is_pr) bits.push("current PR");
-    facts.race = bits.join(", ");
-  }
-  if (a.workout_structure) facts.laps = a.workout_structure;
-  if (a.gear && a.gear.length > 0) facts.gear = a.gear.join(", ");
-  if (a.athlete_count && a.athlete_count > 1) facts.group_size = a.athlete_count;
+  const where = structuredPlaceText(a);
+  if (hasStructuredPlace(a) && where) facts.place = where;
+  else if (a.place) facts.place = a.place;
+  else if (where) facts.place = where;
+  if (a.place_city) facts.place_city = a.place_city;
+  if (a.place_region) facts.place_region = a.place_region;
+  if (a.place_country) facts.place_country = a.place_country;
   if (a.has_intervals) facts.intervals = a.hard_lap_count ? `${a.hard_lap_count} hard laps` : "intervals";
   if (a.average_heartrate) {
     facts.heart_rate = a.max_heartrate
@@ -2303,6 +2466,18 @@ export function activityFacts(a: Activity, now?: Date): ActivityFacts {
   }
   if (a.best_watts_20m) facts.best_20min_watts = Math.round(a.best_watts_20m);
   if (notes) facts.description = notes;
+  if (a.race?.event_name) facts.race_name = a.race.event_name;
+  const raceDistance = raceDistanceLabel(a.race?.distance);
+  if (raceDistance) facts.race_distance = raceDistance;
+  if (a.race?.official_distance_m != null) facts.official_distance_m = a.race.official_distance_m;
+  if (a.race?.result_time_s != null) facts.race_time = formatDuration(Math.round(a.race.result_time_s));
+  if (a.race?.is_pr) facts.race_pr = true;
+  if (a.workout_structure) facts.workout_structure = a.workout_structure;
+  if (a.gear) facts.gear = a.gear;
+  if (a.with && a.with.length > 0) facts.with = a.with.slice(0, 4);
+  if (a.athlete_count != null && a.athlete_count > 0) facts.athlete_count = a.athlete_count;
+  const occasions = occasionLabels(a);
+  if (occasions.length > 0) facts.occasions = occasions;
   return facts;
 }
 
@@ -2316,7 +2491,7 @@ export type JevNoul = {
 // neighborhood counts as the city are still open against main, so this rubric
 // does not assert either one.
 const HOW_TO_JUDGE =
-  "Sport, place, weekday, and dates must fit the interpreted query. The dates in interpreted_query are the window; do not substitute a different month. Last week is the previous Monday–Sunday. Speedy, fast, and quick mean a fast pace: trust a fast pace label, or a run around 7:30/mi or quicker. An easy pace is not speedy. Fastest matches a genuinely quick effort. Longest matches a long effort, well over 20 km for a run. A city counts when the place or the name matches that city. A list or date-window query matches every activity of the right sport inside that window. A race is marked race, not merely mentioned. Stimulus words are label filters already applied before this score. low_confidence is a caveat, not by itself a mismatch.";
+  "Sport, place, weekday, and dates must fit the interpreted query. The dates in interpreted_query are the window; do not substitute a different month. Last week is the previous Monday–Sunday. Holiday and season words are already settled from the activity date: do not invent a different holiday. Speedy, fast, and quick mean a fast pace: trust a fast pace label, or a run around 7:30/mi or quicker. An easy pace is not speedy. Fastest matches a genuinely quick effort. Longest matches a long effort, well over 20 km for a run. When place_city or place_country is set, that structured place is the location. Otherwise a city counts when the place or the name matches that city. A list or date-window query matches every activity of the right sport inside that window. A race is marked race, or has a race record, not merely mentioned. Stimulus words are label filters already applied before this score. low_confidence is a caveat, not by itself a mismatch.";
 
 function facetNoul(instructions: string, yes: string, no: string): JevNoul {
   return { type: "noul", instructions, criteria: { true: yes, false: no } };
@@ -2447,6 +2622,10 @@ function membershipCriteria(
   if (!c.softStimulus) must.push(...stimulusParts);
   if (c.place) must.push(`in ${c.place}`);
   if (c.weekday) must.push(`on ${c.weekday}`);
+  if (c.calendar) {
+    const label = calendarLabel(c.calendar);
+    must.push(isSeasonTag(c.calendar) ? `in ${label}` : `on ${label}`);
+  }
   if (c.dateWindow) must.push(`dated ${c.dateWindow.start} through ${c.dateWindow.end}`);
   if (c.intent && "sport" in c.intent && c.intent.sport) must.push(`${c.intent.sport}s only`);
 
@@ -2466,7 +2645,7 @@ function membershipCriteria(
     yes.push(`${stimulusParts.join(" with ")} fits, and so does an activity whose name is what the query asks for, whatever its stimulus label.`);
   }
   if (raceNamed) {
-    yes.push("A race-labeled activity whose name is that race, or a race at that distance, is a yes.");
+    yes.push("A race-labeled activity, or one with a race record, whose name is that race, or a race at that distance, is a yes.");
     no.push("A training run, commute, or quality session that only shares the city or a nearby distance is not the race.");
   }
   if (best) {
@@ -2499,7 +2678,7 @@ function companionQuestions(activity: Activity, c: IntentClassification): Record
       type: "noul",
       instructions: `Does activities.${key} take place in ${c.place}? Ignore every other activity.`,
       criteria: {
-        true: "The place field or the activity name matches that place.",
+        true: "The place field or the activity name matches that place. When place_city or place_country is set, those names are the place.",
         false: "The activity is somewhere else.",
       },
     };
@@ -2588,7 +2767,21 @@ export function describeActivity(a: Activity, now?: Date): string {
   if (a.modifiers && a.modifiers.length > 0) {
     parts.push(a.modifiers.slice(0, 3).join(", "));
   }
-  if (a.place) parts.push(a.place);
+  const where = structuredPlaceText(a);
+  if (hasStructuredPlace(a) && where) parts.push(where);
+  else if (a.place) parts.push(a.place);
+  else if (where) parts.push(where);
+  if (a.race?.event_name) parts.push(`race ${a.race.event_name}`);
+  const raceDistance = raceDistanceLabel(a.race?.distance);
+  if (raceDistance) parts.push(raceDistance);
+  if (a.race?.result_time_s != null) parts.push(formatDuration(Math.round(a.race.result_time_s)));
+  if (a.race?.is_pr) parts.push("PR");
+  if (a.workout_structure) parts.push(a.workout_structure);
+  if (a.gear) parts.push(`gear ${a.gear}`);
+  const companions = companionText(a);
+  if (companions) parts.push(companions);
+  const occasions = occasionLabels(a);
+  if (occasions.length > 0) parts.push(occasions.join(", "));
   if (a.has_intervals) {
     const intervalDesc = a.hard_lap_count 
       ? `${a.hard_lap_count} hard laps`
