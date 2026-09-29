@@ -6,13 +6,13 @@
     "blockWeeks": 23,
     "goal": "sub-2:42:00",
     "goalPace": "6:11/mi",
-    "daysToRace": 13,
+    "daysToRace": 12,
     "currentPhase": 3,
     "currentPhaseName": "Taper",
     "currentWeek": 22,
-    "blockMilesToDate": 1184.2,
+    "blockMilesToDate": 1194.2,
     "peakMpw": 88,
-    "lastUpdated": "2026-09-28"
+    "lastUpdated": "2026-09-29"
   },
   "phases": [
     {
@@ -478,24 +478,24 @@
       "weekStart": "2026-09-28",
       "phase": 3,
       "phaseShort": "Taper",
-      "miles": 8.2,
-      "runs": 1,
-      "longest": 8.2,
-      "easyEF": 1.578,
+      "miles": 18.2,
+      "runs": 2,
+      "longest": 10.1,
+      "easyEF": 1.573,
       "types": {
         "quality": 0.0,
         "long": 0.0,
         "medlong": 0.0,
-        "easy": 8.2,
+        "easy": 18.2,
         "commute": 0.0,
         "other": 0.0
       },
       "partial": true,
-      "rolling4": 29.5
+      "rolling4": 32.0
     }
   ],
   "crossBuild": {
-    "generated": "2026-09-28",
+    "generated": "2026-09-29",
     "source": "apps/health/data/builds.json",
     "window_weeks": 4,
     "completed": [
@@ -550,7 +550,7 @@
     ],
     "head_to_head": {
       "weeks_out": 2,
-      "note": "trailing 4 completed weeks at ~2 weeks out from race day (as of 2026-09-28)",
+      "note": "trailing 4 completed weeks at ~2 weeks out from race day (as of 2026-09-29)",
       "current": {
         "build": "Chicago 2026",
         "avg": 43.4,
@@ -602,55 +602,55 @@
       "Uneven": "55–<80",
       "Erratic": "≥80"
     },
-    "generated": "2026-09-28",
+    "generated": "2026-09-29",
     "completed": [
       {
         "build": "Flying Pig 2022",
         "result": "3:21:42",
         "tv": 21.41,
         "mean_h_wk": 7.57,
-        "ef": 1.346,
-        "band": "Steady"
+        "band": "Steady",
+        "ef": 1.346
       },
       {
         "build": "Grand Rapids 2022",
         "result": "3:02:56",
         "tv": 21.34,
         "mean_h_wk": 7.49,
-        "ef": 1.419,
-        "band": "Steady"
+        "band": "Steady",
+        "ef": 1.419
       },
       {
         "build": "Madison 2023",
         "result": "2:57:47",
         "tv": 14.17,
         "mean_h_wk": 7.99,
-        "ef": 1.399,
-        "band": "Steady"
+        "band": "Steady",
+        "ef": 1.399
       },
       {
         "build": "Chicago 2024",
         "result": "2:59:05",
         "tv": 12.0,
         "mean_h_wk": 8.35,
-        "ef": 1.466,
-        "band": "Steady"
+        "band": "Steady",
+        "ef": 1.466
       },
       {
         "build": "Wisconsin 2025",
         "result": "2:55:58",
         "tv": 22.74,
         "mean_h_wk": 6.74,
-        "ef": 1.498,
-        "band": "Steady"
+        "band": "Steady",
+        "ef": 1.498
       },
       {
         "build": "Indianapolis 2025",
         "result": "2:45:55",
         "tv": 10.84,
         "mean_h_wk": 8.53,
-        "ef": 1.547,
-        "band": "Steady"
+        "band": "Steady",
+        "ef": 1.547
       }
     ],
     "head_to_head": {
@@ -660,16 +660,16 @@
         "build": "Chicago 2026",
         "tv": 36.96,
         "mean_h_wk": 6.66,
-        "ef": 1.573,
-        "band": "Moderate"
+        "band": "Moderate",
+        "ef": 1.573
       },
       "indy": {
         "build": "Indianapolis 2025",
         "result": "2:45:55",
         "tv": 10.84,
         "mean_h_wk": 8.53,
-        "ef": 1.593,
-        "band": "Steady"
+        "band": "Steady",
+        "ef": 1.593
       }
     }
   }
