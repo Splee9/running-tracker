@@ -12,6 +12,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { isPublic, toActivity } from "./strava-activity.mjs";
 
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "activities.json");
 
@@ -33,20 +34,6 @@ async function getToken() {
   });
   if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`);
   return (await res.json()).access_token;
-}
-
-function toActivity(a) {
-  return {
-    id: a.id,
-    name: a.name,
-    sport_type: a.sport_type ?? a.type,
-    start_date_local: a.start_date_local,
-    distance_m: Math.round(a.distance ?? 0),
-    moving_time_s: a.moving_time ?? 0,
-    elevation_gain_m: Math.round(a.total_elevation_gain ?? 0),
-    workout_type: a.workout_type ?? null,
-    trainer: Boolean(a.trainer),
-  };
 }
 
 async function readSnapshot() {
@@ -88,9 +75,7 @@ async function main() {
     process.stdout.write(`\rfetched ${all.length}`);
   }
   const fetchedIds = new Set(all.map((a) => a.id));
-  const fresh = all
-    .filter((a) => !a.private && (a.visibility ?? "everyone") === "everyone")
-    .map(toActivity);
+  const fresh = all.filter(isPublic).map(toActivity);
   const activities = [...fresh, ...existing.filter((a) => !fetchedIds.has(a.id))].sort((a, b) =>
     b.start_date_local.localeCompare(a.start_date_local),
   );
