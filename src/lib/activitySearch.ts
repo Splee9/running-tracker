@@ -36,11 +36,22 @@ export type Activity = {
 
 export type MatchKind = "keyword" | "fuzzy";
 
+export type ShortlistBranchId =
+  | "metric"
+  | "date-list"
+  | "place-list"
+  | "place-longest"
+  | "keyword";
+
 export type SearchHit = {
   activity: Activity;
   score: number;
   kind: MatchKind;
   matched: string[];
+  /** Which fan-out branch first claimed this activity. */
+  branch?: ShortlistBranchId;
+  /** Metric and list branches stay in their own order. Jev may reorder keyword hits. */
+  locked?: boolean;
 };
 
 type IndexedActivity = {
@@ -161,13 +172,13 @@ function parseDistanceBand(query: string): { band: DistanceBand | null; consumed
   const norm = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const spans = tokenSpans(query);
   const patterns: { re: RegExp; build: (m: RegExpExecArray) => DistanceBand }[] = [
-    { re: /\bhalf(?:[-\s]*marathon)?\b/, build: () => raceBand("half") },
-    { re: /\bmarathon\b/, build: () => raceBand("marathon") },
-    { re: /\b5\s*k\b/, build: () => raceBand("5k") },
-    { re: /\b10\s*k\b/, build: () => raceBand("10k") },
+    { re: /\bhalf(?:[-\s]*marathons?)?\b/, build: () => raceBand("half") },
+    { re: /\bmarathons?\b/, build: () => raceBand("marathon") },
+    { re: /\b5\s*ks?\b/, build: () => raceBand("5k") },
+    { re: /\b10\s*ks?\b/, build: () => raceBand("10k") },
     {
-      re: /\b(\d+(?:\.\d+)?)\s*(km|kilometers?|mi|miles?|k)\b/,
-      build: (m) => numericBand(Number(m[1]), m[2]),
+      re: /\b(\d+(?:\.\d+)?)\s*(km|kilometers?|mi|miles?|ks?)\b/,
+      build: (m) => numericBand(Number(m[1]), m[2].replace(/s$/, "")),
     },
   ];
 
@@ -423,17 +434,16 @@ function parseDateWindow(tokens: string[], now?: Date): { window: DateWindow | n
     };
   }
   
-  // "last month" matches "last 1 month": the trailing month through today,
-  // not the previous calendar month (which hid every run since the 1st).
+  // "last month" / "past month" = the previous calendar month, not a rolling 30 days.
   const monthLead = ["last", "previous", "past"];
   const monthLeadIdx = tokens.findIndex((t, i) => monthLead.includes(t) && tokens[i + 1] === "month");
   if (monthLeadIdx >= 0) {
     consumedIndices.add(monthLeadIdx);
     consumedIndices.add(monthLeadIdx + 1);
-    const start = new Date(today);
-    start.setMonth(start.getMonth() - 1);
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const end = new Date(today.getFullYear(), today.getMonth(), 0);
     return {
-      window: { start: formatDate(start), end: formatDate(today) },
+      window: { start: formatDate(start), end: formatDate(end) },
       consumedIndices,
     };
   }
@@ -517,6 +527,7 @@ export type SuperlativeIntent = {
   kind: "place_filter";
   place: string;
   filterType?: "race" | "workout";
+  sport?: "run" | "ride";
 } | {
   kind: "mmp_power";
   field: "best_watts_5s" | "best_watts_1m" | "best_watts_5m" | "best_watts_20m" | "best_watts_60m";
@@ -538,20 +549,95 @@ export type IntentClassification = {
   weekday: string | null;
   remainingTokens: string[];
   isDeterministic: boolean;
-  /**
-   * Place-scoped fastest/longest queries. Metric order is the fallback;
-   * Jev may reorder the shortlist because place text is often a neighborhood
-   * or missing from the name.
-   */
-  jevRanks: boolean;
 };
 
 const SPEED_WORDS = ["fastest", "quickest", "speedy", "fast", "quick", "swift", "rapid"];
+const RUN_WORDS = new Set(["run", "runs", "running"]);
+const RIDE_WORDS = new Set(["ride", "rides", "bike", "bikes", "cycling"]);
+const LIST_SYNONYMS = new Set(["activities", "activity", "workouts", "workout", "session", "sessions"]);
 const PLACE_PREPOSITIONS = new Set(["in", "at", "near", "around", "from"]);
-const PLACE_FILLERS = new Set(["the", "a", "an", "my", "our", "area", "region", "city"]);
+// "city" stays: "windy city" is a Chicago alias, not a filler.
+const PLACE_FILLERS = new Set(["the", "a", "an", "my", "our", "area", "region"]);
 const QUERY_FILLERS = new Set(["the", "a", "an", "my", "our", "me", "show", "find", "please", "some"]);
+// Words that stick to a date phrase: "in the last week", "from last month", "during last week".
+const DATE_GLUE = new Set(["in", "during", "over", "from", "for", "within", "of"]);
+const PLACE_STOP = new Set([
+  ...RUN_WORDS,
+  ...RIDE_WORDS,
+  ...LIST_SYNONYMS,
+  ...SPEED_WORDS,
+  "longest",
+  "farthest",
+  "race",
+  "races",
+]);
+// Query aliases. Activity places are canonical city names ("Chicago"), so the
+// shortlist has to fold these before filtering.
+const PLACE_ALIASES: { canonical: string; phrases: string[][] }[] = [
+  {
+    canonical: "chicago",
+    phrases: [
+      ["windy", "city"],
+      ["chi", "town"],
+      ["chicago"],
+      ["chitown"],
+      ["chi"],
+    ],
+  },
+];
 // Unbanded "fastest run" should not be won by a stride or a short shakeout.
 const MIN_UNBANDED_FASTEST_M = 3000;
+
+function phraseAt(tokens: string[], index: number, phrase: string[]): boolean {
+  return phrase.every((word, offset) => tokens[index + offset] === word);
+}
+
+function aliasAt(tokens: string[], index: number): { canonical: string; length: number } | null {
+  let best: { canonical: string; length: number } | null = null;
+  for (const entry of PLACE_ALIASES) {
+    for (const phrase of entry.phrases) {
+      if (index + phrase.length > tokens.length || !phraseAt(tokens, index, phrase)) continue;
+      if (!best || phrase.length > best.length) best = { canonical: entry.canonical, length: phrase.length };
+    }
+  }
+  return best;
+}
+
+function canonicalPlaceName(phrase: string): string {
+  const tokens = tokenize(phrase).filter((token) => !PLACE_FILLERS.has(token));
+  if (tokens.length === 0) return "";
+  const hit = aliasAt(tokens, 0);
+  if (hit && hit.length === tokens.length) return hit.canonical;
+  return tokens.join(" ");
+}
+
+function textHasPlace(text: string, place: string): boolean {
+  const canonical = canonicalPlaceName(place);
+  if (!canonical) return false;
+  const alias = PLACE_ALIASES.find((entry) => entry.canonical === canonical);
+  const tokens = tokenize(text);
+  if (alias) {
+    for (let i = 0; i < tokens.length; i++) {
+      if (alias.phrases.some((phrase) => phraseAt(tokens, i, phrase))) return true;
+    }
+    return false;
+  }
+  const words = canonical.split(" ").filter(Boolean);
+  return words.length > 0 && words.every((word) => tokens.includes(word));
+}
+
+// "in the last week" — the preposition belongs to the date, not to a place.
+function withDateGlue(tokens: string[], consumed: Set<number>): Set<number> {
+  if (consumed.size === 0) return consumed;
+  const extra = new Set(consumed);
+  let i = Math.min(...consumed) - 1;
+  if (i >= 0 && !extra.has(i) && tokens[i] === "the") {
+    extra.add(i);
+    i--;
+  }
+  if (i >= 0 && !extra.has(i) && DATE_GLUE.has(tokens[i])) extra.add(i);
+  return extra;
+}
 
 function parsePlacePhrase(
   tokens: string[],
@@ -563,13 +649,35 @@ function parsePlacePhrase(
   const placeTokens: string[] = [];
   const indices = [prepIdx];
   for (let i = prepIdx + 1; i < tokens.length; i++) {
-    if (consumed.has(i)) break;
+    if (consumed.has(i) || PLACE_STOP.has(tokens[i])) break;
     indices.push(i);
     if (!PLACE_FILLERS.has(tokens[i])) placeTokens.push(tokens[i]);
   }
   if (placeTokens.length === 0) return { place: null, consumedIndices };
   indices.forEach((i) => consumedIndices.add(i));
   return { place: placeTokens.join(" "), consumedIndices };
+}
+
+// "speedy Chicago runs" / "chitown runs" have no preposition. Only known aliases,
+// so a leftover word like "hilly" does not become a place.
+function parseBarePlace(
+  tokens: string[],
+  consumed: Set<number>,
+): { place: string; consumedIndices: Set<number> } | null {
+  for (let i = 0; i < tokens.length; i++) {
+    if (consumed.has(i)) continue;
+    const hit = aliasAt(tokens, i);
+    if (!hit) continue;
+    const indices: number[] = [];
+    let blocked = false;
+    for (let k = 0; k < hit.length; k++) {
+      if (consumed.has(i + k)) blocked = true;
+      indices.push(i + k);
+    }
+    if (blocked) continue;
+    return { place: hit.canonical, consumedIndices: new Set(indices) };
+  }
+  return null;
 }
 
 function parseWeekday(
@@ -597,50 +705,37 @@ function parseWeekday(
 }
 
 function activityMatchesPlace(activity: Activity, place: string): boolean {
-  const words = place.toLowerCase().split(/\s+/).filter((token) => token && !PLACE_FILLERS.has(token));
-  if (words.length === 0) return false;
-  const hay = `${activity.place ?? ""} ${activity.name}`.toLowerCase();
-  return words.every((word) => hay.includes(word));
+  return textHasPlace(`${activity.place ?? ""} ${activity.name}`, place);
 }
 
-/** Metric order within each group, place hits before the rest. */
-function placeMatchesFirst(hits: SearchHit[], place: string): SearchHit[] {
-  const matched: SearchHit[] = [];
-  const rest: SearchHit[] = [];
-  for (const hit of hits) {
-    (activityMatchesPlace(hit.activity, place) ? matched : rest).push(hit);
+function findSport(
+  tokens: string[],
+  consumed: Set<number>,
+): { sport?: "run" | "ride"; indices: number[] } {
+  const indices: number[] = [];
+  let sport: "run" | "ride" | undefined;
+  tokens.forEach((token, i) => {
+    if (consumed.has(i)) return;
+    if (RUN_WORDS.has(token)) {
+      sport = "run";
+      indices.push(i);
+    } else if (RIDE_WORDS.has(token)) {
+      if (sport !== "run") sport = "ride";
+      indices.push(i);
+    }
+  });
+  if (sport === "run") {
+    return { sport, indices: indices.filter((i) => RUN_WORDS.has(tokens[i])) };
   }
-  return [...matched, ...rest];
+  return { sport, indices };
 }
 
-/**
- * Ids sent to Jev. Place-scoped fastest/longest reserve half the window for
- * place hits and half for the metric leaders, so a long run tagged only as a
- * neighborhood still gets scored.
- */
-export function selectJevCandidates(
-  hits: SearchHit[],
-  classification: IntentClassification | null,
-  limit = 25,
-): number[] {
-  const place = classification?.place;
-  if (!classification?.jevRanks || !place || hits.length <= limit) {
-    return hits.slice(0, limit).map((hit) => hit.activity.id);
-  }
-  const matched = hits.filter((hit) => activityMatchesPlace(hit.activity, place));
-  const unmatched = hits.filter((hit) => !activityMatchesPlace(hit.activity, place));
-  const ids: number[] = [];
-  const seen = new Set<number>();
-  const push = (hit: SearchHit) => {
-    if (seen.has(hit.activity.id) || ids.length >= limit) return;
-    seen.add(hit.activity.id);
-    ids.push(hit.activity.id);
-  };
-  const placeSlots = Math.min(matched.length, Math.floor(limit / 2));
-  for (let i = 0; i < placeSlots; i++) push(matched[i]);
-  for (const hit of unmatched) push(hit);
-  for (const hit of matched) push(hit);
-  return ids;
+function listSynonymIndices(tokens: string[], consumed: Set<number>): number[] {
+  const indices: number[] = [];
+  tokens.forEach((token, i) => {
+    if (!consumed.has(i) && LIST_SYNONYMS.has(token)) indices.push(i);
+  });
+  return indices;
 }
 
 function detectSuperlativeIntent(query: string, now?: Date): IntentClassification {
@@ -648,9 +743,9 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   let intent: SuperlativeIntent = null;
   let consumedIndices = new Set<number>();
 
-  // Parse date window first
+  // Parse date window first. Glue ("in the", "from", "during") is part of the date phrase.
   const { window: dateWindow, consumedIndices: dateIndices } = parseDateWindow(tokens, now);
-  dateIndices.forEach(i => consumedIndices.add(i));
+  (dateWindow ? withDateGlue(tokens, dateIndices) : dateIndices).forEach(i => consumedIndices.add(i));
 
   // Detect MMP power queries: "top/best/highest/max" + duration + optional "power/watts"
   // Durations: 5s, 5 sec, 1 min, 5 min, 20 min, 20m, 60 min, 1 hour, ftp (→ 20m)
@@ -658,7 +753,8 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   const powerTriggerIdx = tokens.findIndex(t => powerTriggers.includes(t));
   
   if (powerTriggerIdx >= 0) {
-    consumedIndices.add(powerTriggerIdx);
+    // Hold these until we know it's actually a power query. "best run" is not watts.
+    const powerConsumed = new Set<number>([powerTriggerIdx]);
     
     // Look for duration tokens
     let mmpField: "best_watts_5s" | "best_watts_1m" | "best_watts_5m" | "best_watts_20m" | "best_watts_60m" | null = null;
@@ -667,12 +763,12 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     const ftpIdx = tokens.indexOf("ftp");
     if (ftpIdx >= 0) {
       mmpField = "best_watts_20m";
-      consumedIndices.add(ftpIdx);
+      powerConsumed.add(ftpIdx);
     }
     
     // Check for duration patterns like "5s", "1m", "20m", "5 sec", "1 min", "20 min", "1 hour"
     for (let i = 0; i < tokens.length; i++) {
-      if (consumedIndices.has(i)) continue;
+      if (powerConsumed.has(i) || consumedIndices.has(i)) continue;
       
       const token = tokens[i];
       const nextToken = i + 1 < tokens.length ? tokens[i + 1] : "";
@@ -686,22 +782,22 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
           
           if ((unit === "s" || unit === "sec" || unit.startsWith("second")) && num === 5) {
             mmpField = "best_watts_5s";
-            consumedIndices.add(i);
+            powerConsumed.add(i);
           } else if ((unit === "m" || unit === "min" || unit.startsWith("minute")) && num === 1) {
             mmpField = "best_watts_1m";
-            consumedIndices.add(i);
+            powerConsumed.add(i);
           } else if ((unit === "m" || unit === "min" || unit.startsWith("minute")) && num === 5) {
             mmpField = "best_watts_5m";
-            consumedIndices.add(i);
+            powerConsumed.add(i);
           } else if ((unit === "m" || unit === "min" || unit.startsWith("minute")) && num === 20) {
             mmpField = "best_watts_20m";
-            consumedIndices.add(i);
+            powerConsumed.add(i);
           } else if ((unit === "m" || unit === "min" || unit.startsWith("minute")) && num === 60) {
             mmpField = "best_watts_60m";
-            consumedIndices.add(i);
+            powerConsumed.add(i);
           } else if ((unit === "h" || unit === "hour" || unit.startsWith("hour")) && num === 1) {
             mmpField = "best_watts_60m";
-            consumedIndices.add(i);
+            powerConsumed.add(i);
           }
         }
       }
@@ -711,43 +807,42 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
       if (!isNaN(num) && nextToken) {
         if ((nextToken === "s" || nextToken === "sec" || nextToken.startsWith("second")) && num === 5) {
           mmpField = "best_watts_5s";
-          consumedIndices.add(i);
-          consumedIndices.add(i + 1);
+          powerConsumed.add(i);
+          powerConsumed.add(i + 1);
         } else if ((nextToken === "m" || nextToken === "min" || nextToken.startsWith("minute")) && num === 1) {
           mmpField = "best_watts_1m";
-          consumedIndices.add(i);
-          consumedIndices.add(i + 1);
+          powerConsumed.add(i);
+          powerConsumed.add(i + 1);
         } else if ((nextToken === "m" || nextToken === "min" || nextToken.startsWith("minute")) && num === 5) {
           mmpField = "best_watts_5m";
-          consumedIndices.add(i);
-          consumedIndices.add(i + 1);
+          powerConsumed.add(i);
+          powerConsumed.add(i + 1);
         } else if ((nextToken === "m" || nextToken === "min" || nextToken.startsWith("minute")) && num === 20) {
           mmpField = "best_watts_20m";
-          consumedIndices.add(i);
-          consumedIndices.add(i + 1);
+          powerConsumed.add(i);
+          powerConsumed.add(i + 1);
         } else if ((nextToken === "m" || nextToken === "min" || nextToken.startsWith("minute")) && num === 60) {
           mmpField = "best_watts_60m";
-          consumedIndices.add(i);
-          consumedIndices.add(i + 1);
+          powerConsumed.add(i);
+          powerConsumed.add(i + 1);
         } else if ((nextToken === "h" || nextToken === "hour" || nextToken.startsWith("hour")) && num === 1) {
           mmpField = "best_watts_60m";
-          consumedIndices.add(i);
-          consumedIndices.add(i + 1);
+          powerConsumed.add(i);
+          powerConsumed.add(i + 1);
         }
       }
     }
     
-    // Consume optional "power" or "watts"
     const powerIdx = tokens.indexOf("power");
     const wattsIdx = tokens.indexOf("watts");
-    if (powerIdx >= 0) consumedIndices.add(powerIdx);
-    if (wattsIdx >= 0) consumedIndices.add(wattsIdx);
-    
-    if (mmpField) {
-      intent = { kind: "mmp_power", field: mmpField };
-    } else {
-      // No duration specified, use average/weighted fallback (existing "highest power" behavior)
-      intent = { kind: "highest_power" };
+    const wattIdx = tokens.indexOf("watt");
+    const mentionsPower = powerIdx >= 0 || wattsIdx >= 0 || wattIdx >= 0 || ftpIdx >= 0;
+    if (mmpField || mentionsPower) {
+      if (powerIdx >= 0) powerConsumed.add(powerIdx);
+      if (wattsIdx >= 0) powerConsumed.add(wattsIdx);
+      if (wattIdx >= 0) powerConsumed.add(wattIdx);
+      powerConsumed.forEach((i) => consumedIndices.add(i));
+      intent = mmpField ? { kind: "mmp_power", field: mmpField } : { kind: "highest_power" };
     }
   }
 
@@ -855,69 +950,74 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
         !["race", "races", "workout", "workouts", "session", "sessions", "run", "runs", "running", "ride", "rides", "bike", "cycling"].includes(t)
       );
       if (placeTokens.length > 0) {
-        const place = placeTokens.join(" ");
+        const place = canonicalPlaceName(placeTokens.join(" "));
         const filterType = raceIdx >= 0 ? "race" as const : workoutIdx >= 0 ? "workout" as const : undefined;
-        intent = { kind: "place_filter", place, filterType };
-        consumedIndices.add(raceIdx >= 0 ? raceIdx : workoutIdx);
-        // Consume place tokens
-        placeTokens.forEach(pt => {
-          const idx = tokens.indexOf(pt);
-          if (idx >= 0) consumedIndices.add(idx);
-        });
+        if (place) {
+          intent = { kind: "place_filter", place, filterType };
+          consumedIndices.add(raceIdx >= 0 ? raceIdx : workoutIdx);
+          placeTokens.forEach(pt => {
+            const idx = tokens.indexOf(pt);
+            if (idx >= 0) consumedIndices.add(idx);
+          });
+        }
       }
     }
   }
 
-  // "in Chicago" / "near Chicago" attaches to whatever intent we already have.
+  // "in Chicago", "in the windy city", or a bare alias ("speedy Chicago runs").
+  // Canonical form so chi / chitown / windy city share the Chicago pool.
   const parsedPlace = parsePlacePhrase(tokens, consumedIndices);
-  let place = parsedPlace.place;
+  let place = parsedPlace.place ? canonicalPlaceName(parsedPlace.place) : "";
   if (place) parsedPlace.consumedIndices.forEach((i) => consumedIndices.add(i));
+  if (!place) {
+    const bare = parseBarePlace(tokens, consumedIndices);
+    if (bare) {
+      place = bare.place;
+      bare.consumedIndices.forEach((i) => consumedIndices.add(i));
+    }
+  }
 
   tokens.forEach((token, i) => {
     if (QUERY_FILLERS.has(token)) consumedIndices.add(i);
   });
+  // "week's" tokenizes to week + s. Drop the possessive once the date word is consumed.
+  tokens.forEach((token, i) => {
+    if (token === "s" && i > 0 && consumedIndices.has(i - 1)) consumedIndices.add(i);
+  });
+
+  if (!place && intent?.kind === "place_filter") place = canonicalPlaceName(intent.place);
 
   const parsedWeekday = parseWeekday(tokens, consumedIndices);
   const weekday = parsedWeekday.weekday;
   parsedWeekday.consumedIndices.forEach((i) => consumedIndices.add(i));
 
-  // Detect list intent: pure date window with optional sport, optional "activities/workouts/rides/runs"
-  // Synonyms: activities, workouts, rides, runs
-  if (!intent && dateWindow) {
-    const listSynonyms = ["activities", "activity", "workouts", "workout", "rides", "runs"];
-    const listIdx = tokens.findIndex(t => listSynonyms.includes(t));
-    if (listIdx >= 0) consumedIndices.add(listIdx);
-    
-    // Check for sport
-    let sport: "run" | "ride" | undefined = undefined;
-    const runIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
-    const rideIdx = tokens.findIndex(t => ["ride", "rides", "bike", "cycling"].includes(t));
-    if (runIdx >= 0) {
-      sport = "run";
-      consumedIndices.add(runIdx);
-    } else if (rideIdx >= 0) {
-      sport = "ride";
-      consumedIndices.add(rideIdx);
-    }
-    
-    // Also consume possessive "'s" if present
-    const possessiveIdx = tokens.indexOf("s");
-    if (possessiveIdx >= 0 && possessiveIdx > 0) {
-      // Check if it follows a date window token (e.g., "week's")
-      consumedIndices.add(possessiveIdx);
-    }
-    
-    const remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
-    if (remainingTokens.length === 0) {
-      intent = { kind: "list", sport };
+  // "runs" / "run" selects the run pool once the rest of the query is a date, a place,
+  // or a metric. A bare "runs" stays a keyword search.
+  const sportHit = findSport(tokens, consumedIndices);
+  if (
+    sportHit.sport &&
+    intent &&
+    (intent.kind === "fastest" || intent.kind === "longest" || intent.kind === "place_filter")
+  ) {
+    if (!intent.sport) intent.sport = sportHit.sport;
+    sportHit.indices.forEach((i) => consumedIndices.add(i));
+  }
+
+  if (!intent && (dateWindow || place)) {
+    const synonyms = listSynonymIndices(tokens, consumedIndices);
+    const pending = tokens.filter(
+      (_, i) => !consumedIndices.has(i) && !sportHit.indices.includes(i) && !synonyms.includes(i),
+    );
+    if (pending.length === 0 && (dateWindow || sportHit.sport)) {
+      sportHit.indices.forEach((i) => consumedIndices.add(i));
+      synonyms.forEach((i) => consumedIndices.add(i));
+      intent = { kind: "list", sport: sportHit.sport };
+    } else if (pending.length === 0 && place) {
+      intent = { kind: "place_filter", place };
     }
   }
 
-  if (!place && intent?.kind === "place_filter") place = intent.place;
-  if (!intent && place) {
-    const pending = tokens.filter((_, i) => !consumedIndices.has(i));
-    if (pending.length === 0) intent = { kind: "place_filter", place };
-  }
+  const resolvedPlace = place || null;
 
   // Consume a distance band only for fastest/longest, so a plain "10k" search
   // still matches the tag instead of becoming an empty list query.
@@ -934,17 +1034,17 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   }
 
   let remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
-  // "runs on a Tuesday" has no date window, so the list detector above skips it.
+  // "runs on a Tuesday" has no date or place, so the list detector above skips it.
   if (!intent && weekday) {
-    const listWords = ["run", "runs", "running", "ride", "rides", "bike", "cycling", "activities", "activity", "workouts", "workout"];
-    if (remainingTokens.every((token) => listWords.includes(token))) {
-      const sport: "run" | "ride" | undefined = remainingTokens.some((token) => ["run", "runs", "running"].includes(token))
+    const listWord = (token: string) => RUN_WORDS.has(token) || RIDE_WORDS.has(token) || LIST_SYNONYMS.has(token);
+    if (remainingTokens.every(listWord)) {
+      const sport: "run" | "ride" | undefined = remainingTokens.some((token) => RUN_WORDS.has(token))
         ? "run"
-        : remainingTokens.some((token) => ["ride", "rides", "bike", "cycling"].includes(token))
+        : remainingTokens.some((token) => RIDE_WORDS.has(token))
           ? "ride"
           : undefined;
       tokens.forEach((token, i) => {
-        if (listWords.includes(token)) consumedIndices.add(i);
+        if (listWord(token)) consumedIndices.add(i);
       });
       remainingTokens = [];
       intent = { kind: "list", sport };
@@ -952,11 +1052,7 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   }
   // Deterministic if we have an intent and no remaining semantic tokens
   const isDeterministic = intent !== null && remainingTokens.length === 0;
-  const jevRanks =
-    isDeterministic &&
-    place !== null &&
-    (intent?.kind === "longest" || intent?.kind === "fastest");
-  return { intent, dateWindow, distanceBand, place, weekday, remainingTokens, isDeterministic, jevRanks };
+  return { intent, dateWindow, distanceBand, place: resolvedPlace, weekday, remainingTokens, isDeterministic };
 }
 
 export function classifyIntent(query: string, now?: Date): IntentClassification {
@@ -976,7 +1072,7 @@ export function describeIntent(c: IntentClassification): string {
   } else if (intent?.kind === "longest") {
     bits.push("longest distance; a long effort is a strong match and a short one is not");
   } else if (intent?.kind === "list") {
-    bits.push("list of matching activities, most recent first; every activity in the window is a match");
+    bits.push("list of matching activities, most recent first; every activity that fits the sport, place, and dates is a match");
   } else if (intent?.kind === "place_filter") {
     bits.push(intent.filterType ? `${intent.filterType}s in this place` : "activities in this place");
   } else if (intent?.kind) {
@@ -1021,6 +1117,8 @@ function editDistance(a: string, b: string, max: number): number {
 }
 
 function scoreToken(token: string, words: string[]): { score: number; fuzzy: boolean } {
+  // "10ks" is the same tag as "10k". Digits are exact, so the plural would otherwise miss.
+  if (/^\d+ks$/.test(token)) token = token.slice(0, -1);
   let best = 0;
   let fuzzy = false;
   // Years and distances ("2025", "10k") must not fuzz into their neighbours.
@@ -1042,115 +1140,184 @@ function scoreToken(token: string, words: string[]): { score: number; fuzzy: boo
   return { score: best, fuzzy };
 }
 
-export function searchActivities(
-  index: IndexedActivity[],
-  query: string,
-  limit = 200,
-  now?: Date,
-): SearchHit[] {
-  const { intent, dateWindow, remainingTokens, isDeterministic, distanceBand, place, weekday, jevRanks } = detectSuperlativeIntent(query, now);
-  const tokens = Array.from(new Set(remainingTokens.length > 0 ? remainingTokens : tokenize(query)));
+type ShortlistBranch = {
+  id: ShortlistBranchId;
+  dateWindow: DateWindow | null;
+  place: string | null;
+  weekday: string | null;
+  sport?: "run" | "ride";
+  distanceBand: DistanceBand | null;
+  filterType?: "race" | "workout";
+  intent: SuperlativeIntent;
+  tokens: string[];
+};
 
-  let candidates: IndexedActivity[] = index;
+function intentSport(intent: SuperlativeIntent): "run" | "ride" | undefined {
+  return intent && "sport" in intent ? intent.sport : undefined;
+}
 
-  // Apply date window filter first (before any other filtering)
-  if (dateWindow) {
-    candidates = candidates.filter(({ activity }) => {
-      const activityDate = activity.start_date_local.slice(0, 10); // YYYY-MM-DD
-      return activityDate >= dateWindow.start && activityDate <= dateWindow.end;
+function isLoosenedMetric(intent: SuperlativeIntent): boolean {
+  return intent?.kind === "fastest" || intent?.kind === "longest";
+}
+
+// One query, several plausible pools. Date, place, weekday, and an explicit sport
+// are hard on every branch. Band, pace floor, and keyword leftovers are not: a
+// too-narrow metric branch must not be the only way an activity can appear.
+function buildShortlistBranches(c: IntentClassification, query: string): ShortlistBranch[] {
+  const sport = intentSport(c.intent);
+  const branches: ShortlistBranch[] = [];
+  const metric = c.intent && c.intent.kind !== "list" && c.intent.kind !== "place_filter" ? c.intent : null;
+
+  if (metric) {
+    branches.push({
+      id: "metric",
+      dateWindow: c.dateWindow,
+      place: c.place,
+      weekday: c.weekday,
+      sport,
+      distanceBand: c.distanceBand,
+      intent: metric,
+      tokens: [],
     });
   }
 
-  if (weekday) {
-    const dayIndex = WEEKDAYS.indexOf(weekday);
-    candidates = candidates.filter(({ activity }) => localStart(activity).getDay() === dayIndex);
+  // "Fastest in Chicago" can also mean the longest Chicago run. Same hard place.
+  // Ahead of the date list so an empty distance band falls open onto it.
+  if (c.place && c.intent?.kind === "fastest") {
+    branches.push({
+      id: "place-longest",
+      dateWindow: c.dateWindow,
+      place: c.place,
+      weekday: c.weekday,
+      sport,
+      distanceBand: null,
+      intent: { kind: "longest", sport },
+      tokens: [],
+    });
   }
 
-  // Apply intent-based filtering
-  if (intent) {
-    if (intent.kind === "place_filter") {
-      const placeLower = intent.place.toLowerCase();
-      candidates = candidates.filter(({ activity }) => {
-        const placeMatch = activity.place?.toLowerCase().includes(placeLower);
-        if (!placeMatch) return false;
-        
-        // Additional filter type checks
-        if (intent.filterType === "race") {
-          return activity.primary_stimulus === "race" || 
-                 activity.workout_type === 1 || 
-                 activity.workout_type === 11 ||
-                 activity.name.toLowerCase().includes("race");
-        }
-        if (intent.filterType === "workout") {
-          return activity.workout_type === 3 || activity.workout_type === 12;
-        }
-        return true;
-      });
-    } else if (intent.kind === "mmp_power") {
-      // Filter to rides that have the MMP field
-      candidates = candidates.filter(({ activity }) => 
-        isRide(activity) && activity[intent.field] != null
-      );
-    } else if (intent.kind === "highest_power") {
-      // Filter to rides that have average_watts or weighted_average_watts
-      candidates = candidates.filter(({ activity }) => 
-        isRide(activity) && (activity.average_watts != null || activity.weighted_average_watts != null)
-      );
-    } else if (intent.kind === "longest" && intent.sport) {
-      candidates = candidates.filter(({ activity }) => 
-        intent.sport === "run" ? isRun(activity) : isRide(activity)
-      );
-    } else if (intent.kind === "fastest" && intent.sport) {
-      candidates = candidates.filter(({ activity }) => 
-        intent.sport === "run" ? isRun(activity) : isRide(activity)
-      );
-    } else if (intent.kind === "list") {
-      // Filter by sport if specified
-      if (intent.sport) {
-        candidates = candidates.filter(({ activity }) => 
-          intent.sport === "run" ? isRun(activity) : isRide(activity)
-        );
-      }
+  if (c.dateWindow && (c.intent?.kind === "list" || isLoosenedMetric(c.intent))) {
+    branches.push({
+      id: "date-list",
+      dateWindow: c.dateWindow,
+      place: c.place,
+      weekday: c.weekday,
+      sport,
+      distanceBand: null,
+      intent: { kind: "list", sport },
+      tokens: [],
+    });
+  }
+
+  if (c.place && !c.dateWindow && (c.intent?.kind === "list" || c.intent?.kind === "place_filter" || isLoosenedMetric(c.intent))) {
+    branches.push({
+      id: "place-list",
+      dateWindow: null,
+      place: c.place,
+      weekday: c.weekday,
+      sport,
+      distanceBand: null,
+      filterType: c.intent?.kind === "place_filter" ? c.intent.filterType : undefined,
+      intent: c.intent?.kind === "place_filter" ? c.intent : { kind: "list", sport },
+      tokens: [],
+    });
+  }
+
+  // "runs on a Tuesday" is a list with no date and no place.
+  if (!c.dateWindow && !c.place && c.intent?.kind === "list") {
+    branches.push({
+      id: "place-list",
+      dateWindow: null,
+      place: null,
+      weekday: c.weekday,
+      sport,
+      distanceBand: null,
+      intent: { kind: "list", sport },
+      tokens: [],
+    });
+  }
+
+  const keywordTokens = c.remainingTokens.length > 0
+    ? Array.from(new Set(c.remainingTokens))
+    : branches.length === 0
+      ? Array.from(new Set(tokenize(query)))
+      : [];
+  if (keywordTokens.length > 0) {
+    branches.push({
+      id: "keyword",
+      dateWindow: c.dateWindow,
+      place: c.place,
+      weekday: c.weekday,
+      sport,
+      distanceBand: null,
+      intent: null,
+      tokens: keywordTokens,
+    });
+  }
+
+  return branches;
+}
+
+export function planShortlist(query: string, now?: Date): ShortlistBranchId[] {
+  return buildShortlistBranches(classifyIntent(query, now), query).map((branch) => branch.id);
+}
+
+function inWindow(activity: Activity, window: DateWindow): boolean {
+  const activityDate = activity.start_date_local.slice(0, 10);
+  return activityDate >= window.start && activityDate <= window.end;
+}
+
+function matchesSportChoice(activity: Activity, sport: "run" | "ride" | undefined): boolean {
+  if (!sport) return true;
+  return sport === "run" ? isRun(activity) : isRide(activity);
+}
+
+function applyBranchFilters(index: IndexedActivity[], branch: ShortlistBranch): IndexedActivity[] {
+  let candidates = index;
+  if (branch.dateWindow) {
+    const window = branch.dateWindow;
+    candidates = candidates.filter(({ activity }) => inWindow(activity, window));
+  }
+  if (branch.weekday) {
+    const dayIndex = WEEKDAYS.indexOf(branch.weekday);
+    if (dayIndex >= 0) {
+      candidates = candidates.filter(({ activity }) => localStart(activity).getDay() === dayIndex);
     }
   }
-
-  // Place-scoped fastest/longest keeps non-matches so Jev can recover a long
-  // Chicago run whose place field is a neighborhood or blank. Other place
-  // queries still require a place or name hit.
-  if (place && !jevRanks) {
-    candidates = candidates.filter(({ activity }) => activityMatchesPlace(activity, place));
+  if (branch.intent?.kind === "mmp_power") {
+    const field = branch.intent.field;
+    candidates = candidates.filter(({ activity }) => isRide(activity) && activity[field] != null);
+  } else if (branch.intent?.kind === "highest_power") {
+    candidates = candidates.filter(({ activity }) =>
+      isRide(activity) && (activity.average_watts != null || activity.weighted_average_watts != null));
+  } else if (branch.sport) {
+    candidates = candidates.filter(({ activity }) => matchesSportChoice(activity, branch.sport));
   }
-
-  // Date window is already applied. Place, then band, still before sorting.
-  if (
-    distanceBand &&
-    intent &&
-    (intent.kind === "fastest" || intent.kind === "longest")
-  ) {
-    const sport = intent.sport;
+  if (branch.place) {
+    candidates = candidates.filter(({ activity }) => activityMatchesPlace(activity, branch.place!));
+  }
+  if (branch.filterType === "race") {
+    candidates = candidates.filter(({ activity }) =>
+      activity.primary_stimulus === "race" ||
+      activity.workout_type === 1 ||
+      activity.workout_type === 11 ||
+      activity.name.toLowerCase().includes("race"));
+  } else if (branch.filterType === "workout") {
+    candidates = candidates.filter(({ activity }) => activity.workout_type === 3 || activity.workout_type === 12);
+  }
+  if (branch.distanceBand && branch.intent && (branch.intent.kind === "fastest" || branch.intent.kind === "longest")) {
+    const band = branch.distanceBand;
+    const sport = branch.sport;
     candidates = candidates.filter(({ activity }) => {
-      if (!inDistanceBand(activity.distance_m, distanceBand)) return false;
-      if (distanceBand.runsOnly && sport !== "ride" && !isRun(activity)) return false;
+      if (!inDistanceBand(activity.distance_m, band)) return false;
+      if (band.runsOnly && sport !== "ride" && !isRun(activity)) return false;
       return true;
     });
   }
+  return candidates;
+}
 
-  if (isDeterministic) {
-    // Deterministic intent: no keyword matching, just apply metric/filter sorting
-    const hits = candidates.map(({ activity }): SearchHit => ({
-      activity,
-      score: 1,
-      kind: "keyword",
-      matched: [],
-    }));
-    const sorted = applySuperlativeSorting(hits, intent, limit, distanceBand);
-    if (jevRanks && place) return placeMatchesFirst(sorted, place);
-    return sorted;
-  }
-
-  // Regular keyword/fuzzy search with optional superlative sorting
-  if (tokens.length === 0) return [];
-
+function keywordHits(candidates: IndexedActivity[], tokens: string[]): SearchHit[] {
   const full: SearchHit[] = [];
   const partial: SearchHit[] = [];
   for (const { activity, words } of candidates) {
@@ -1158,12 +1325,12 @@ export function searchActivities(
     let hitCount = 0;
     let anyFuzzy = false;
     const matched: string[] = [];
-    for (const t of tokens) {
-      const { score, fuzzy } = scoreToken(t, words);
+    for (const token of tokens) {
+      const { score, fuzzy } = scoreToken(token, words);
       if (score > 0) {
         hitCount++;
         total += score;
-        matched.push(t);
+        matched.push(token);
         anyFuzzy ||= fuzzy;
       }
     }
@@ -1177,19 +1344,53 @@ export function searchActivities(
     if (hitCount === tokens.length) full.push(hit);
     else if (hitCount * 2 >= tokens.length) partial.push(hit);
   }
-
   const byScore = (a: SearchHit, b: SearchHit) =>
     b.score - a.score || b.activity.start_date_local.localeCompare(a.activity.start_date_local);
   full.sort(byScore);
   partial.sort(byScore);
-  const results = (full.length >= 10 ? full : [...full, ...partial]);
-  
-  // Apply superlative sorting if intent exists
-  if (intent && intent.kind !== "place_filter") {
-    return applySuperlativeSorting(results, intent, limit, distanceBand);
-  }
+  return full.length >= 10 ? full : [...full, ...partial];
+}
 
-  return results.slice(0, limit);
+function runShortlistBranch(index: IndexedActivity[], branch: ShortlistBranch, limit: number): SearchHit[] {
+  const candidates = applyBranchFilters(index, branch);
+  if (branch.id === "keyword") {
+    return keywordHits(candidates, branch.tokens).slice(0, limit);
+  }
+  const hits = candidates.map((entry): SearchHit => ({
+    activity: entry.activity,
+    score: 1,
+    kind: "keyword",
+    matched: [],
+  }));
+  if (branch.intent?.kind === "place_filter") {
+    return hits
+      .sort((a, b) => b.activity.start_date_local.localeCompare(a.activity.start_date_local))
+      .slice(0, limit);
+  }
+  return applySuperlativeSorting(hits, branch.intent, limit, branch.distanceBand);
+}
+
+export function searchActivities(
+  index: IndexedActivity[],
+  query: string,
+  limit = 200,
+  now?: Date,
+): SearchHit[] {
+  const classification = detectSuperlativeIntent(query, now);
+  const branches = buildShortlistBranches(classification, query);
+  const seen = new Set<number>();
+  const merged: SearchHit[] = [];
+  for (const branch of branches) {
+    if (merged.length >= limit) break;
+    const locked = branch.id !== "keyword";
+    for (const hit of runShortlistBranch(index, branch, limit)) {
+      if (seen.has(hit.activity.id)) continue;
+      seen.add(hit.activity.id);
+      merged.push({ ...hit, branch: branch.id, locked });
+      if (merged.length >= limit) break;
+    }
+  }
+  return merged;
 }
 
 function applySuperlativeSorting(
@@ -1397,14 +1598,17 @@ export function activityFacts(a: Activity, now?: Date): ActivityFacts {
   return facts;
 }
 
-const HOW_TO_JUDGE =
-  "Sport, place, weekday, and dates must fit the interpreted query. The dates in interpreted_query are the window; do not substitute a different month. Last week is the previous Monday–Sunday. Last month is the trailing month through today. Speedy, fast, and quick mean a fast pace: trust a fast pace label, or a run around 7:30/mi or quicker. An easy pace is not speedy. Fastest matches a genuinely quick effort. Longest matches a long effort, well over 20 km for a run. A city counts from place, name, or description, including when place is only a neighborhood. A list or date-window query matches every activity of the right sport inside that window. A race is marked race, not merely mentioned.";
-
 export type JevNoul = {
   type: "noul";
   instructions: string;
   criteria: { true: string; false: string };
 };
+
+// Dates come from interpreted_query. Last-month's window and whether a
+// neighborhood counts as the city are still open against main, so this rubric
+// does not assert either one.
+const HOW_TO_JUDGE =
+  "Sport, place, weekday, and dates must fit the interpreted query. The dates in interpreted_query are the window; do not substitute a different month. Last week is the previous Monday–Sunday. Speedy, fast, and quick mean a fast pace: trust a fast pace label, or a run around 7:30/mi or quicker. An easy pace is not speedy. Fastest matches a genuinely quick effort. Longest matches a long effort, well over 20 km for a run. A city counts when the place or the name matches that city. A list or date-window query matches every activity of the right sport inside that window. A race is marked race, not merely mentioned.";
 
 /** One shared state and one noul per activity. Questions do not see each other. */
 export function buildJevRequest(query: string, activities: Activity[], now?: Date): {

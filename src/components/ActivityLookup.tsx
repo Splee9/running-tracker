@@ -9,7 +9,6 @@ import {
   isRide,
   isRun,
   searchActivities,
-  selectJevCandidates,
   sportLabel,
   type Activity,
   type SearchHit,
@@ -26,9 +25,8 @@ type JevState =
 
 const JEV_ENDPOINT = "/.netlify/functions/jev-rerank";
 const JEV_CANDIDATES = 25;
-const JEV_BADGE_CANDIDATES = 10;
 const JEV_DEBOUNCE_MS = 300;
-const JEV_CONFIDENCE_FLOOR = 0.55; // Membership bar. Not a sort key for metric queries.
+const JEV_CONFIDENCE_FLOOR = 0.55; // Only reorder when max score >= this threshold
 const PAGE_SIZE = 50;
 
 const activities = snapshot.activities as Activity[];
@@ -92,18 +90,14 @@ export function ActivityLookup() {
     return searchActivities(index, trimmed, 500).filter((h) => matchesSport(h.activity, sport));
   }, [trimmed, sport]);
 
-  const candidateLimit =
-    intentClassification?.isDeterministic && !intentClassification.jevRanks
-      ? JEV_BADGE_CANDIDATES
-      : JEV_CANDIDATES;
   const candidateIds = useMemo(
-    () => selectJevCandidates(localHits, intentClassification, candidateLimit),
-    [localHits, intentClassification, candidateLimit],
+    () => localHits.slice(0, JEV_CANDIDATES).map((h) => h.activity.id),
+    [localHits],
   );
   const candidateKey = candidateIds.join(",");
 
-  // One packed score call. Metric and date lists only badge the first screen.
-  // Place-scoped fastest/longest drop low scores and keep the metric order.
+  // Score every shortlist, including deterministic metric and place queries.
+  // Those keep localHits order; only semantic queries may reorder.
   const shouldScoreWithJev = jevAvailable;
 
   useEffect(() => {
@@ -156,30 +150,22 @@ export function ActivityLookup() {
         .filter((a) => matchesSport(a, sport))
         .map((activity): SearchHit => ({ activity, score: 0, kind: "keyword", matched: [] }));
     }
-    // Distance, pace, and date stay in local order. A place-scoped metric query
-    // uses Jev only to drop activities that miss the membership bar.
-    const jevFilters = Boolean(intentClassification?.jevRanks);
-    if ((intentClassification?.isDeterministic && !jevFilters) || !jevScores) return localHits;
+    if (!jevScores) return localHits;
+
+    // Metric and list branches stay in branch order. Jev reorders only the keyword branch.
+    const open = localHits.filter((h) => h.locked === false);
+    if (open.length === 0) return localHits;
 
     const maxScore = Math.max(...Object.values(jevScores));
-    const jevConfident = maxScore >= JEV_CONFIDENCE_FLOOR;
+    if (maxScore < JEV_CONFIDENCE_FLOOR) return localHits;
 
-    if (!jevConfident) return localHits;
-
-    if (jevFilters) {
-      return localHits.filter((h) => {
-        const score = jevScores[h.activity.id];
-        return score === undefined || score >= JEV_CONFIDENCE_FLOOR;
-      });
-    }
-
-    // Keyword search has no metric, so the probability is the order.
-    const reranked = localHits
+    const locked = localHits.filter((h) => h.locked !== false);
+    const scored = open
       .filter((h) => jevScores[h.activity.id] !== undefined)
       .sort((a, b) => jevScores[b.activity.id] - jevScores[a.activity.id]);
-    const rest = localHits.filter((h) => jevScores[h.activity.id] === undefined);
-    return [...reranked, ...rest];
-  }, [trimmed, sport, localHits, jevScores, intentClassification]);
+    const unscored = open.filter((h) => jevScores[h.activity.id] === undefined);
+    return [...locked, ...scored, ...unscored];
+  }, [trimmed, sport, localHits, jevScores]);
 
   useEffect(() => setVisible(PAGE_SIZE), [trimmed, sport]);
 
@@ -191,28 +177,45 @@ export function ActivityLookup() {
   } else if (results.length === 0) {
     status = `No activities match "${trimmed}"`;
   } else if (intentClassification?.isDeterministic) {
-    // Deterministic intent status
+    // Deterministic intent status. The count is the primary branch; other
+    // fan-out readings are called out separately so a pace sort is not
+    // described as if it included the related tail.
     const intent = intentClassification.intent;
     const whereBits = [intentClassification.place, intentClassification.weekday].filter(Boolean);
     const where = whereBits.length > 0 ? ` · ${whereBits.join(" · ")}` : "";
-    if (intent) {
+    const primaryId =
+      intent?.kind === "fastest" || intent?.kind === "longest" || intent?.kind === "most_intervals" ||
+      intent?.kind === "hilliest" || intent?.kind === "highest_hr" || intent?.kind === "highest_power" ||
+      intent?.kind === "mmp_power"
+        ? "metric"
+        : intent?.kind === "list"
+          ? intentClassification.dateWindow ? "date-list" : "place-list"
+          : intent?.kind === "place_filter"
+            ? "place-list"
+            : null;
+    const primaryCount = primaryId ? results.filter((h) => h.branch === primaryId).length : results.length;
+    const related = primaryId ? results.length - primaryCount : 0;
+    const counted = primaryCount > 0 ? primaryCount : results.length;
+    if (intent && primaryCount === 0 && related > 0) {
+      status = `No strict ${intent.kind.replaceAll("_", " ")} matches${where} · ${related.toLocaleString()} related`;
+    } else if (intent) {
       if (intent.kind === "longest") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${where} · sorted by distance`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"}${where} · sorted by distance`;
       } else if (intent.kind === "fastest") {
         const band = intentClassification.distanceBand;
         status = band
-          ? `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${where} · ${band.label} · sorted by time`
-          : `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${where} · sorted by pace`;
+          ? `${counted.toLocaleString()} match${counted === 1 ? "" : "es"}${where} · ${band.label} · sorted by time`
+          : `${counted.toLocaleString()} match${counted === 1 ? "" : "es"}${where} · sorted by pace`;
       } else if (intent.kind === "most_intervals") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by interval intensity`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by interval intensity`;
       } else if (intent.kind === "hilliest") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by elevation`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by elevation`;
       } else if (intent.kind === "highest_hr") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by heart rate`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by heart rate`;
       } else if (intent.kind === "highest_power") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by power`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by power`;
       } else if (intent.kind === "place_filter") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · filtered by place${intent.filterType ? ` and ${intent.filterType}` : ""}`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · filtered by place${intent.filterType ? ` and ${intent.filterType}` : ""}`;
       } else if (intent.kind === "mmp_power") {
         const durationLabels: Record<string, string> = {
           best_watts_5s: "5s",
@@ -221,44 +224,44 @@ export function ActivityLookup() {
           best_watts_20m: "20min",
           best_watts_60m: "60min",
         };
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by ${durationLabels[intent.field]} power`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by ${durationLabels[intent.field]} power`;
       } else if (intent.kind === "list") {
-        status = `${results.length.toLocaleString()} activit${results.length === 1 ? "y" : "ies"}${where} · most recent first`;
+        status = `${counted.toLocaleString()} activit${counted === 1 ? "y" : "ies"}${where} · most recent first`;
       } else {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · deterministic sort`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · deterministic sort`;
       }
     } else {
-      status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}`;
+      status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"}`;
     }
+    if (related > 0 && primaryCount > 0) status += ` · ${related.toLocaleString()} related`;
     if (jevAvailable) {
-      if (intentClassification.jevRanks) {
-        if (jevScores) {
-          const maxScore = Math.max(...Object.values(jevScores));
-          status +=
-            maxScore >= JEV_CONFIDENCE_FLOOR
-              ? " · Jev filtered, order unchanged"
-              : " · Jev confidence low, not filtering";
-        } else if (jev.status === "error" && jev.query === trimmed) status += " · Jev unavailable";
-        else if (candidateIds.length > 0) status += " · Jev checking place…";
-      } else if (jevScores) status += " · Jev scored";
+      if (jevScores) status += " · Jev scored";
       else if (jev.status === "error" && jev.query === trimmed) status += " · Jev unavailable";
       else if (candidateIds.length > 0) status += " · scoring with Jev";
     }
   } else {
-    // Semantic search with optional Jev
+    // Semantic search with optional Jev. A metric branch in the fan-out stays
+    // locked; Jev only reorders the keyword branch.
     const jevNote = !jevAvailable
       ? ""
       : jevScores
         ? (() => {
             const maxScore = Math.max(...Object.values(jevScores));
             return maxScore >= JEV_CONFIDENCE_FLOOR
-              ? ` · top ${Math.min(results.length, JEV_CANDIDATES)} reranked by Jev`
+              ? ` · keyword branch reranked by Jev`
               : ` · Jev confidence low, not reordering`;
           })()
         : jev.status === "error"
           ? " · Jev unavailable"
           : " · Jev reranking…";
-    status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · keyword + fuzzy${jevNote}`;
+    const metricCount = results.filter((h) => h.branch === "metric").length;
+    if (metricCount > 0) {
+      const related = results.length - metricCount;
+      status = `${metricCount.toLocaleString()} match${metricCount === 1 ? "" : "es"} · metric order${related > 0 ? ` · ${related.toLocaleString()} related` : ""}`;
+      if (results.some((h) => h.locked === false)) status += jevNote;
+    } else {
+      status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · keyword + fuzzy${jevNote}`;
+    }
   }
 
   return (
@@ -272,9 +275,8 @@ export function ActivityLookup() {
         </motion.h1>
         <motion.p className={styles.intro} variants={rise} custom={2} initial="hidden" animate="show">
           Search every logged activity by name, stimulus, place, or workout type. Keyword and fuzzy
-          matching run as you type. <b>Jev</b> then scores the shortlist in one pass. Distance, pace,
-          and date stay in that order. A place search hides activities Jev rejects. Keyword searches
-          rerank when Jev is confident.
+          matching run as you type. <b>Jev</b> then scores the shortlist. Metric searches such as
+          "longest run" or "fastest 10k" keep that order; other searches rerank when Jev is confident.
         </motion.p>
       </header>
 
@@ -345,7 +347,6 @@ export function ActivityLookup() {
                 jevScore={jevScores?.[hit.activity.id]}
                 jevLowConfidence={jevLowConfidence}
                 metricOrder={Boolean(intentClassification?.isDeterministic)}
-                jevFilters={Boolean(intentClassification?.jevRanks)}
               />
             ))}
           </ul>
@@ -377,7 +378,6 @@ function ActivityRow({
   jevScore,
   jevLowConfidence,
   metricOrder,
-  jevFilters,
 }: {
   hit: SearchHit;
   units: Units;
@@ -385,7 +385,6 @@ function ActivityRow({
   jevScore?: number;
   jevLowConfidence?: boolean;
   metricOrder?: boolean;
-  jevFilters?: boolean;
 }) {
   const a = hit.activity;
   const date = new Date(a.start_date_local.replace(/Z$/, ""));
@@ -500,13 +499,11 @@ function ActivityRow({
                   opacity: jevLowConfidence ? 0.5 : 1
                 }}
                 title={
-                  jevFilters
-                    ? "Jev match score. A low score hides the activity. Distance or pace still sets the order."
-                    : metricOrder
-                      ? "Jev match score. This list stays in metric order."
-                      : jevLowConfidence
-                        ? "Jev's calibrated probability (low confidence - not used for ranking)"
-                        : "Jev's calibrated probability that this activity matches your search"
+                  metricOrder
+                    ? "Jev match score. This list stays in metric order."
+                    : jevLowConfidence
+                      ? "Jev's calibrated probability (low confidence - not used for ranking)"
+                      : "Jev's calibrated probability that this activity matches your search"
                 }
               >
                 Jev {Math.round(jevScore * 100)}%
