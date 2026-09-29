@@ -186,13 +186,11 @@ function parseDateWindow(tokens: string[]): { window: DateWindow | null; consume
   if (thisIdx >= 0 && weekIdx === thisIdx + 1) {
     consumedIndices.add(thisIdx);
     consumedIndices.add(weekIdx);
-    // "This week" = from the Monday of the week containing (today-7 days) to today
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const dayOfWeek = sevenDaysAgo.getDay();
+    // "This week" = Monday to today of the current America/Chicago week
+    const dayOfWeek = today.getDay();
     const isoDayOfWeek = dayOfWeek === 0 ? 7 : dayOfWeek;
     const daysToMonday = isoDayOfWeek - 1;
-    const weekStart = new Date(sevenDaysAgo);
+    const weekStart = new Date(today);
     weekStart.setDate(weekStart.getDate() - daysToMonday);
     return {
       window: { start: formatDate(weekStart), end: formatDate(today) },

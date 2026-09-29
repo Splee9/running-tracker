@@ -54,12 +54,10 @@ function parseDateWindow(tokens) {
   if (thisIdx >= 0 && weekIdx === thisIdx + 1) {
     consumedIndices.add(thisIdx);
     consumedIndices.add(weekIdx);
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const dayOfWeek = sevenDaysAgo.getDay();
+    const dayOfWeek = today.getDay();
     const isoDayOfWeek = dayOfWeek === 0 ? 7 : dayOfWeek;
     const daysToMonday = isoDayOfWeek - 1;
-    const weekStart = new Date(sevenDaysAgo);
+    const weekStart = new Date(today);
     weekStart.setDate(weekStart.getDate() - daysToMonday);
     return {
       window: { start: formatDate(weekStart), end: formatDate(today) },
@@ -425,7 +423,7 @@ const tests = [
   // New date window tests (required by user)
   ["last week", { isDeterministic: true, kind: "list", dateWindow: { start: "2026-09-14", end: "2026-09-20" } }],
   ["last week's activities", { isDeterministic: true, kind: "list", dateWindow: { start: "2026-09-14", end: "2026-09-20" } }],
-  ["this week runs", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-09-21", end: "2026-09-29" } }],
+  ["this week runs", { isDeterministic: true, kind: "list", sport: "run", dateWindow: { start: "2026-09-28", end: "2026-09-29" } }],
   
   // MMP tests (required by user)
   ["top 20 min power this year", { isDeterministic: true, kind: "mmp_power", field: "best_watts_20m", dateWindow: { start: "2026-01-01", end: "2026-09-29" } }],
