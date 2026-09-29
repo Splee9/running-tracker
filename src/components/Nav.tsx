@@ -61,12 +61,9 @@ export function Nav() {
               <Link href="/activity-lookup" className={styles.dropdownItem}>
                 Activity lookup
               </Link>
-              <a
-                href="https://chicagomarathon2026.netlify.app/"
-                className={styles.dropdownItem}
-              >
-                Chicago build <span className={styles.external}>↗</span>
-              </a>
+              <Link href="/training/chicago" className={styles.dropdownItem}>
+                Chicago build
+              </Link>
             </div>
           )}
         </div>

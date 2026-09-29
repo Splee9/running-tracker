@@ -1,0 +1,676 @@
+{
+  "meta": {
+    "raceName": "Bank of America Chicago Marathon",
+    "raceDate": "2026-10-11",
+    "blockStart": "2026-05-04",
+    "blockWeeks": 23,
+    "goal": "sub-2:42:00",
+    "goalPace": "6:11/mi",
+    "daysToRace": 13,
+    "currentPhase": 3,
+    "currentPhaseName": "Taper",
+    "currentWeek": 22,
+    "blockMilesToDate": 1184.2,
+    "peakMpw": 88,
+    "lastUpdated": "2026-09-28"
+  },
+  "phases": [
+    {
+      "name": "Base Reinforcement",
+      "short": "Base",
+      "start": "2026-05-04",
+      "end": "2026-06-21",
+      "weeks": 7,
+      "volStart": 48,
+      "volEnd": 70
+    },
+    {
+      "name": "Engine Room",
+      "short": "Engine",
+      "start": "2026-06-22",
+      "end": "2026-08-16",
+      "weeks": 8,
+      "volStart": 72,
+      "volEnd": 81
+    },
+    {
+      "name": "Sharpening",
+      "short": "Sharpen",
+      "start": "2026-08-17",
+      "end": "2026-09-27",
+      "weeks": 6,
+      "volStart": 79,
+      "volEnd": 88
+    },
+    {
+      "name": "Taper",
+      "short": "Taper",
+      "start": "2026-09-28",
+      "end": "2026-10-11",
+      "weeks": 2,
+      "volStart": 50,
+      "volEnd": 25
+    }
+  ],
+  "weeks": [
+    {
+      "week": 1,
+      "weekStart": "2026-05-04",
+      "phase": 0,
+      "phaseShort": "Base",
+      "miles": 51.1,
+      "runs": 8,
+      "longest": 13.0,
+      "easyEF": 1.492,
+      "types": {
+        "quality": 6.9,
+        "long": 0.0,
+        "medlong": 13.0,
+        "easy": 25.1,
+        "commute": 6.1,
+        "other": 0.0
+      },
+      "partial": false,
+      "rolling4": 51.1
+    },
+    {
+      "week": 2,
+      "weekStart": "2026-05-11",
+      "phase": 0,
+      "phaseShort": "Base",
+      "miles": 55.2,
+      "runs": 8,
+      "longest": 12.1,
+      "easyEF": 1.566,
+      "types": {
+        "quality": 13.7,
+        "long": 0.0,
+        "medlong": 12.1,
+        "easy": 22.6,
+        "commute": 4.1,
+        "other": 2.7
+      },
+      "partial": false,
+      "rolling4": 53.2
+    },
+    {
+      "week": 3,
+      "weekStart": "2026-05-18",
+      "phase": 0,
+      "phaseShort": "Base",
+      "miles": 55.1,
+      "runs": 7,
+      "longest": 14.6,
+      "easyEF": 1.465,
+      "types": {
+        "quality": 10.0,
+        "long": 14.6,
+        "medlong": 0.0,
+        "easy": 12.3,
+        "commute": 12.0,
+        "other": 6.3
+      },
+      "partial": false,
+      "rolling4": 53.8
+    },
+    {
+      "week": 4,
+      "weekStart": "2026-05-25",
+      "phase": 0,
+      "phaseShort": "Base",
+      "miles": 53.3,
+      "runs": 7,
+      "longest": 14.0,
+      "easyEF": 1.457,
+      "types": {
+        "quality": 9.7,
+        "long": 0.0,
+        "medlong": 14.0,
+        "easy": 11.4,
+        "commute": 12.3,
+        "other": 6.0
+      },
+      "partial": false,
+      "rolling4": 53.7
+    },
+    {
+      "week": 5,
+      "weekStart": "2026-06-01",
+      "phase": 0,
+      "phaseShort": "Base",
+      "miles": 62.4,
+      "runs": 8,
+      "longest": 17.1,
+      "easyEF": 1.519,
+      "types": {
+        "quality": 10.3,
+        "long": 17.1,
+        "medlong": 0.0,
+        "easy": 30.9,
+        "commute": 4.0,
+        "other": 0.0
+      },
+      "partial": false,
+      "rolling4": 56.5
+    },
+    {
+      "week": 6,
+      "weekStart": "2026-06-08",
+      "phase": 0,
+      "phaseShort": "Base",
+      "miles": 56.3,
+      "runs": 8,
+      "longest": 15.8,
+      "easyEF": 1.527,
+      "types": {
+        "quality": 10.5,
+        "long": 15.8,
+        "medlong": 0.0,
+        "easy": 16.2,
+        "commute": 10.8,
+        "other": 2.9
+      },
+      "partial": false,
+      "rolling4": 56.8
+    },
+    {
+      "week": 7,
+      "weekStart": "2026-06-15",
+      "phase": 0,
+      "phaseShort": "Base",
+      "miles": 60.7,
+      "runs": 7,
+      "longest": 17.6,
+      "easyEF": 1.583,
+      "types": {
+        "quality": 10.6,
+        "long": 17.6,
+        "medlong": 0.0,
+        "easy": 24.3,
+        "commute": 8.2,
+        "other": 0.0
+      },
+      "partial": false,
+      "rolling4": 58.2
+    },
+    {
+      "week": 8,
+      "weekStart": "2026-06-22",
+      "phase": 1,
+      "phaseShort": "Engine",
+      "miles": 65.5,
+      "runs": 7,
+      "longest": 18.0,
+      "easyEF": 1.569,
+      "types": {
+        "quality": 11.2,
+        "long": 18.0,
+        "medlong": 0.0,
+        "easy": 28.1,
+        "commute": 8.1,
+        "other": 0.0
+      },
+      "partial": false,
+      "rolling4": 61.2
+    },
+    {
+      "week": 9,
+      "weekStart": "2026-06-29",
+      "phase": 1,
+      "phaseShort": "Engine",
+      "miles": 42.7,
+      "runs": 6,
+      "longest": 9.2,
+      "easyEF": 1.348,
+      "types": {
+        "quality": 0.0,
+        "long": 0.0,
+        "medlong": 0.0,
+        "easy": 42.7,
+        "commute": 0.0,
+        "other": 0.0
+      },
+      "partial": false,
+      "rolling4": 56.3
+    },
+    {
+      "week": 10,
+      "weekStart": "2026-07-06",
+      "phase": 1,
+      "phaseShort": "Engine",
+      "miles": 34.9,
+      "runs": 4,
+      "longest": 15.7,
+      "easyEF": 1.294,
+      "types": {
+        "quality": 8.3,
+        "long": 15.7,
+        "medlong": 0.0,
+        "easy": 8.0,
+        "commute": 0.0,
+        "other": 3.0
+      },
+      "partial": false,
+      "rolling4": 51.0
+    },
+    {
+      "week": 11,
+      "weekStart": "2026-07-13",
+      "phase": 1,
+      "phaseShort": "Engine",
+      "miles": 66.5,
+      "runs": 9,
+      "longest": 16.1,
+      "easyEF": 1.484,
+      "types": {
+        "quality": 8.8,
+        "long": 16.1,
+        "medlong": 0.0,
+        "easy": 37.5,
+        "commute": 4.1,
+        "other": 0.0
+      },
+      "partial": false,
+      "rolling4": 52.4
+    },
+    {
+      "week": 12,
+      "weekStart": "2026-07-20",
+      "phase": 1,
+      "phaseShort": "Engine",
+      "miles": 52.2,
+      "runs": 7,
+      "longest": 12.0,
+      "easyEF": 1.549,
+      "types": {
+        "quality": 11.0,
+        "long": 0.0,
+        "medlong": 12.0,
+        "easy": 11.3,
+        "commute": 17.8,
+        "other": 0.0
+      },
+      "partial": false,
+      "rolling4": 49.1
+    },
+    {
+      "week": 13,
+      "weekStart": "2026-07-27",
+      "phase": 1,
+      "phaseShort": "Engine",
+      "miles": 68.2,
+      "runs": 7,
+      "longest": 15.0,
+      "easyEF": 1.587,
+      "types": {
+        "quality": 12.9,
+        "long": 0.0,
+        "medlong": 15.0,
+        "easy": 36.1,
+        "commute": 4.2,
+        "other": 0.0
+      },
+      "partial": false,
+      "rolling4": 55.5
+    },
+    {
+      "week": 14,
+      "weekStart": "2026-08-03",
+      "phase": 1,
+      "phaseShort": "Engine",
+      "miles": 68.3,
+      "runs": 7,
+      "longest": 18.7,
+      "easyEF": 1.609,
+      "types": {
+        "quality": 11.7,
+        "long": 18.7,
+        "medlong": 0.0,
+        "easy": 27.2,
+        "commute": 10.6,
+        "other": 0.0
+      },
+      "partial": false,
+      "rolling4": 63.8
+    },
+    {
+      "week": 15,
+      "weekStart": "2026-08-10",
+      "phase": 1,
+      "phaseShort": "Engine",
+      "miles": 64.9,
+      "runs": 7,
+      "longest": 17.9,
+      "easyEF": 1.595,
+      "types": {
+        "quality": 12.6,
+        "long": 17.9,
+        "medlong": 0.0,
+        "easy": 29.1,
+        "commute": 5.4,
+        "other": 0.0
+      },
+      "partial": false,
+      "rolling4": 63.4
+    },
+    {
+      "week": 16,
+      "weekStart": "2026-08-17",
+      "phase": 2,
+      "phaseShort": "Sharpen",
+      "miles": 70.5,
+      "runs": 7,
+      "longest": 20.5,
+      "easyEF": 1.613,
+      "types": {
+        "quality": 23.7,
+        "long": 20.5,
+        "medlong": 0.0,
+        "easy": 15.6,
+        "commute": 10.8,
+        "other": 0.0
+      },
+      "partial": false,
+      "rolling4": 68.0
+    },
+    {
+      "week": 17,
+      "weekStart": "2026-08-24",
+      "phase": 2,
+      "phaseShort": "Sharpen",
+      "miles": 74.7,
+      "runs": 7,
+      "longest": 21.3,
+      "easyEF": 1.629,
+      "types": {
+        "quality": 25.5,
+        "long": 21.3,
+        "medlong": 0.0,
+        "easy": 23.4,
+        "commute": 4.6,
+        "other": 0.0
+      },
+      "partial": false,
+      "rolling4": 69.6
+    },
+    {
+      "week": 18,
+      "weekStart": "2026-08-31",
+      "phase": 2,
+      "phaseShort": "Sharpen",
+      "miles": 63.7,
+      "runs": 8,
+      "longest": 13.0,
+      "easyEF": 1.565,
+      "types": {
+        "quality": 35.8,
+        "long": 0.0,
+        "medlong": 0.0,
+        "easy": 21.0,
+        "commute": 6.9,
+        "other": 0.0
+      },
+      "partial": false,
+      "rolling4": 68.5
+    },
+    {
+      "week": 19,
+      "weekStart": "2026-09-07",
+      "phase": 2,
+      "phaseShort": "Sharpen",
+      "miles": 12.4,
+      "runs": 3,
+      "longest": 5.7,
+      "easyEF": 1.637,
+      "types": {
+        "quality": 0.0,
+        "long": 0.0,
+        "medlong": 0.0,
+        "easy": 0.0,
+        "commute": 0.0,
+        "other": 12.4
+      },
+      "partial": false,
+      "rolling4": 55.3
+    },
+    {
+      "week": 20,
+      "weekStart": "2026-09-14",
+      "phase": 2,
+      "phaseShort": "Sharpen",
+      "miles": 52.6,
+      "runs": 7,
+      "longest": 13.5,
+      "easyEF": 1.561,
+      "types": {
+        "quality": 23.7,
+        "long": 0.0,
+        "medlong": 0.0,
+        "easy": 24.2,
+        "commute": 0.0,
+        "other": 4.7
+      },
+      "partial": false,
+      "rolling4": 50.9
+    },
+    {
+      "week": 21,
+      "weekStart": "2026-09-21",
+      "phase": 2,
+      "phaseShort": "Sharpen",
+      "miles": 44.8,
+      "runs": 6,
+      "longest": 13.5,
+      "easyEF": 1.53,
+      "types": {
+        "quality": 13.5,
+        "long": 0.0,
+        "medlong": 0.0,
+        "easy": 29.3,
+        "commute": 0.0,
+        "other": 2.1
+      },
+      "partial": false,
+      "rolling4": 43.4
+    },
+    {
+      "week": 22,
+      "weekStart": "2026-09-28",
+      "phase": 3,
+      "phaseShort": "Taper",
+      "miles": 8.2,
+      "runs": 1,
+      "longest": 8.2,
+      "easyEF": 1.578,
+      "types": {
+        "quality": 0.0,
+        "long": 0.0,
+        "medlong": 0.0,
+        "easy": 8.2,
+        "commute": 0.0,
+        "other": 0.0
+      },
+      "partial": true,
+      "rolling4": 29.5
+    }
+  ],
+  "crossBuild": {
+    "generated": "2026-09-28",
+    "source": "apps/health/data/builds.json",
+    "window_weeks": 4,
+    "completed": [
+      {
+        "build": "Flying Pig 2022",
+        "result": "3:21:42",
+        "avg": 40.6,
+        "peak": 61.2,
+        "ef": 1.346,
+        "window_days": 126
+      },
+      {
+        "build": "Grand Rapids 2022",
+        "result": "3:02:56",
+        "avg": 45.6,
+        "peak": 67.5,
+        "ef": 1.419,
+        "window_days": 126
+      },
+      {
+        "build": "Madison 2023",
+        "result": "2:57:47",
+        "avg": 45.9,
+        "peak": 70.1,
+        "ef": 1.399,
+        "window_days": 126
+      },
+      {
+        "build": "Chicago 2024",
+        "result": "2:59:05",
+        "avg": 59.3,
+        "peak": 77.0,
+        "ef": 1.466,
+        "window_days": 126
+      },
+      {
+        "build": "Wisconsin 2025",
+        "result": "2:55:58",
+        "avg": 52.3,
+        "peak": 66.9,
+        "ef": 1.498,
+        "window_days": 126
+      },
+      {
+        "build": "Indianapolis 2025",
+        "result": "2:45:55",
+        "avg": 60.5,
+        "peak": 78.6,
+        "ef": 1.547,
+        "window_days": 126
+      }
+    ],
+    "head_to_head": {
+      "weeks_out": 2,
+      "note": "trailing 4 completed weeks at ~2 weeks out from race day (as of 2026-09-28)",
+      "current": {
+        "build": "Chicago 2026",
+        "avg": 43.4,
+        "ef": 1.573
+      },
+      "benchmark": {
+        "build": "Indianapolis 2025",
+        "result": "2:45:55",
+        "avg": 72.6,
+        "ef": 1.593
+      },
+      "chi": {
+        "build": "Chicago 2026",
+        "avg": 43.4,
+        "ef": 1.573
+      },
+      "indy": {
+        "build": "Indianapolis 2025",
+        "result": "2:45:55",
+        "avg": 72.6,
+        "ef": 1.593
+      }
+    }
+  },
+  "typeOrder": [
+    "quality",
+    "long",
+    "medlong",
+    "easy",
+    "commute",
+    "other"
+  ],
+  "typeLabels": {
+    "quality": "Quality",
+    "long": "Long",
+    "medlong": "Med-long",
+    "easy": "Easy",
+    "commute": "Commute",
+    "other": "Other"
+  },
+  "trainingVariability": {
+    "metric": "run_tv",
+    "window_weeks": 8,
+    "definition": "Week-to-week continuity of run hours: (sample stdev ÷ mean) × 100 over the 8 Mon–Sun weeks before race week. Zeros count. Lower is steadier.",
+    "lower_is_steadier": true,
+    "bands": {
+      "Steady": "<35",
+      "Moderate": "35–<55",
+      "Uneven": "55–<80",
+      "Erratic": "≥80"
+    },
+    "generated": "2026-09-28",
+    "completed": [
+      {
+        "build": "Flying Pig 2022",
+        "result": "3:21:42",
+        "tv": 21.41,
+        "mean_h_wk": 7.57,
+        "ef": 1.346,
+        "band": "Steady"
+      },
+      {
+        "build": "Grand Rapids 2022",
+        "result": "3:02:56",
+        "tv": 21.34,
+        "mean_h_wk": 7.49,
+        "ef": 1.419,
+        "band": "Steady"
+      },
+      {
+        "build": "Madison 2023",
+        "result": "2:57:47",
+        "tv": 14.17,
+        "mean_h_wk": 7.99,
+        "ef": 1.399,
+        "band": "Steady"
+      },
+      {
+        "build": "Chicago 2024",
+        "result": "2:59:05",
+        "tv": 12.0,
+        "mean_h_wk": 8.35,
+        "ef": 1.466,
+        "band": "Steady"
+      },
+      {
+        "build": "Wisconsin 2025",
+        "result": "2:55:58",
+        "tv": 22.74,
+        "mean_h_wk": 6.74,
+        "ef": 1.498,
+        "band": "Steady"
+      },
+      {
+        "build": "Indianapolis 2025",
+        "result": "2:45:55",
+        "tv": 10.84,
+        "mean_h_wk": 8.53,
+        "ef": 1.547,
+        "band": "Steady"
+      }
+    ],
+    "head_to_head": {
+      "weeks_out": 2,
+      "note": "8-week run Training Variability ending the Sunday before race week (Chicago '26 still mid-window: 7 of 8 weeks through 2026-09-27).",
+      "chi": {
+        "build": "Chicago 2026",
+        "tv": 36.96,
+        "mean_h_wk": 6.66,
+        "ef": 1.573,
+        "band": "Moderate"
+      },
+      "indy": {
+        "build": "Indianapolis 2025",
+        "result": "2:45:55",
+        "tv": 10.84,
+        "mean_h_wk": 8.53,
+        "ef": 1.593,
+        "band": "Steady"
+      }
+    }
+  }
+}

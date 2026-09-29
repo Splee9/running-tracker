@@ -1,0 +1,110 @@
+.section {
+  padding: clamp(48px, 8vw, 88px) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.heading {
+  font-size: clamp(20px, 3.4vw, 30px);
+  line-height: 1.15;
+  margin: 12px 0 clamp(28px, 5vw, 40px);
+  max-width: 26ch;
+}
+
+.chartWrap {
+  width: 100%;
+}
+
+.chart {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.axisLabel {
+  font-size: 13px;
+  fill: var(--muted);
+  font-family: var(--mono);
+}
+
+.nowLabel {
+  font-size: 13px;
+  fill: var(--ink);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.bandLabel {
+  font-size: 13px;
+  fill: var(--ink);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.phaseCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: clamp(28px, 5vw, 40px);
+}
+
+.phaseCard {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.phaseCard.current {
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.06);
+}
+
+.phaseCard.cardHover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 22px rgba(47, 35, 66, 0.12);
+}
+
+.phaseHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.phaseNum {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.phaseName {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.nowChip {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bg);
+  background: var(--ink);
+  border-radius: 20px;
+  padding: 2px 9px;
+}
+
+.phaseDates {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.phaseVol {
+  font-size: 13px;
+  color: var(--ink);
+  margin-top: 2px;
+  font-family: var(--mono);
+}

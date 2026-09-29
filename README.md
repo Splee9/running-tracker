@@ -50,11 +50,17 @@ netlify/functions/
 ## Routes
 
 - `/` — the running log.
+- `/miles` — the running log (same as `/`).
 - `/training` — training variability: how much weekly hours swing around their
   mean over rolling 8 / 12 / 52-week windows, for Run, Bike, or All. Lower is
   steadier (Steady < 35, Moderate 35–55, Uneven 55–80, Erratic ≥ 80). One
   window is shown at a time; a switch overlays weekly hours as bars on a second
   axis.
+- `/training/chicago` — Chicago Marathon 2026 training tracker: 23-week phase
+  plan, weekly load by workout type, aerobic efficiency trend, and head-to-head
+  comparison against prior marathon builds. Aggregate weekly figures only — no
+  pace, GPS, heart rate, or health data.
+- `/activity-lookup` — search every public activity. Two stages:
 
 `src/training-weekly-hours.json` is derived from `src/training-variability.json`
 (the export carries only rolling stats). Regenerate it whenever the TV file
