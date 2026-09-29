@@ -10,8 +10,9 @@ function tokenize(text) {
 }
 
 // Parse date window from tokens, returning window and indices to consume
-// Assumes America/Chicago timezone; today is 2026-09-29
-function parseDateWindow(tokens) {
+// Uses America/Chicago timezone (Spencer's local timezone) for "today" and relative date calculations.
+// Accepts optional `now` parameter for testing with a fixed clock.
+function parseDateWindow(tokens, now) {
   const consumedIndices = new Set();
   
   // Helper to format date as YYYY-MM-DD
@@ -22,8 +23,9 @@ function parseDateWindow(tokens) {
     return `${year}-${month}-${day}`;
   };
   
-  // Reference date: 2026-09-29 (America/Chicago) is a Monday
-  const today = new Date('2026-09-29T12:00:00-05:00');
+  // Use injected clock for tests, or live local time (America/Chicago).
+  // Fixed test date for testing: 2026-09-29 (America/Chicago) is a Monday
+  const today = now ?? new Date('2026-09-29T12:00:00-05:00');
   const currentYear = today.getFullYear();
   
   // Check for "today"
@@ -226,13 +228,13 @@ function parseDateWindow(tokens) {
   return { window: null, consumedIndices };
 }
 
-function detectSuperlativeIntent(query) {
+function detectSuperlativeIntent(query, now) {
   const tokens = tokenize(query);
   let intent = null;
   let consumedIndices = new Set();
 
   // Parse date window first
-  const { window: dateWindow, consumedIndices: dateIndices } = parseDateWindow(tokens);
+  const { window: dateWindow, consumedIndices: dateIndices } = parseDateWindow(tokens, now);
   dateIndices.forEach(i => consumedIndices.add(i));
 
   // Detect MMP power queries
@@ -403,6 +405,9 @@ function detectSuperlativeIntent(query) {
 
 console.log("Testing intent detection with date windows, list intent, and MMP:\n");
 
+// Fixed test clock: 2026-09-29 (America/Chicago) - injected to prevent test rot
+const testClock = new Date('2026-09-29T12:00:00-05:00');
+
 const tests = [
   // Original tests
   ["longest run", { isDeterministic: true, kind: "longest", sport: "run", dateWindow: null }],
@@ -434,7 +439,7 @@ const tests = [
 let allPassed = true;
 
 for (const [query, expected] of tests) {
-  const result = detectSuperlativeIntent(query);
+  const result = detectSuperlativeIntent(query, testClock);
   let pass = result.isDeterministic === expected.isDeterministic && 
              result.intent?.kind === expected.kind;
   

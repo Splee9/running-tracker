@@ -142,8 +142,9 @@ function tokenize(text: string): string[] {
 }
 
 // Parse date window from tokens, returning window and indices to consume
-// Assumes America/Chicago timezone; today is 2026-09-29
-function parseDateWindow(tokens: string[]): { window: DateWindow | null; consumedIndices: Set<number> } {
+// Uses America/Chicago timezone (Spencer's local timezone) for "today" and relative date calculations.
+// Accepts optional `now` parameter for testing with a fixed clock.
+function parseDateWindow(tokens: string[], now?: Date): { window: DateWindow | null; consumedIndices: Set<number> } {
   const consumedIndices = new Set<number>();
   
   // Helper to format date as YYYY-MM-DD
@@ -154,8 +155,9 @@ function parseDateWindow(tokens: string[]): { window: DateWindow | null; consume
     return `${year}-${month}-${day}`;
   };
   
-  // Reference date: 2026-09-29 (America/Chicago) is a Monday
-  const today = new Date('2026-09-29T12:00:00-05:00');
+  // Use injected clock for tests, or live local time (America/Chicago).
+  // When undefined, defaults to current date at noon Chicago time.
+  const today = now ?? new Date(new Date().toLocaleString("en-US", { timeZone: "America/Chicago" }));
   const currentYear = today.getFullYear();
   
   // Check for "today"
@@ -392,13 +394,13 @@ export type IntentClassification = {
   isDeterministic: boolean;
 };
 
-function detectSuperlativeIntent(query: string): IntentClassification {
+function detectSuperlativeIntent(query: string, now?: Date): IntentClassification {
   const tokens = tokenize(query);
   let intent: SuperlativeIntent = null;
   let consumedIndices = new Set<number>();
 
   // Parse date window first
-  const { window: dateWindow, consumedIndices: dateIndices } = parseDateWindow(tokens);
+  const { window: dateWindow, consumedIndices: dateIndices } = parseDateWindow(tokens, now);
   dateIndices.forEach(i => consumedIndices.add(i));
 
   // Detect MMP power queries: "top/best/highest/max" + duration + optional "power/watts"
@@ -650,8 +652,8 @@ function detectSuperlativeIntent(query: string): IntentClassification {
   return { intent, dateWindow, remainingTokens, isDeterministic };
 }
 
-export function classifyIntent(query: string): IntentClassification {
-  return detectSuperlativeIntent(query);
+export function classifyIntent(query: string, now?: Date): IntentClassification {
+  return detectSuperlativeIntent(query, now);
 }
 
 export function buildIndex(activities: Activity[]): IndexedActivity[] {
@@ -711,8 +713,9 @@ export function searchActivities(
   index: IndexedActivity[],
   query: string,
   limit = 200,
+  now?: Date,
 ): SearchHit[] {
-  const { intent, dateWindow, remainingTokens, isDeterministic } = detectSuperlativeIntent(query);
+  const { intent, dateWindow, remainingTokens, isDeterministic } = detectSuperlativeIntent(query, now);
   const tokens = Array.from(new Set(remainingTokens.length > 0 ? remainingTokens : tokenize(query)));
 
   let candidates: IndexedActivity[] = index;
