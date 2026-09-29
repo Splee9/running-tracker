@@ -4,7 +4,7 @@
 // only for non-deterministic queries that clear the confidence floor.
 
 import snapshot from "../../src/activities.json" with { type: "json" };
-import { describeActivity, type Activity } from "../../src/lib/activitySearch.ts";
+import { classifyIntent, describeActivity, describeIntent, type Activity } from "../../src/lib/activitySearch.ts";
 
 const MAX_CANDIDATES = 25;
 const MAX_QUERY_LENGTH = 120;
@@ -78,15 +78,19 @@ async function scorePair(
     },
     body: JSON.stringify({
       model: provider.model,
-      state: { search_query: query, activity: describeActivity(activity) },
+      state: {
+        search_query: query,
+        interpreted_query: describeIntent(classifyIntent(query)),
+        activity: describeActivity(activity),
+      },
       questions: {
         matches: {
           type: "noul",
           instructions:
-            "An athlete is searching their own training log. Is this activity one they are looking for with this search query? Judge the activity's actual sport, date, year, recency, distance, pace, climbing, workout type, stimulus, place, intervals, and the athlete's description when one is included — not just the words in its name.",
+            "An athlete is searching their own training log. Does this activity match the search? When interpreted_query is present, treat it as the meaning of the search and score that, not the raw wording. Use the activity facts: sport, date, year, days ago, distance, pace or speed and its pace label, place, climbing, workout type, stimulus, intervals, and description. Days-ago is relative to today. Last week is the previous Monday–Sunday. Last month is the previous calendar month. Speedy, fast, and quick mean a fast pace: trust a \"fast pace\" label, or a run around 7:30/mi or quicker. An easy pace is not speedy. Fastest still matches a genuinely quick effort even if another effort might be quicker. Longest matches a long effort (well over 20 km for a run). A named place such as Chicago must fit the activity's place or name.",
           criteria: {
-            true: "Every part of the query holds for this activity, allowing for typos and loose wording: the sport matches if one is named (a run is not a ride), the year or month matches if one is given, and descriptions like long, hilly, race or quality session are true of it (e.g. a marathon or any run well over 20 km is a long run; a race is an activity marked race, not one that merely mentions racing).",
-            false: "Some part of the query is not true of this activity: it is a different sport, from a different year, too short to be long, too flat to be hilly, not actually a race or a workout, or it only shares an incidental word with the query.",
+            true: "The interpreted sport, place, and dates all fit, allowing loose wording. Speedy or fast fits a fast pace. A list or date-window query fits every activity of the right sport inside that window. A long run is well over 20 km. A race is marked race, not merely mentioned.",
+            false: "A required part is wrong: different sport, different city, outside the requested week, month, or year, an easy pace when the query asks for speedy or fast, too short to be a long run, or the activity only shares an incidental word with the query.",
           },
         },
       },

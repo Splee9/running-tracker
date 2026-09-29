@@ -317,7 +317,12 @@ function parseDateWindow(tokens: string[], now?: Date): { window: DateWindow | n
   const previousIdx = tokens.indexOf("previous");
   const weekIdx2 = tokens.indexOf("week");
   
-  if ((lastIdx >= 0 && weekIdx2 === lastIdx + 1) || (previousIdx >= 0 && weekIdx2 === previousIdx + 1)) {
+  const pastIdx = tokens.indexOf("past");
+  if (
+    (lastIdx >= 0 && weekIdx2 === lastIdx + 1) ||
+    (previousIdx >= 0 && weekIdx2 === previousIdx + 1) ||
+    (pastIdx >= 0 && weekIdx2 === pastIdx + 1)
+  ) {
     if (lastIdx >= 0 && weekIdx2 === lastIdx + 1) {
       consumedIndices.add(lastIdx);
       consumedIndices.add(weekIdx2);
@@ -326,16 +331,20 @@ function parseDateWindow(tokens: string[], now?: Date): { window: DateWindow | n
       consumedIndices.add(previousIdx);
       consumedIndices.add(weekIdx2);
     }
-    // "Last week" = the complete Monday-Sunday week containing (today-14 days)
-    const fourteenDaysAgo = new Date(today);
-    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-    const dayOfWeek = fourteenDaysAgo.getDay();
+    if (pastIdx >= 0 && weekIdx2 === pastIdx + 1) {
+      consumedIndices.add(pastIdx);
+      consumedIndices.add(weekIdx2);
+    }
+    // Previous complete Monday–Sunday. On Tue 2026-09-29 that is Sep 21–27,
+    // not the week before that.
+    const dayOfWeek = today.getDay();
     const isoDayOfWeek = dayOfWeek === 0 ? 7 : dayOfWeek;
-    const daysToMonday = isoDayOfWeek - 1;
-    const lastWeekStart = new Date(fourteenDaysAgo);
-    lastWeekStart.setDate(lastWeekStart.getDate() - daysToMonday);
-    const lastWeekEnd = new Date(lastWeekStart);
-    lastWeekEnd.setDate(lastWeekEnd.getDate() + 6);
+    const thisMonday = new Date(today);
+    thisMonday.setDate(today.getDate() - (isoDayOfWeek - 1));
+    const lastWeekStart = new Date(thisMonday);
+    lastWeekStart.setDate(thisMonday.getDate() - 7);
+    const lastWeekEnd = new Date(thisMonday);
+    lastWeekEnd.setDate(thisMonday.getDate() - 1);
     return {
       window: { start: formatDate(lastWeekStart), end: formatDate(lastWeekEnd) },
       consumedIndices
@@ -410,6 +419,20 @@ function parseDateWindow(tokens: string[], now?: Date): { window: DateWindow | n
     };
   }
   
+  // "last month" / "past month" = the previous calendar month, not a rolling 30 days.
+  const monthLead = ["last", "previous", "past"];
+  const monthLeadIdx = tokens.findIndex((t, i) => monthLead.includes(t) && tokens[i + 1] === "month");
+  if (monthLeadIdx >= 0) {
+    consumedIndices.add(monthLeadIdx);
+    consumedIndices.add(monthLeadIdx + 1);
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const end = new Date(today.getFullYear(), today.getMonth(), 0);
+    return {
+      window: { start: formatDate(start), end: formatDate(end) },
+      consumedIndices,
+    };
+  }
+
   // Check for "last N months" - must have "last", a number, and "month"/"months"
   let monthsIdx = tokens.indexOf("months");
   if (monthsIdx < 0) monthsIdx = tokens.indexOf("month");
@@ -504,9 +527,44 @@ export type IntentClassification = {
   dateWindow: DateWindow | null;
   /** Set for fastest/longest when the query names a distance. Other intents leave it null. */
   distanceBand: DistanceBand | null;
+  /** "in Chicago" / "near Chicago", or the place on a place filter. */
+  place: string | null;
   remainingTokens: string[];
   isDeterministic: boolean;
 };
+
+const SPEED_WORDS = ["fastest", "quickest", "speedy", "fast", "quick", "swift", "rapid"];
+const PLACE_PREPOSITIONS = new Set(["in", "at", "near", "around", "from"]);
+const PLACE_FILLERS = new Set(["the", "a", "an", "my", "our", "area", "region", "city"]);
+const QUERY_FILLERS = new Set(["the", "a", "an", "my", "our", "me", "show", "find", "please", "some"]);
+// Unbanded "fastest run" should not be won by a stride or a short shakeout.
+const MIN_UNBANDED_FASTEST_M = 3000;
+
+function parsePlacePhrase(
+  tokens: string[],
+  consumed: Set<number>,
+): { place: string | null; consumedIndices: Set<number> } {
+  const consumedIndices = new Set<number>();
+  const prepIdx = tokens.findIndex((token, i) => !consumed.has(i) && PLACE_PREPOSITIONS.has(token));
+  if (prepIdx < 0) return { place: null, consumedIndices };
+  const placeTokens: string[] = [];
+  const indices = [prepIdx];
+  for (let i = prepIdx + 1; i < tokens.length; i++) {
+    if (consumed.has(i)) break;
+    indices.push(i);
+    if (!PLACE_FILLERS.has(tokens[i])) placeTokens.push(tokens[i]);
+  }
+  if (placeTokens.length === 0) return { place: null, consumedIndices };
+  indices.forEach((i) => consumedIndices.add(i));
+  return { place: placeTokens.join(" "), consumedIndices };
+}
+
+function activityMatchesPlace(activity: Activity, place: string): boolean {
+  const words = place.toLowerCase().split(/\s+/).filter((token) => token && !PLACE_FILLERS.has(token));
+  if (words.length === 0) return false;
+  const hay = `${activity.place ?? ""} ${activity.name}`.toLowerCase();
+  return words.every((word) => hay.includes(word));
+}
 
 function detectSuperlativeIntent(query: string, now?: Date): IntentClassification {
   const tokens = tokenize(query);
@@ -648,7 +706,7 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
 
   // Detect fastest
   if (!intent) {
-    const fastestIdx = tokens.findIndex(t => ["fastest", "quickest"].includes(t));
+    const fastestIdx = tokens.findIndex(t => SPEED_WORDS.includes(t));
     if (fastestIdx >= 0) {
       intent = { kind: "fastest" };
       consumedIndices.add(fastestIdx);
@@ -733,6 +791,15 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     }
   }
 
+  // "in Chicago" / "near Chicago" attaches to whatever intent we already have.
+  const parsedPlace = parsePlacePhrase(tokens, consumedIndices);
+  let place = parsedPlace.place;
+  if (place) parsedPlace.consumedIndices.forEach((i) => consumedIndices.add(i));
+
+  tokens.forEach((token, i) => {
+    if (QUERY_FILLERS.has(token)) consumedIndices.add(i);
+  });
+
   // Detect list intent: pure date window with optional sport, optional "activities/workouts/rides/runs"
   // Synonyms: activities, workouts, rides, runs
   if (!intent && dateWindow) {
@@ -765,6 +832,12 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
     }
   }
 
+  if (!place && intent?.kind === "place_filter") place = intent.place;
+  if (!intent && place) {
+    const pending = tokens.filter((_, i) => !consumedIndices.has(i));
+    if (pending.length === 0) intent = { kind: "place_filter", place };
+  }
+
   // Consume a distance band only for fastest/longest, so a plain "10k" search
   // still matches the tag instead of becoming an empty list query.
   const parsedBand = parseDistanceBand(query);
@@ -782,11 +855,36 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   const remainingTokens = tokens.filter((_, i) => !consumedIndices.has(i));
   // Deterministic if we have an intent and no remaining semantic tokens
   const isDeterministic = intent !== null && remainingTokens.length === 0;
-  return { intent, dateWindow, distanceBand, remainingTokens, isDeterministic };
+  return { intent, dateWindow, distanceBand, place, remainingTokens, isDeterministic };
 }
 
 export function classifyIntent(query: string, now?: Date): IntentClassification {
   return detectSuperlativeIntent(query, now);
+}
+
+// Short gloss for Jev so "speedy", "last month", and "in Chicago" are explicit.
+export function describeIntent(c: IntentClassification): string {
+  const bits: string[] = [];
+  const intent = c.intent;
+  if (intent?.kind === "fastest") {
+    bits.push(
+      c.distanceBand
+        ? `fastest ${c.distanceBand.label}, shorter moving time is a better match`
+        : "fastest pace; a fast pace is a strong match and an easy pace is not",
+    );
+  } else if (intent?.kind === "longest") {
+    bits.push("longest distance; a long effort is a strong match and a short one is not");
+  } else if (intent?.kind === "list") {
+    bits.push("list of matching activities, most recent first; every activity in the window is a match");
+  } else if (intent?.kind === "place_filter") {
+    bits.push(intent.filterType ? `${intent.filterType}s in this place` : "activities in this place");
+  } else if (intent?.kind) {
+    bits.push(intent.kind.replaceAll("_", " "));
+  }
+  if (intent && "sport" in intent && intent.sport) bits.push(`${intent.sport}s only`);
+  if (c.place) bits.push(`in ${c.place}`);
+  if (c.dateWindow) bits.push(`dated ${c.dateWindow.start} through ${c.dateWindow.end}`);
+  return bits.join("; ");
 }
 
 export function buildIndex(activities: Activity[]): IndexedActivity[] {
@@ -848,7 +946,7 @@ export function searchActivities(
   limit = 200,
   now?: Date,
 ): SearchHit[] {
-  const { intent, dateWindow, remainingTokens, isDeterministic, distanceBand } = detectSuperlativeIntent(query, now);
+  const { intent, dateWindow, remainingTokens, isDeterministic, distanceBand, place } = detectSuperlativeIntent(query, now);
   const tokens = Array.from(new Set(remainingTokens.length > 0 ? remainingTokens : tokenize(query)));
 
   let candidates: IndexedActivity[] = index;
@@ -909,7 +1007,11 @@ export function searchActivities(
     }
   }
 
-  // Date window is already applied. Band filter is next, still before sorting.
+  if (place) {
+    candidates = candidates.filter(({ activity }) => activityMatchesPlace(activity, place));
+  }
+
+  // Date window is already applied. Place, then band, still before sorting.
   if (
     distanceBand &&
     intent &&
@@ -1001,11 +1103,15 @@ function applySuperlativeSorting(
       });
     } else {
       // No band: pace is the only comparison that isn't "shortest workout".
-      sorted.sort((a, b) => {
+      // Drop strides and short shakeouts so "fastest run" is a real run.
+      const paced = sorted.filter((hit) => hit.activity.distance_m >= MIN_UNBANDED_FASTEST_M);
+      const pool = paced.length > 0 ? paced : sorted;
+      pool.sort((a, b) => {
         const paceA = a.activity.distance_m > 0 ? a.activity.moving_time_s / a.activity.distance_m : Infinity;
         const paceB = b.activity.distance_m > 0 ? b.activity.moving_time_s / b.activity.distance_m : Infinity;
         return paceA - paceB;
       });
+      return pool.slice(0, limit);
     }
   } else if (intent.kind === "most_intervals") {
     // Sort by interval_score (desc), then hard_lap_count (desc), then has_intervals
@@ -1084,7 +1190,9 @@ function runPacePerMile(a: Activity): string {
     ? a.average_speed
     : a.distance_m / a.moving_time_s;
   if (!Number.isFinite(speedMps) || speedMps <= 0) return "";
-  return `${formatDuration(Math.round(1609.344 / speedMps))} /mi`;
+  const secondsPerMile = Math.round(1609.344 / speedMps);
+  const quality = secondsPerMile <= 7 * 60 + 30 ? "fast pace" : secondsPerMile <= 9 * 60 ? "moderate pace" : "easy pace";
+  return `${formatDuration(secondsPerMile)} /mi, ${quality}`;
 }
 
 function rankingDescription(description: string | undefined): string {
