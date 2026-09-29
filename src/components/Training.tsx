@@ -9,6 +9,7 @@ import {
   BANDS,
   BAND_COLOR,
   DATE_RANGES,
+  HORIZONS,
   SPORTS,
   fmtTv,
   tv,
@@ -36,9 +37,11 @@ const BAND_RANGE: Record<Band, string> = {
   Erratic: "80+",
 };
 
+const SHORT_NAME: Record<Horizon, string> = { short: "Short", medium: "Medium", long: "Long" };
+
 export function Training() {
   const [sport, setSport] = useState<Sport>("run");
-  const horizon: Horizon = "long"; // Fixed to 52-week rolling window for meaningful signal
+  const [horizon, setHorizon] = useState<Horizon>("medium"); // Preserve the pre-#18 rolling default
   const [dateRange, setDateRange] = useState<DateRange>("52wk"); // Default to 52 weeks viewport
   const [showHours, setShowHours] = useState(false);
   const current = tv.current[sport];
@@ -98,23 +101,45 @@ export function Training() {
           </button>
         </div>
 
+        <div className={styles.rangeControls}>
+          <span className={styles.controlLabel} id="date-range-label">
+            Chart range
+          </span>
+          <div className={styles.chips} role="group" aria-labelledby="date-range-label">
+            {DATE_RANGES.map((range) => (
+              <Chip
+                key={range.id}
+                active={dateRange === range.id}
+                onClick={() => setDateRange(range.id)}
+              >
+                {range.label}
+              </Chip>
+            ))}
+          </div>
+        </div>
+
+        <p className={styles.controlLabel} id="rolling-average-label">
+          Rolling average
+        </p>
         <div className={styles.folder}>
-          <div className={styles.tabs} role="tablist" aria-label="Choose a date range">
-            {DATE_RANGES.map((range) => {
-              const p = current[horizon];
-              const active = dateRange === range.id;
+          <div className={styles.tabs} role="tablist" aria-labelledby="rolling-average-label">
+            {HORIZONS.map((h) => {
+              const p = current[h];
+              const active = horizon === h;
               return (
                 <button
-                  key={range.id}
+                  key={h}
                   type="button"
                   role="tab"
-                  id={`tv-tab-${range.id}`}
+                  id={`tv-tab-${h}`}
                   aria-selected={active}
                   aria-controls="tv-panel"
                   className={`${styles.tab} ${active ? styles.tabActive : ""}`}
-                  onClick={() => setDateRange(range.id)}
+                  onClick={() => setHorizon(h)}
                 >
-                  <span className={styles.tabLabel}>{range.label}</span>
+                  <span className={styles.tabLabel}>
+                    {SHORT_NAME[h]} · {tv.horizons[h].weeks} wk
+                  </span>
                   <span className={styles.tabNum} style={{ color: BAND_COLOR[p.band] }}>
                     <AnimatedNumber value={p.tv} format={fmtTv} duration={0.5} />
                   </span>
@@ -136,8 +161,8 @@ export function Training() {
             className={styles.panel}
             role="tabpanel"
             id="tv-panel"
-            aria-labelledby={`tv-tab-${dateRange}`}
-            data-edge={dateRange === "12wk" ? "left" : dateRange === "all" ? "right" : undefined}
+            aria-labelledby={`tv-tab-${horizon}`}
+            data-edge={horizon === "short" ? "left" : horizon === "long" ? "right" : undefined}
           >
             {(() => {
               const rangePreset = DATE_RANGES.find((r) => r.id === dateRange)!;
@@ -180,7 +205,7 @@ export function Training() {
         </div>
 
         <p className={styles.cue}>
-          Pick a date range above; hover or tap the chart to read any week.
+          Choose a rolling average and chart range independently; hover or tap the chart to read any week.
         </p>
       </motion.section>
 
