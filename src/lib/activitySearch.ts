@@ -9,16 +9,18 @@ import {
 } from "./calendar.ts";
 
 /**
- * Additive public-export fields. spencer-brain may not send them yet.
- * `toActivity` copies these keys (and a few aliases); see the PR mapping.
- * Missing fields are left unset and every reader no-ops.
+ * Additive public-export fields. `toActivity` maps the spencer-brain export
+ * (`place_enriched`, `race.distance` / `official_distance_m` / `result_time_s`,
+ * `with.athlete_count`) onto these. Missing fields stay unset.
  */
 export type ActivityRace = {
   event_name?: string;
-  /** Official distance label, e.g. "marathon" or "10k". Export alias: race.distance. */
-  official_distance?: string;
-  /** Official result. Seconds when numeric; a clock string otherwise. */
-  result_time?: number | string;
+  /** Band code from the export: "5k", "10k", "hm", "m", or a longer label. */
+  distance?: string;
+  /** Official race distance in metres. */
+  official_distance_m?: number;
+  /** Official result time in seconds. */
+  result_time_s?: number;
   is_pr?: boolean;
 };
 
@@ -74,8 +76,9 @@ export type Activity = {
   workout_structure?: string;
   /** Gear name, e.g. "Nike Vaporfly". */
   gear?: string;
-  /** Companion names. Lightweight. */
+  /** Companion names, when the export sends them. Brain's `with` is a count, mapped to `athlete_count`. */
   with?: string[];
+  /** From `with.athlete_count` or a top-level `athlete_count`. */
   athlete_count?: number;
   /** Offline Jev Score, 0 (routine) to 3 (standout). From src/activity-grades.json; see scripts/grade-activities.mjs. */
   standout?: number;
@@ -304,7 +307,7 @@ function derivedTags(a: Activity): string[] {
   if (a.place_region) tags.push(...tokenize(a.place_region));
   if (a.place_country) tags.push(...tokenize(a.place_country));
   if (a.race?.event_name) tags.push(...tokenize(a.race.event_name));
-  if (a.race?.official_distance) tags.push(...tokenize(a.race.official_distance));
+  tags.push(...raceBandTags(a.race?.distance));
   if (a.race?.is_pr) tags.push("pr", "prs", "pb", "pbs");
   if (a.workout_structure) tags.push(...workoutStructureTags(a.workout_structure));
   if (a.gear) tags.push(...tokenize(a.gear));
@@ -324,6 +327,24 @@ function derivedTags(a: Activity): string[] {
     if (watts >= 250) tags.push("high power");
   }
   return tags;
+}
+
+/** "hm" and "m" are band codes, not the letters themselves. "m" must not become a keyword. */
+function raceDistanceLabel(distance: string | undefined): string {
+  if (!distance) return "";
+  const code = distance.toLowerCase();
+  if (code === "hm") return "half marathon";
+  if (code === "m") return "marathon";
+  return distance;
+}
+
+function raceBandTags(distance: string | undefined): string[] {
+  if (!distance) return [];
+  const code = distance.toLowerCase();
+  if (code === "5k" || code === "10k") return [code];
+  if (code === "hm") return ["hm", "half", "marathon"];
+  if (code === "m") return ["marathon"];
+  return tokenize(distance);
 }
 
 function tokenize(text: string): string[] {
@@ -2318,6 +2339,7 @@ export type ActivityFacts = {
   description?: string;
   race_name?: string;
   race_distance?: string;
+  official_distance_m?: number;
   race_time?: string;
   race_pr?: true;
   workout_structure?: string;
@@ -2382,12 +2404,10 @@ export function activityFacts(a: Activity, now?: Date): ActivityFacts {
   if (a.best_watts_20m) facts.best_20min_watts = Math.round(a.best_watts_20m);
   if (notes) facts.description = notes;
   if (a.race?.event_name) facts.race_name = a.race.event_name;
-  if (a.race?.official_distance) facts.race_distance = a.race.official_distance;
-  if (a.race?.result_time != null && a.race.result_time !== "") {
-    facts.race_time = typeof a.race.result_time === "number"
-      ? formatDuration(Math.round(a.race.result_time))
-      : a.race.result_time;
-  }
+  const raceDistance = raceDistanceLabel(a.race?.distance);
+  if (raceDistance) facts.race_distance = raceDistance;
+  if (a.race?.official_distance_m != null) facts.official_distance_m = a.race.official_distance_m;
+  if (a.race?.result_time_s != null) facts.race_time = formatDuration(Math.round(a.race.result_time_s));
   if (a.race?.is_pr) facts.race_pr = true;
   if (a.workout_structure) facts.workout_structure = a.workout_structure;
   if (a.gear) facts.gear = a.gear;
@@ -2689,10 +2709,9 @@ export function describeActivity(a: Activity, now?: Date): string {
   else if (a.place) parts.push(a.place);
   else if (where) parts.push(where);
   if (a.race?.event_name) parts.push(`race ${a.race.event_name}`);
-  if (a.race?.official_distance) parts.push(a.race.official_distance);
-  if (a.race?.result_time != null && a.race.result_time !== "") {
-    parts.push(typeof a.race.result_time === "number" ? formatDuration(Math.round(a.race.result_time)) : a.race.result_time);
-  }
+  const raceDistance = raceDistanceLabel(a.race?.distance);
+  if (raceDistance) parts.push(raceDistance);
+  if (a.race?.result_time_s != null) parts.push(formatDuration(Math.round(a.race.result_time_s)));
   if (a.race?.is_pr) parts.push("PR");
   if (a.workout_structure) parts.push(a.workout_structure);
   if (a.gear) parts.push(`gear ${a.gear}`);

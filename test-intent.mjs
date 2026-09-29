@@ -120,7 +120,7 @@ const activities = [
     distance_m: 11000,
     moving_time_s: 4000,
     place: "Chicago",
-    race: { event_name: "Bix 7", official_distance: "7 mi", result_time: 3000, is_pr: true },
+    race: { event_name: "Bix 7", distance: "10k", official_distance_m: 10000, result_time_s: 3000, is_pr: true },
   }),
   act({ id: 85, name: "PR shakeout", start_date_local: "2020-07-03T08:00:00", distance_m: 5000, moving_time_s: 2000 }),
   act({ id: 86, name: "Doubles", start_date_local: "2020-07-04T08:00:00", distance_m: 8000, moving_time_s: 3200, with: ["Ada"], athlete_count: 2 }),
@@ -1181,7 +1181,7 @@ const richFacts = activityFacts(
     place_region: "Massachusetts",
     place_country: "United States",
     description: "Perfect day",
-    race: { event_name: "Bix 7", official_distance: "7 mi", result_time: 2700, is_pr: true },
+    race: { event_name: "Bix 7", distance: "hm", official_distance_m: 21097, result_time_s: 2700, is_pr: true },
     workout_structure: "8×400m",
     gear: "Vaporfly",
     with: ["Ada"],
@@ -1196,7 +1196,8 @@ check(
     richFacts.place_country === "United States" &&
     richFacts.description === "Perfect day" &&
     richFacts.race_name === "Bix 7" &&
-    richFacts.race_distance === "7 mi" &&
+    richFacts.race_distance === "half marathon" &&
+    richFacts.official_distance_m === 21097 &&
     richFacts.race_time === "45:00" &&
     richFacts.race_pr === true &&
     richFacts.workout_structure === "8×400m" &&
@@ -1216,7 +1217,7 @@ const richProse = describeActivity(
     moving_time_s: 10800,
     place_city: "Boston",
     place_country: "United States",
-    race: { event_name: "Bix 7", official_distance: "7 mi", result_time: "45:12", is_pr: true },
+    race: { event_name: "Bix 7", distance: "7 mi", official_distance_m: 11265, result_time_s: 2712, is_pr: true },
     workout_structure: "8×400m",
     gear: "Vaporfly",
     with: ["Ada", "Ben"],
@@ -1251,7 +1252,7 @@ const nestedPlace = toActivity({
   sport_type: "Run",
   start_date_local: "2025-12-25T08:00:00Z",
   place: { city: "Chicago", region: "Illinois", country: "United States", lat: 41.88, lng: -87.63 },
-  race: { event_name: "CHI", distance: "marathon", result_time: 10800, is_pr: false },
+  race: { event_name: "CHI", distance: "m", official_distance_m: 42195, result_time_s: 10800, is_pr: false },
   workout_structure: " 8×400m ",
   gear: { name: " Vaporfly " },
   with: ["Ada", "  "],
@@ -1270,8 +1271,9 @@ check(
     nestedPlace.lng === undefined &&
     nestedPlace.start_latlng === undefined &&
     nestedPlace.race?.event_name === "CHI" &&
-    nestedPlace.race?.official_distance === "marathon" &&
-    nestedPlace.race?.result_time === 10800 &&
+    nestedPlace.race?.distance === "m" &&
+    nestedPlace.race?.official_distance_m === 42195 &&
+    nestedPlace.race?.result_time_s === 10800 &&
     nestedPlace.race?.is_pr === false &&
     nestedPlace.workout_structure === "8×400m" &&
     nestedPlace.gear === "Vaporfly" &&
@@ -1304,6 +1306,121 @@ check(
   "toActivity drops a virtual activity's structured place and keeps gear",
   !("place" in virtualNested) && !("place_city" in virtualNested) && !("place_country" in virtualNested) && virtualNested.gear === "Kicker",
   JSON.stringify(virtualNested),
+);
+
+const brain = toActivity({
+  id: 900,
+  name: "Goal day",
+  type: "Run",
+  start_date_local: "2024-10-13T08:00:00",
+  distance: 42200,
+  moving_time: 11000,
+  total_elevation_gain: 50,
+  workout_type: null,
+  trainer: false,
+  place: "Boston",
+  place_source: "name",
+  place_enriched: { city: "Chicago", region: "Illinois", country: "United States", lat: 41.88, lng: -87.63 },
+  description: "  Goal race  ",
+  race: {
+    event_name: "Chicago Marathon",
+    distance: "m",
+    official_distance_m: 42195,
+    result_time_s: 10800,
+    is_pr: true,
+  },
+  workout_structure: "8×400m",
+  gear: ["Nike Vaporfly"],
+  with: { athlete_count: 3 },
+});
+const brainSolo = toActivity({
+  id: 901,
+  name: "Easy",
+  sport_type: "Run",
+  start_date_local: "2024-10-14T08:00:00",
+  distance: 8000,
+  moving_time: 3000,
+  place: "Chicago",
+  place_source: "name",
+  athlete_count: 1,
+});
+const flatPlace = toActivity({
+  id: 902,
+  name: "Austin",
+  sport_type: "Run",
+  start_date_local: "2024-05-01T08:00:00",
+  distance: 5000,
+  moving_time: 1800,
+  place_city: "Austin",
+  place_region: "Texas",
+  place_country: "United States",
+});
+const brainBoston = toActivity({
+  id: 904,
+  name: "Charles",
+  sport_type: "Run",
+  start_date_local: "2024-08-01T08:00:00",
+  distance: 5000,
+  moving_time: 1800,
+  place_enriched: { city: "Boston", region: "Massachusetts", country: "United States" },
+});
+const brainIndex = buildIndex([brain, brainSolo, flatPlace, brainBoston]);
+const brainIds = (query) => searchActivities(brainIndex, query, 20, testClock).map((hit) => hit.activity.id);
+check(
+  "toActivity maps a brain-shaped place, race, gear list, and with.athlete_count",
+  brain.place === "Boston" &&
+    brain.place_source === "name" &&
+    brain.place_city === "Chicago" &&
+    brain.place_region === "Illinois" &&
+    brain.place_country === "United States" &&
+    brain.lat === undefined &&
+    brain.lng === undefined &&
+    brain.description === "Goal race" &&
+    brain.race?.event_name === "Chicago Marathon" &&
+    brain.race?.distance === "m" &&
+    brain.race?.official_distance_m === 42195 &&
+    brain.race?.result_time_s === 10800 &&
+    brain.race?.is_pr === true &&
+    brain.gear === "Nike Vaporfly" &&
+    brain.athlete_count === 3 &&
+    !("with" in brain) &&
+    brainSolo.athlete_count === 1 &&
+    flatPlace.place_city === "Austin" &&
+    flatPlace.place_region === "Texas",
+  JSON.stringify(brain),
+);
+check(
+  "a brain place_enriched city wins the place filter over the name-derived place string",
+  brainIds("runs in Chicago").includes(900) &&
+    brainIds("runs in Chicago").includes(901) &&
+    !brainIds("runs in Chicago").includes(904) &&
+    brainIds("runs in Boston").includes(904) &&
+    !brainIds("runs in Boston").includes(900) &&
+    brainIds("runs in Austin").includes(902),
+  `chicago [${brainIds("runs in Chicago").join(", ")}] boston [${brainIds("runs in Boston").join(", ")}] austin [${brainIds("runs in Austin").join(", ")}]`,
+);
+check(
+  "a brain race record is a race, and with.athlete_count is the companion signal",
+  JSON.stringify(brainIds("Chicago races")) === "[900]" &&
+    brainIds("group").includes(900) &&
+    !brainIds("group").includes(901) &&
+    describeActivity(brain, testClock).includes("3 athletes") &&
+    describeActivity(brain, testClock).includes("marathon") &&
+    describeActivity(brain, testClock).includes("3:00:00"),
+  `races [${brainIds("Chicago races").join(", ")}] group [${brainIds("group").join(", ")}] ${describeActivity(brain, testClock)}`,
+);
+const virtualEnriched = toActivity({
+  id: 903,
+  name: "Zwift",
+  sport_type: "VirtualRide",
+  start_date_local: "2025-01-01T08:00:00Z",
+  place: "London",
+  place_enriched: { city: "London", region: "England", country: "United Kingdom" },
+});
+check(
+  "toActivity drops place_enriched on a virtual activity",
+  !("place" in virtualEnriched) && !("place_city" in virtualEnriched) && !("place_country" in virtualEnriched),
+  JSON.stringify(virtualEnriched),
 );
 
 console.log();

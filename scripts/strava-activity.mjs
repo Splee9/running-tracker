@@ -17,6 +17,10 @@ function nestedPlace(a) {
   return a.place && typeof a.place === "object" ? a.place : null;
 }
 
+function enrichedPlace(a) {
+  return a.place_enriched && typeof a.place_enriched === "object" ? a.place_enriched : null;
+}
+
 function placeString(a) {
   if (typeof a.place === "string") return a.place;
   return cleanString(nestedPlace(a)?.city);
@@ -34,13 +38,15 @@ function placeFor(a, sportType) {
   return raw;
 }
 
-// GPS names only. Coordinates on a nested place object are dropped.
+// GPS names only. Coordinates on place_enriched or a nested place object are dropped.
+// place_enriched is the brain export. Flat place_city / place_region / place_country still fill gaps.
 function structuredPlace(a, sportType) {
   if (a.trainer || sportType.startsWith("Virtual")) return {};
+  const enriched = enrichedPlace(a);
   const nested = nestedPlace(a);
-  const city = cleanString(a.place_city ?? a.city ?? nested?.city);
-  const region = cleanString(a.place_region ?? a.region ?? nested?.region);
-  const country = cleanString(a.place_country ?? a.country ?? nested?.country);
+  const city = cleanString(enriched?.city ?? a.place_city ?? a.city ?? nested?.city);
+  const region = cleanString(enriched?.region ?? a.place_region ?? a.region ?? nested?.region);
+  const country = cleanString(enriched?.country ?? a.place_country ?? a.country ?? nested?.country);
   return {
     ...(city ? { place_city: city } : {}),
     ...(region ? { place_region: region } : {}),
@@ -54,34 +60,41 @@ function raceFor(a) {
   const race = {};
   const eventName = cleanString(raw.event_name);
   if (eventName) race.event_name = eventName;
-  const distance = cleanString(raw.official_distance ?? raw.distance);
-  if (distance) race.official_distance = distance;
-  const time = raw.result_time;
-  if (typeof time === "number" && Number.isFinite(time)) race.result_time = time;
-  else if (typeof time === "string" && time.trim()) race.result_time = time.trim();
+  // Band code ("5k", "hm", "m") or a longer label. Not the activity's metre distance.
+  const band = cleanString(raw.distance);
+  if (band) race.distance = band;
+  const officialM = raw.official_distance_m;
+  if (typeof officialM === "number" && Number.isFinite(officialM)) race.official_distance_m = officialM;
+  const time = raw.result_time_s;
+  if (typeof time === "number" && Number.isFinite(time)) race.result_time_s = time;
   if (typeof raw.is_pr === "boolean") race.is_pr = raw.is_pr;
   return Object.keys(race).length > 0 ? race : undefined;
 }
 
 function gearFor(a) {
   if (typeof a.gear === "string") return cleanString(a.gear);
+  if (Array.isArray(a.gear)) {
+    const names = a.gear.map((item) => cleanString(typeof item === "string" ? item : item?.name)).filter(Boolean);
+    return names.length > 0 ? names.join(", ") : undefined;
+  }
   if (a.gear && typeof a.gear === "object") return cleanString(a.gear.name);
   return undefined;
 }
 
+function positiveCount(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
 function companionsFor(a) {
-  let names;
-  if (Array.isArray(a.with)) {
-    names = a.with.map(cleanString).filter(Boolean);
-  } else {
-    const one = cleanString(a.with);
-    if (one) names = [one];
-  }
-  const count = typeof a.athlete_count === "number" && Number.isFinite(a.athlete_count) && a.athlete_count > 0
-    ? a.athlete_count
+  const withRecord = a.with && typeof a.with === "object" && !Array.isArray(a.with) ? a.with : null;
+  const names = Array.isArray(a.with)
+    ? a.with.map(cleanString).filter(Boolean)
     : undefined;
+  const one = typeof a.with === "string" ? cleanString(a.with) : undefined;
+  const count = positiveCount(withRecord?.athlete_count) ?? positiveCount(a.athlete_count);
   return {
     ...(names && names.length > 0 ? { with: names } : {}),
+    ...(one ? { with: [one] } : {}),
     ...(count != null ? { athlete_count: count } : {}),
   };
 }

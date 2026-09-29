@@ -97,8 +97,9 @@ export type LabeledActivity = {
   /** Additive public-export race record. Missing means "use the stimulus label". */
   race?: {
     event_name?: string;
-    official_distance?: string;
-    result_time?: number | string;
+    distance?: string;
+    official_distance_m?: number;
+    result_time_s?: number;
     is_pr?: boolean;
   };
 };
@@ -303,8 +304,9 @@ function hasRaceRecord(activity: LabeledActivity): boolean {
   if (!race) return false;
   return Boolean(
     race.event_name ||
-    race.official_distance ||
-    race.result_time != null ||
+    race.distance ||
+    race.official_distance_m != null ||
+    race.result_time_s != null ||
     typeof race.is_pr === "boolean",
   );
 }
