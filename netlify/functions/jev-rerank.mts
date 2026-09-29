@@ -1,6 +1,7 @@
 // POST /.netlify/functions/jev-rerank  { query: string, ids: number[] } → { scores: { [id]: p } }
-// Reranks an Activity Lookup shortlist with Jev: one noul per (query, activity) pair,
-// whose calibrated probability is comparable across candidates and used as the sort key.
+// Scores an Activity Lookup shortlist with Jev: one noul per (query, activity) pair.
+// The calibrated probability is the badge on every hit. The client reorders by it
+// only for non-deterministic queries that clear the confidence floor.
 
 import snapshot from "../../src/activities.json" with { type: "json" };
 import { describeActivity, type Activity } from "../../src/lib/activitySearch.ts";
@@ -82,7 +83,7 @@ async function scorePair(
         matches: {
           type: "noul",
           instructions:
-            "An athlete is searching their own training log. Is this activity one they are looking for with this search query? Judge the activity's actual sport, date, distance, climbing, workout type, stimulus, place and intervals, not just the words in its name. For pure superlative queries (e.g., 'longest run' with no remaining keywords), client-side sorting handles ranking, so rerank results are not used.",
+            "An athlete is searching their own training log. Is this activity one they are looking for with this search query? Judge the activity's actual sport, date, year, recency, distance, pace, climbing, workout type, stimulus, place, intervals, and the athlete's description when one is included — not just the words in its name.",
           criteria: {
             true: "Every part of the query holds for this activity, allowing for typos and loose wording: the sport matches if one is named (a run is not a ride), the year or month matches if one is given, and descriptions like long, hilly, race or quality session are true of it (e.g. a marathon or any run well over 20 km is a long run; a race is an activity marked race, not one that merely mentions racing).",
             false: "Some part of the query is not true of this activity: it is a different sport, from a different year, too short to be long, too flat to be hilly, not actually a race or a workout, or it only shares an incidental word with the query.",

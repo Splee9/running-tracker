@@ -39,7 +39,7 @@ const SPORT_FILTERS: { key: SportFilter; label: string }[] = [
   { key: "other", label: "Other" },
 ];
 
-const EXAMPLES = ["longest run", "most intervals", "Chicago races", "quality session", "hilly ride", "zwift"];
+const EXAMPLES = ["longest run", "fastest 10k", "most intervals", "Chicago races", "quality session", "hilly ride"];
 
 const rise = {
   hidden: { opacity: 0, y: 16 },
@@ -96,11 +96,12 @@ export function ActivityLookup() {
   );
   const candidateKey = candidateIds.join(",");
 
-  // Skip Jev for deterministic intents (pure superlatives and place filters)
-  const shouldUseJev = jevAvailable && !intentClassification?.isDeterministic;
+  // Score every shortlist, including deterministic metric and place queries.
+  // Those keep localHits order; only semantic queries may reorder.
+  const shouldScoreWithJev = jevAvailable;
 
   useEffect(() => {
-    if (!shouldUseJev || !trimmed || candidateIds.length === 0) {
+    if (!shouldScoreWithJev || !trimmed || candidateIds.length === 0) {
       setJev({ status: "idle" });
       return;
     }
@@ -132,7 +133,7 @@ export function ActivityLookup() {
       controller.abort();
     };
     // candidateKey stands in for candidateIds so identical shortlists don't refetch.
-  }, [shouldUseJev, trimmed, candidateKey]);
+  }, [shouldScoreWithJev, trimmed, candidateKey]);
 
   const jevScores = jev.status === "done" && jev.query === trimmed ? jev.scores : null;
 
@@ -149,7 +150,7 @@ export function ActivityLookup() {
         .filter((a) => matchesSport(a, sport))
         .map((activity): SearchHit => ({ activity, score: 0, kind: "keyword", matched: [] }));
     }
-    // For deterministic intents, don't apply Jev reranking - use local search order
+    // Deterministic metric and place order stays put even when Jev scores are in.
     if (intentClassification?.isDeterministic || !jevScores) return localHits;
     
     // Check if any Jev score meets the confidence floor
@@ -185,7 +186,10 @@ export function ActivityLookup() {
       if (intent.kind === "longest") {
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by distance`;
       } else if (intent.kind === "fastest") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by pace`;
+        const band = intentClassification.distanceBand;
+        status = band
+          ? `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · ${band.label} · sorted by time`
+          : `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by pace`;
       } else if (intent.kind === "most_intervals") {
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by interval intensity`;
       } else if (intent.kind === "hilliest") {
@@ -212,6 +216,11 @@ export function ActivityLookup() {
       }
     } else {
       status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}`;
+    }
+    if (jevAvailable) {
+      if (jevScores) status += " · Jev scored";
+      else if (jev.status === "error" && jev.query === trimmed) status += " · Jev unavailable";
+      else if (candidateIds.length > 0) status += " · scoring with Jev";
     }
   } else {
     // Semantic search with optional Jev
@@ -241,9 +250,8 @@ export function ActivityLookup() {
         </motion.h1>
         <motion.p className={styles.intro} variants={rise} custom={2} initial="hidden" animate="show">
           Search every logged activity by name, stimulus, place, or workout type. Keyword and fuzzy
-          matching run as you type; then <b>Jev</b> reranks the shortlist by what you meant, not
-          just what you typed. Try superlatives like "longest run" or "most intervals", or combine
-          place with type like "Chicago races".
+          matching run as you type. <b>Jev</b> then scores the shortlist. Metric searches such as
+          "longest run" or "fastest 10k" keep that order; other searches rerank when Jev is confident.
         </motion.p>
       </header>
 
@@ -313,6 +321,7 @@ export function ActivityLookup() {
                 showMatch={Boolean(trimmed)}
                 jevScore={jevScores?.[hit.activity.id]}
                 jevLowConfidence={jevLowConfidence}
+                metricOrder={Boolean(intentClassification?.isDeterministic)}
               />
             ))}
           </ul>
@@ -343,12 +352,14 @@ function ActivityRow({
   showMatch,
   jevScore,
   jevLowConfidence,
+  metricOrder,
 }: {
   hit: SearchHit;
   units: Units;
   showMatch: boolean;
   jevScore?: number;
   jevLowConfidence?: boolean;
+  metricOrder?: boolean;
 }) {
   const a = hit.activity;
   const date = new Date(a.start_date_local.replace(/Z$/, ""));
@@ -462,9 +473,13 @@ function ActivityRow({
                         : "var(--status-neutral)",
                   opacity: jevLowConfidence ? 0.5 : 1
                 }}
-                title={jevLowConfidence 
-                  ? "Jev's calibrated probability (low confidence - not used for ranking)"
-                  : "Jev's calibrated probability that this activity matches your search"}
+                title={
+                  metricOrder
+                    ? "Jev match score. This list stays in metric order."
+                    : jevLowConfidence
+                      ? "Jev's calibrated probability (low confidence - not used for ranking)"
+                      : "Jev's calibrated probability that this activity matches your search"
+                }
               >
                 Jev {Math.round(jevScore * 100)}%
               </span>
