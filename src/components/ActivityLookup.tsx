@@ -39,7 +39,7 @@ const SPORT_FILTERS: { key: SportFilter; label: string }[] = [
   { key: "other", label: "Other" },
 ];
 
-const EXAMPLES = ["longest run", "fastest 10k", "most intervals", "Chicago races", "quality session", "hilly ride"];
+const EXAMPLES = ["longest run", "fastest run in Chicago", "speedy runs", "most intervals", "Chicago races", "hilly ride"];
 
 const rise = {
   hidden: { opacity: 0, y: 16 },
@@ -182,14 +182,15 @@ export function ActivityLookup() {
   } else if (intentClassification?.isDeterministic) {
     // Deterministic intent status
     const intent = intentClassification.intent;
+    const where = intentClassification.place ? ` · ${intentClassification.place}` : "";
     if (intent) {
       if (intent.kind === "longest") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by distance`;
+        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${where} · sorted by distance`;
       } else if (intent.kind === "fastest") {
         const band = intentClassification.distanceBand;
         status = band
-          ? `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · ${band.label} · sorted by time`
-          : `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by pace`;
+          ? `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${where} · ${band.label} · sorted by time`
+          : `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${where} · sorted by pace`;
       } else if (intent.kind === "most_intervals") {
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by interval intensity`;
       } else if (intent.kind === "hilliest") {
@@ -210,7 +211,7 @@ export function ActivityLookup() {
         };
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by ${durationLabels[intent.field]} power`;
       } else if (intent.kind === "list") {
-        status = `${results.length.toLocaleString()} activit${results.length === 1 ? "y" : "ies"} · most recent first`;
+        status = `${results.length.toLocaleString()} activit${results.length === 1 ? "y" : "ies"}${where} · most recent first`;
       } else {
         status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · deterministic sort`;
       }
