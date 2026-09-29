@@ -271,12 +271,16 @@ function derivedTags(a: Activity): string[] {
   if (a.race) {
     tags.push("race");
     if (a.race.distance) tags.push(a.race.distance);
-    if (a.race.is_pr) tags.push("pr", "pb");
+    if (a.race.is_pr) tags.push("pr", "pb", "personal", "best", "record");
   }
   if (a.workout_structure) {
     // "8×400m" is also typed "8x400m", "8 x 400m", or just "400m repeats".
     const structure = a.workout_structure.replace(/×/g, "x");
     tags.push(structure, ...tokenize(structure.replace(/x/g, " ")));
+    // "4×1mi" is also "mile repeats"; "5×1km" is "kilometer repeats"; "8×400m" is "400 meter".
+    // The rep distance's number stands alone too, so "2 mile repeats" finds "3×2mi".
+    const rep = /(\d+)(mi|km|m)$/.exec(a.workout_structure);
+    if (rep) tags.push(rep[1], ...STRUCTURE_UNIT_WORDS[rep[2]]);
   }
   if (a.gear) tags.push(...a.gear.flatMap((name) => tokenize(name)));
   if (a.athlete_count && a.athlete_count > 1) tags.push("group");
@@ -294,6 +298,12 @@ function derivedTags(a: Activity): string[] {
   }
   return tags;
 }
+
+const STRUCTURE_UNIT_WORDS: Record<string, string[]> = {
+  mi: ["mile", "miles"],
+  km: ["k", "kilometer", "kilometers"],
+  m: ["meter", "meters"],
+};
 
 function tokenize(text: string): string[] {
   return text
@@ -1020,12 +1030,19 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   // Detect fastest
   if (!intent) {
     let fastestIdx = tokens.findIndex(t => SPEED_WORDS.includes(t));
+    let personalIdx = -1;
     if (fastestIdx < 0 && parseDistanceBand(query).band) {
       fastestIdx = tokens.findIndex(t => PR_WORDS.includes(t));
+      // "personal best half marathon" / "personal record 10k" are a PR too.
+      if (fastestIdx < 0) {
+        personalIdx = tokens.findIndex((t, i) => t === "personal" && ["best", "record", "records", "bests"].includes(tokens[i + 1]));
+        if (personalIdx >= 0) fastestIdx = personalIdx + 1;
+      }
     }
     if (fastestIdx >= 0) {
       intent = { kind: "fastest" };
       consumedIndices.add(fastestIdx);
+      if (personalIdx >= 0) consumedIndices.add(personalIdx);
       const sportIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
       if (sportIdx >= 0) {
         intent.sport = "run";
@@ -1654,8 +1671,8 @@ function scoreToken(token: string, words: string[]): { score: number; fuzzy: boo
   let fuzzy = false;
   // Years and distances ("2025", "10k") must not fuzz into their neighbours.
   const maxEdits = /\d/.test(token) ? 0 : token.length >= 7 ? 2 : token.length >= 4 ? 1 : 0;
-  // "marathons" names a marathon. A plural is not a typo, so it must not read as fuzzy.
-  const singular = token.length >= 4 && token.endsWith("s") ? token.slice(0, -1) : null;
+  // "marathons" names a marathon and "PBs" a PB. A plural is not a typo, so it must not read as fuzzy.
+  const singular = token.length >= 3 && token.endsWith("s") ? token.slice(0, -1) : null;
   for (const w of words) {
     if (w === token) return { score: 1, fuzzy: false };
     if (singular && w === singular) {

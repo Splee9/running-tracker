@@ -1110,6 +1110,22 @@ check(
   JSON.stringify(v5Facts),
 );
 
+const unitIndex = buildIndex([
+  act({ id: 150, name: "Quality Session", start_date_local: "2026-09-19T08:00:00", distance_m: 20000, moving_time_s: 5600, primary_stimulus: "quality", modifiers: ["intervals"], workout_structure: "3×2mi" }),
+  act({ id: 151, name: "Quality Session", start_date_local: "2026-09-12T08:00:00", distance_m: 16000, moving_time_s: 4500, primary_stimulus: "quality", modifiers: ["intervals"], workout_structure: "4×1mi" }),
+  act({ id: 152, name: "Quality Session", start_date_local: "2026-09-05T08:00:00", distance_m: 14000, moving_time_s: 4000, primary_stimulus: "quality", modifiers: ["intervals"], workout_structure: "8×400m" }),
+  act({ id: 153, name: "Indy Marathon", start_date_local: "2025-11-08T08:00:00", distance_m: 42500, moving_time_s: 9959, primary_stimulus: "race", race: { distance: "marathon", is_pr: true } }),
+  act({ id: 154, name: "Chicago Marathon", start_date_local: "2024-10-13T08:00:00", distance_m: 42900, moving_time_s: 10745, primary_stimulus: "race", race: { distance: "marathon", is_pr: false } }),
+]);
+const unitIds = (query) => searchActivities(unitIndex, query, 50, testClock).map((hit) => hit.activity.id);
+check("mile intervals finds sessions stored as ×1mi and ×2mi", JSON.stringify(unitIds("mile intervals").sort()) === "[150,151]", JSON.stringify(unitIds("mile intervals")));
+check("2 mile repeats puts the ×2mi session first", unitIds("2 mile repeats")[0] === 150, JSON.stringify(unitIds("2 mile repeats")));
+check("400 meter repeats finds ×400m", unitIds("400 meter repeats")[0] === 152, JSON.stringify(unitIds("400 meter repeats")));
+check("PBs finds the current PR only", JSON.stringify(unitIds("PBs")) === "[153]", JSON.stringify(unitIds("PBs")));
+check("personal records finds the current PR", unitIds("personal records")[0] === 153, JSON.stringify(unitIds("personal records")));
+const personalBest = classifyIntent("personal best marathon", testClock);
+check("personal best plus a distance is the fastest at it", personalBest.intent?.kind === "fastest" && personalBest.isDeterministic, JSON.stringify(personalBest));
+
 const shamrock = toActivity({ id: 120, name: "Shamrock Shuffle 8km", sport_type: "Run", start_date_local: "2025-03-23T08:00:00Z", place: "Washington DC", place_source: "name" });
 check("toActivity corrects the Shamrock Shuffle to Chicago", shamrock.place === "Chicago", JSON.stringify(shamrock));
 const zwift = toActivity({ id: 121, name: "Zwift - Easy Ride in New York", sport_type: "VirtualRide", start_date_local: "2025-01-01T08:00:00Z", place: "New York", place_source: "name" });
