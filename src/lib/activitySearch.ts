@@ -36,11 +36,22 @@ export type Activity = {
 
 export type MatchKind = "keyword" | "fuzzy";
 
+export type ShortlistBranchId =
+  | "metric"
+  | "date-list"
+  | "place-list"
+  | "place-longest"
+  | "keyword";
+
 export type SearchHit = {
   activity: Activity;
   score: number;
   kind: MatchKind;
   matched: string[];
+  /** Which fan-out branch first claimed this activity. */
+  branch?: ShortlistBranchId;
+  /** Metric and list branches stay in their own order. Jev may reorder keyword hits. */
+  locked?: boolean;
 };
 
 type IndexedActivity = {
@@ -1078,105 +1089,158 @@ function scoreToken(token: string, words: string[]): { score: number; fuzzy: boo
   return { score: best, fuzzy };
 }
 
-export function searchActivities(
-  index: IndexedActivity[],
-  query: string,
-  limit = 200,
-  now?: Date,
-): SearchHit[] {
-  const { intent, dateWindow, remainingTokens, isDeterministic, distanceBand, place } = detectSuperlativeIntent(query, now);
-  const tokens = Array.from(new Set(remainingTokens.length > 0 ? remainingTokens : tokenize(query)));
+type ShortlistBranch = {
+  id: ShortlistBranchId;
+  dateWindow: DateWindow | null;
+  place: string | null;
+  sport?: "run" | "ride";
+  distanceBand: DistanceBand | null;
+  filterType?: "race" | "workout";
+  intent: SuperlativeIntent;
+  tokens: string[];
+};
 
-  let candidates: IndexedActivity[] = index;
+function intentSport(intent: SuperlativeIntent): "run" | "ride" | undefined {
+  return intent && "sport" in intent ? intent.sport : undefined;
+}
 
-  // Apply date window filter first (before any other filtering)
-  if (dateWindow) {
-    candidates = candidates.filter(({ activity }) => {
-      const activityDate = activity.start_date_local.slice(0, 10); // YYYY-MM-DD
-      return activityDate >= dateWindow.start && activityDate <= dateWindow.end;
+function isLoosenedMetric(intent: SuperlativeIntent): boolean {
+  return intent?.kind === "fastest" || intent?.kind === "longest";
+}
+
+// One query, several plausible pools. Date, place, and an explicit sport are hard
+// on every branch. Band, pace floor, and keyword leftovers are not: a too-narrow
+// metric branch must not be the only way an activity can appear.
+function buildShortlistBranches(c: IntentClassification, query: string): ShortlistBranch[] {
+  const sport = intentSport(c.intent);
+  const branches: ShortlistBranch[] = [];
+  const metric = c.intent && c.intent.kind !== "list" && c.intent.kind !== "place_filter" ? c.intent : null;
+
+  if (metric) {
+    branches.push({
+      id: "metric",
+      dateWindow: c.dateWindow,
+      place: c.place,
+      sport,
+      distanceBand: c.distanceBand,
+      intent: metric,
+      tokens: [],
     });
   }
 
-  // Apply intent-based filtering
-  if (intent) {
-    if (intent.kind === "place_filter") {
-      candidates = candidates.filter(({ activity }) => {
-        if (!activityMatchesPlace(activity, intent.place)) return false;
-        if (intent.sport === "run" && !isRun(activity)) return false;
-        if (intent.sport === "ride" && !isRide(activity)) return false;
-
-        // Additional filter type checks
-        if (intent.filterType === "race") {
-          return activity.primary_stimulus === "race" || 
-                 activity.workout_type === 1 || 
-                 activity.workout_type === 11 ||
-                 activity.name.toLowerCase().includes("race");
-        }
-        if (intent.filterType === "workout") {
-          return activity.workout_type === 3 || activity.workout_type === 12;
-        }
-        return true;
-      });
-    } else if (intent.kind === "mmp_power") {
-      // Filter to rides that have the MMP field
-      candidates = candidates.filter(({ activity }) => 
-        isRide(activity) && activity[intent.field] != null
-      );
-    } else if (intent.kind === "highest_power") {
-      // Filter to rides that have average_watts or weighted_average_watts
-      candidates = candidates.filter(({ activity }) => 
-        isRide(activity) && (activity.average_watts != null || activity.weighted_average_watts != null)
-      );
-    } else if (intent.kind === "longest" && intent.sport) {
-      candidates = candidates.filter(({ activity }) => 
-        intent.sport === "run" ? isRun(activity) : isRide(activity)
-      );
-    } else if (intent.kind === "fastest" && intent.sport) {
-      candidates = candidates.filter(({ activity }) => 
-        intent.sport === "run" ? isRun(activity) : isRide(activity)
-      );
-    } else if (intent.kind === "list") {
-      // Filter by sport if specified
-      if (intent.sport) {
-        candidates = candidates.filter(({ activity }) => 
-          intent.sport === "run" ? isRun(activity) : isRide(activity)
-        );
-      }
-    }
+  // "Fastest in Chicago" can also mean the longest Chicago run. Same hard place.
+  // Ahead of the date list so an empty distance band falls open onto it.
+  if (c.place && c.intent?.kind === "fastest") {
+    branches.push({
+      id: "place-longest",
+      dateWindow: c.dateWindow,
+      place: c.place,
+      sport,
+      distanceBand: null,
+      intent: { kind: "longest", sport },
+      tokens: [],
+    });
   }
 
-  if (place) {
-    candidates = candidates.filter(({ activity }) => activityMatchesPlace(activity, place));
+  if (c.dateWindow && (c.intent?.kind === "list" || isLoosenedMetric(c.intent))) {
+    branches.push({
+      id: "date-list",
+      dateWindow: c.dateWindow,
+      place: c.place,
+      sport,
+      distanceBand: null,
+      intent: { kind: "list", sport },
+      tokens: [],
+    });
   }
 
-  // Date window is already applied. Place, then band, still before sorting.
-  if (
-    distanceBand &&
-    intent &&
-    (intent.kind === "fastest" || intent.kind === "longest")
-  ) {
-    const sport = intent.sport;
+  if (c.place && !c.dateWindow && (c.intent?.kind === "list" || c.intent?.kind === "place_filter" || isLoosenedMetric(c.intent))) {
+    branches.push({
+      id: "place-list",
+      dateWindow: null,
+      place: c.place,
+      sport,
+      distanceBand: null,
+      filterType: c.intent?.kind === "place_filter" ? c.intent.filterType : undefined,
+      intent: c.intent?.kind === "place_filter" ? c.intent : { kind: "list", sport },
+      tokens: [],
+    });
+  }
+
+  const keywordTokens = c.remainingTokens.length > 0
+    ? Array.from(new Set(c.remainingTokens))
+    : branches.length === 0
+      ? Array.from(new Set(tokenize(query)))
+      : [];
+  if (keywordTokens.length > 0) {
+    branches.push({
+      id: "keyword",
+      dateWindow: c.dateWindow,
+      place: c.place,
+      sport,
+      distanceBand: null,
+      intent: null,
+      tokens: keywordTokens,
+    });
+  }
+
+  return branches;
+}
+
+export function planShortlist(query: string, now?: Date): ShortlistBranchId[] {
+  return buildShortlistBranches(classifyIntent(query, now), query).map((branch) => branch.id);
+}
+
+function inWindow(activity: Activity, window: DateWindow): boolean {
+  const activityDate = activity.start_date_local.slice(0, 10);
+  return activityDate >= window.start && activityDate <= window.end;
+}
+
+function matchesSportChoice(activity: Activity, sport: "run" | "ride" | undefined): boolean {
+  if (!sport) return true;
+  return sport === "run" ? isRun(activity) : isRide(activity);
+}
+
+function applyBranchFilters(index: IndexedActivity[], branch: ShortlistBranch): IndexedActivity[] {
+  let candidates = index;
+  if (branch.dateWindow) {
+    const window = branch.dateWindow;
+    candidates = candidates.filter(({ activity }) => inWindow(activity, window));
+  }
+  if (branch.intent?.kind === "mmp_power") {
+    const field = branch.intent.field;
+    candidates = candidates.filter(({ activity }) => isRide(activity) && activity[field] != null);
+  } else if (branch.intent?.kind === "highest_power") {
+    candidates = candidates.filter(({ activity }) =>
+      isRide(activity) && (activity.average_watts != null || activity.weighted_average_watts != null));
+  } else if (branch.sport) {
+    candidates = candidates.filter(({ activity }) => matchesSportChoice(activity, branch.sport));
+  }
+  if (branch.place) {
+    candidates = candidates.filter(({ activity }) => activityMatchesPlace(activity, branch.place!));
+  }
+  if (branch.filterType === "race") {
+    candidates = candidates.filter(({ activity }) =>
+      activity.primary_stimulus === "race" ||
+      activity.workout_type === 1 ||
+      activity.workout_type === 11 ||
+      activity.name.toLowerCase().includes("race"));
+  } else if (branch.filterType === "workout") {
+    candidates = candidates.filter(({ activity }) => activity.workout_type === 3 || activity.workout_type === 12);
+  }
+  if (branch.distanceBand && branch.intent && (branch.intent.kind === "fastest" || branch.intent.kind === "longest")) {
+    const band = branch.distanceBand;
+    const sport = branch.sport;
     candidates = candidates.filter(({ activity }) => {
-      if (!inDistanceBand(activity.distance_m, distanceBand)) return false;
-      if (distanceBand.runsOnly && sport !== "ride" && !isRun(activity)) return false;
+      if (!inDistanceBand(activity.distance_m, band)) return false;
+      if (band.runsOnly && sport !== "ride" && !isRun(activity)) return false;
       return true;
     });
   }
+  return candidates;
+}
 
-  if (isDeterministic) {
-    // Deterministic intent: no keyword matching, just apply metric/filter sorting
-    const hits = candidates.map(({ activity }): SearchHit => ({
-      activity,
-      score: 1,
-      kind: "keyword",
-      matched: [],
-    }));
-    return applySuperlativeSorting(hits, intent, limit, distanceBand);
-  }
-
-  // Regular keyword/fuzzy search with optional superlative sorting
-  if (tokens.length === 0) return [];
-
+function keywordHits(candidates: IndexedActivity[], tokens: string[]): SearchHit[] {
   const full: SearchHit[] = [];
   const partial: SearchHit[] = [];
   for (const { activity, words } of candidates) {
@@ -1184,12 +1248,12 @@ export function searchActivities(
     let hitCount = 0;
     let anyFuzzy = false;
     const matched: string[] = [];
-    for (const t of tokens) {
-      const { score, fuzzy } = scoreToken(t, words);
+    for (const token of tokens) {
+      const { score, fuzzy } = scoreToken(token, words);
       if (score > 0) {
         hitCount++;
         total += score;
-        matched.push(t);
+        matched.push(token);
         anyFuzzy ||= fuzzy;
       }
     }
@@ -1203,19 +1267,53 @@ export function searchActivities(
     if (hitCount === tokens.length) full.push(hit);
     else if (hitCount * 2 >= tokens.length) partial.push(hit);
   }
-
   const byScore = (a: SearchHit, b: SearchHit) =>
     b.score - a.score || b.activity.start_date_local.localeCompare(a.activity.start_date_local);
   full.sort(byScore);
   partial.sort(byScore);
-  const results = (full.length >= 10 ? full : [...full, ...partial]);
-  
-  // Apply superlative sorting if intent exists
-  if (intent && intent.kind !== "place_filter") {
-    return applySuperlativeSorting(results, intent, limit, distanceBand);
-  }
+  return full.length >= 10 ? full : [...full, ...partial];
+}
 
-  return results.slice(0, limit);
+function runShortlistBranch(index: IndexedActivity[], branch: ShortlistBranch, limit: number): SearchHit[] {
+  const candidates = applyBranchFilters(index, branch);
+  if (branch.id === "keyword") {
+    return keywordHits(candidates, branch.tokens).slice(0, limit);
+  }
+  const hits = candidates.map((entry): SearchHit => ({
+    activity: entry.activity,
+    score: 1,
+    kind: "keyword",
+    matched: [],
+  }));
+  if (branch.intent?.kind === "place_filter") {
+    return hits
+      .sort((a, b) => b.activity.start_date_local.localeCompare(a.activity.start_date_local))
+      .slice(0, limit);
+  }
+  return applySuperlativeSorting(hits, branch.intent, limit, branch.distanceBand);
+}
+
+export function searchActivities(
+  index: IndexedActivity[],
+  query: string,
+  limit = 200,
+  now?: Date,
+): SearchHit[] {
+  const classification = detectSuperlativeIntent(query, now);
+  const branches = buildShortlistBranches(classification, query);
+  const seen = new Set<number>();
+  const merged: SearchHit[] = [];
+  for (const branch of branches) {
+    if (merged.length >= limit) break;
+    const locked = branch.id !== "keyword";
+    for (const hit of runShortlistBranch(index, branch, limit)) {
+      if (seen.has(hit.activity.id)) continue;
+      seen.add(hit.activity.id);
+      merged.push({ ...hit, branch: branch.id, locked });
+      if (merged.length >= limit) break;
+    }
+  }
+  return merged;
 }
 
 function applySuperlativeSorting(

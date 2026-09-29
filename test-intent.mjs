@@ -1,7 +1,7 @@
 // Intent, distance-band sort, and describeActivity checks.
 // Run: node --experimental-strip-types test-intent.mjs
 
-import { buildIndex, classifyIntent, describeActivity, describeIntent, searchActivities } from "./src/lib/activitySearch.ts";
+import { buildIndex, classifyIntent, describeActivity, describeIntent, planShortlist, searchActivities } from "./src/lib/activitySearch.ts";
 import { toActivity } from "./scripts/strava-activity.mjs";
 
 const testClock = new Date("2026-09-29T12:00:00-05:00");
@@ -177,7 +177,7 @@ function order(name, query, expected, absent = []) {
 }
 
 // 9800m/2300s beats 10300m/2400s on time and loses on pace. Time order is required.
-order("fastest 10k this year sorts by time inside the band", "fastest 10k this year", [22, 2, 3, 19, 15], [1, 5, 6, 7, 13]);
+order("fastest 10k this year sorts by time inside the band", "fastest 10k this year", [22, 2, 3, 19, 15], [5, 6]);
 order("fastest marathon sorts by moving time", "fastest marathon", [11, 7], [2, 10, 13]);
 order("longest run this year sorts by distance after the date window", "longest run this year", [17, 7, 9], [8, 6, 5]);
 order("longest run 2024 keeps the date window ahead of distance", "longest run 2024", [8, 12, 5], [7, 9]);
@@ -192,17 +192,17 @@ check(
 
 order("fastest 10k chicago keeps time order inside the keyword set", "fastest 10k chicago", [19, 15, 16], [2, 6, 22]);
 order("fastest 50k stays on runs and sorts by time", "fastest 50k", [17, 8], [18]);
-order("fastest run in Chicago ignores other cities and strides", "fastest run in Chicago", [19], [22, 25, 7]);
+order("fastest run in Chicago ignores other cities", "fastest run in Chicago", [19], [22, 7]);
 order("longest run in Chicago sorts by distance", "longest run in Chicago", [26], [7, 17, 22]);
-order("speedy runs last month is pace within August", "speedy runs last month", [22, 19], [21, 25, 6]);
+order("speedy runs last month is pace within August", "speedy runs last month", [22, 19], [21, 6]);
 order("runs last week is the previous week, newest first", "runs last week", [27, 23], [24, 21]);
-order("fastest Chicago run matches in-Chicago pace order", "fastest Chicago run", [19], [22, 25, 29]);
+order("fastest Chicago run matches in-Chicago pace order", "fastest Chicago run", [19], [22, 29]);
 order("windy city alias includes a nameless-place Chicago run", "fastest run in the windy city", [19], [22, 29]);
 order("longest run Chicago sorts by distance", "longest run Chicago", [26], [7, 17, 22, 29]);
 order("runs in the last week matches runs last week", "runs in the last week", [27, 23], [24, 21]);
 order("runs from last week is not an empty keyword search", "runs from last week", [27, 23], [24]);
-order("speedy runs in the last month keeps August pace order", "speedy runs in the last month", [22, 19], [21, 25]);
-order("quick 10ks last month sorts by time inside the band", "quick 10ks last month", [22, 19, 20], [17, 21, 25]);
+order("speedy runs in the last month keeps August pace order", "speedy runs in the last month", [22, 19], [21]);
+order("quick 10ks last month sorts by time inside the band", "quick 10ks last month", [22, 19, 20], [21]);
 order("chitown runs are Chicago runs, newest first", "chitown runs", [21, 20], [22, 29]);
 
 const chicagoFast = ids("fastest run in Chicago");
@@ -212,6 +212,43 @@ check(
   chicagoFast.includes(28) && windyFast.includes(28) && !chicagoFast.includes(29) && !chicagoFast.includes(22),
   `chicago [${chicagoFast.join(", ")}] windy [${windyFast.join(", ")}]`,
 );
+check(
+  "Chicago stride is related, behind the pace order",
+  chicagoFast.indexOf(25) > chicagoFast.indexOf(19),
+  `got [${chicagoFast.join(", ")}]`,
+);
+
+const tenkYear = ids("fastest 10k this year");
+check(
+  "out-of-band runs follow the timed 10ks",
+  tenkYear.indexOf(7) > tenkYear.indexOf(15) && tenkYear.indexOf(13) > tenkYear.indexOf(15),
+  `got [${tenkYear.join(", ")}]`,
+);
+
+const quick10 = ids("quick 10ks last month");
+check(
+  "August 50k follows the 10k times and September stays out",
+  quick10.indexOf(17) > quick10.indexOf(20) && !quick10.includes(21),
+  `got [${quick10.join(", ")}]`,
+);
+
+const noMarathon = ids("fastest marathon in Chicago last month");
+check(
+  "empty marathon band still keeps August Chicago runs",
+  noMarathon.includes(19) && noMarathon.includes(20) && !noMarathon.includes(22) && !noMarathon.includes(21),
+  `got [${noMarathon.join(", ")}]`,
+);
+
+order("leftover word does not narrow away the Chicago pace pool", "fastest effort in Chicago", [19], [22, 29]);
+
+function branches(query) {
+  return planShortlist(query, testClock).join(",");
+}
+check("Fastest run in Chicago branches", branches("Fastest run in Chicago") === "metric,place-longest,place-list", branches("Fastest run in Chicago"));
+check("Longest run in Chicago branches", branches("Longest run in Chicago") === "metric,place-list", branches("Longest run in Chicago"));
+check("Speedy runs last month branches", branches("Speedy runs last month") === "metric,date-list", branches("Speedy runs last month"));
+check("Runs last week branches", branches("Runs last week") === "date-list", branches("Runs last week"));
+check("plain 10k this year stays a keyword branch", branches("10k this year") === "keyword", branches("10k this year"));
 
 console.log("\ndescribeActivity:\n");
 

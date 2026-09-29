@@ -150,25 +150,22 @@ export function ActivityLookup() {
         .filter((a) => matchesSport(a, sport))
         .map((activity): SearchHit => ({ activity, score: 0, kind: "keyword", matched: [] }));
     }
-    // Deterministic metric and place order stays put even when Jev scores are in.
-    if (intentClassification?.isDeterministic || !jevScores) return localHits;
-    
-    // Check if any Jev score meets the confidence floor
+    if (!jevScores) return localHits;
+
+    // Metric and list branches stay in branch order. Jev reorders only the keyword branch.
+    const open = localHits.filter((h) => h.locked === false);
+    if (open.length === 0) return localHits;
+
     const maxScore = Math.max(...Object.values(jevScores));
-    const shouldReorder = maxScore >= JEV_CONFIDENCE_FLOOR;
-    
-    if (!shouldReorder) {
-      // Below confidence floor: keep keyword/fuzzy order, Jev badges shown but muted
-      return localHits;
-    }
-    
-    // Above confidence floor: apply Jev reranking
-    const reranked = localHits
+    if (maxScore < JEV_CONFIDENCE_FLOOR) return localHits;
+
+    const locked = localHits.filter((h) => h.locked !== false);
+    const scored = open
       .filter((h) => jevScores[h.activity.id] !== undefined)
       .sort((a, b) => jevScores[b.activity.id] - jevScores[a.activity.id]);
-    const rest = localHits.filter((h) => jevScores[h.activity.id] === undefined);
-    return [...reranked, ...rest];
-  }, [trimmed, sport, localHits, jevScores, intentClassification]);
+    const unscored = open.filter((h) => jevScores[h.activity.id] === undefined);
+    return [...locked, ...scored, ...unscored];
+  }, [trimmed, sport, localHits, jevScores]);
 
   useEffect(() => setVisible(PAGE_SIZE), [trimmed, sport]);
 
@@ -180,27 +177,44 @@ export function ActivityLookup() {
   } else if (results.length === 0) {
     status = `No activities match "${trimmed}"`;
   } else if (intentClassification?.isDeterministic) {
-    // Deterministic intent status
+    // Deterministic intent status. The count is the primary branch; other
+    // fan-out readings are called out separately so a pace sort is not
+    // described as if it included the related tail.
     const intent = intentClassification.intent;
     const where = intentClassification.place ? ` · ${intentClassification.place}` : "";
-    if (intent) {
+    const primaryId =
+      intent?.kind === "fastest" || intent?.kind === "longest" || intent?.kind === "most_intervals" ||
+      intent?.kind === "hilliest" || intent?.kind === "highest_hr" || intent?.kind === "highest_power" ||
+      intent?.kind === "mmp_power"
+        ? "metric"
+        : intent?.kind === "list"
+          ? intentClassification.dateWindow ? "date-list" : "place-list"
+          : intent?.kind === "place_filter"
+            ? "place-list"
+            : null;
+    const primaryCount = primaryId ? results.filter((h) => h.branch === primaryId).length : results.length;
+    const related = primaryId ? results.length - primaryCount : 0;
+    const counted = primaryCount > 0 ? primaryCount : results.length;
+    if (intent && primaryCount === 0 && related > 0) {
+      status = `No strict ${intent.kind.replaceAll("_", " ")} matches${where} · ${related.toLocaleString()} related`;
+    } else if (intent) {
       if (intent.kind === "longest") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${where} · sorted by distance`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"}${where} · sorted by distance`;
       } else if (intent.kind === "fastest") {
         const band = intentClassification.distanceBand;
         status = band
-          ? `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${where} · ${band.label} · sorted by time`
-          : `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}${where} · sorted by pace`;
+          ? `${counted.toLocaleString()} match${counted === 1 ? "" : "es"}${where} · ${band.label} · sorted by time`
+          : `${counted.toLocaleString()} match${counted === 1 ? "" : "es"}${where} · sorted by pace`;
       } else if (intent.kind === "most_intervals") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by interval intensity`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by interval intensity`;
       } else if (intent.kind === "hilliest") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by elevation`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by elevation`;
       } else if (intent.kind === "highest_hr") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by heart rate`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by heart rate`;
       } else if (intent.kind === "highest_power") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by power`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by power`;
       } else if (intent.kind === "place_filter") {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · filtered by place${intent.filterType ? ` and ${intent.filterType}` : ""}`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · filtered by place${intent.filterType ? ` and ${intent.filterType}` : ""}`;
       } else if (intent.kind === "mmp_power") {
         const durationLabels: Record<string, string> = {
           best_watts_5s: "5s",
@@ -209,35 +223,44 @@ export function ActivityLookup() {
           best_watts_20m: "20min",
           best_watts_60m: "60min",
         };
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · sorted by ${durationLabels[intent.field]} power`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · sorted by ${durationLabels[intent.field]} power`;
       } else if (intent.kind === "list") {
-        status = `${results.length.toLocaleString()} activit${results.length === 1 ? "y" : "ies"}${where} · most recent first`;
+        status = `${counted.toLocaleString()} activit${counted === 1 ? "y" : "ies"}${where} · most recent first`;
       } else {
-        status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · deterministic sort`;
+        status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"} · deterministic sort`;
       }
     } else {
-      status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"}`;
+      status = `${counted.toLocaleString()} match${counted === 1 ? "" : "es"}`;
     }
+    if (related > 0 && primaryCount > 0) status += ` · ${related.toLocaleString()} related`;
     if (jevAvailable) {
       if (jevScores) status += " · Jev scored";
       else if (jev.status === "error" && jev.query === trimmed) status += " · Jev unavailable";
       else if (candidateIds.length > 0) status += " · scoring with Jev";
     }
   } else {
-    // Semantic search with optional Jev
+    // Semantic search with optional Jev. A metric branch in the fan-out stays
+    // locked; Jev only reorders the keyword branch.
     const jevNote = !jevAvailable
       ? ""
       : jevScores
         ? (() => {
             const maxScore = Math.max(...Object.values(jevScores));
             return maxScore >= JEV_CONFIDENCE_FLOOR
-              ? ` · top ${Math.min(results.length, JEV_CANDIDATES)} reranked by Jev`
+              ? ` · keyword branch reranked by Jev`
               : ` · Jev confidence low, not reordering`;
           })()
         : jev.status === "error"
           ? " · Jev unavailable"
           : " · Jev reranking…";
-    status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · keyword + fuzzy${jevNote}`;
+    const metricCount = results.filter((h) => h.branch === "metric").length;
+    if (metricCount > 0) {
+      const related = results.length - metricCount;
+      status = `${metricCount.toLocaleString()} match${metricCount === 1 ? "" : "es"} · metric order${related > 0 ? ` · ${related.toLocaleString()} related` : ""}`;
+      if (results.some((h) => h.locked === false)) status += jevNote;
+    } else {
+      status = `${results.length.toLocaleString()} match${results.length === 1 ? "" : "es"} · keyword + fuzzy${jevNote}`;
+    }
   }
 
   return (
