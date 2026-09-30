@@ -203,15 +203,36 @@ available at build time, and the Jev key at runtime. The default exposure
 | `OPENROUTER_API_KEY` | Jev via OpenRouter's Decisions API (`typesafe/jev-1.13-20260917`).   |
 | `TYPESAFE_API_KEY`   | Alternative: Jev direct from TypeSafe (`jev-1.13.0`). Used only if no OpenRouter key. |
 | `JEV_MODEL`          | Optional model override.                                             |
-| `URL`                | Optional canonical origin for link-preview tags (`https://…`). Falls back to the Vercel production domain. |
+| `URL`                | Canonical origin for link-preview tags, no trailing slash. Set to `https://iamspencerlee.com` on Production and Preview. Falls back to `VERCEL_PROJECT_PRODUCTION_URL`, then `https://spencerruns.netlify.app` for local and CI. |
 
-Cutover once the project builds green:
+Production is Vercel project `running-tracker` (team `spencers-projects-40ee9c92`):
+https://vercel.com/spencers-projects-40ee9c92/running-tracker.
+The public origin is https://iamspencerlee.com. `www` 308s to the apex.
+`running-tracker-sage.vercel.app` still serves the same deployment.
 
-1. Import this repo. Framework preset Vite. The build command and output directory come from `vercel.json`.
-2. Set the variables above, then deploy.
-3. Settings → Git → Deploy Hooks: create a hook and point grokbot's daily ping at that URL instead of the Netlify build hook.
-4. Add the custom domain. Set `URL` to that origin if it should win over the `vercel.app` hostname, and redeploy so the cards pick it up.
-5. After DNS serves Vercel, turn off the Netlify site so it stops billing.
+DNS stays on Netlify (NS1). Registrar Hostinger, nameservers
+`dns1.p06.nsone.net` through `dns4.p06.nsone.net`, zone
+`6a229eb9b2d0eb02368a36b0` on site `spencerruns`. Hostinger's zone editor is
+empty. Live records, checked 2026-09-30:
+
+| Host | Type | Value |
+| --- | --- | --- |
+| apex | A | `216.198.79.1` |
+| apex | A | `64.29.17.1` |
+| `www` | CNAME | `67703c4c2985eec9.vercel-dns-017.com` |
+
+Leave the Netlify site up while those nameservers are still NS1. Deleting
+`spencerruns` can delete the zone and take `iamspencerlee.com` offline. Move
+nameservers only when the domain should leave Netlify DNS entirely.
+
+Deploy hook `grokbot-daily` (branch `main`) is the daily activity refresh.
+grokbot calls it through `VERCEL_DEPLOY_HOOK_SPENCERRUNS`.
+`NETLIFY_BUILD_HOOK_SPENCERRUNS` is an alias of that same URL. The hook URL
+is a secret and is not in this repo. A ping rebuilds the latest `main` commit,
+which re-runs `scripts/fetch-activities.mjs`.
+
+`URL` is set, and the production deploy that finished 2026-09-30 12:26Z baked
+it in. Live canonical and Open Graph tags name `https://iamspencerlee.com`.
 
 ## Notes
 
