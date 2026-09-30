@@ -1493,6 +1493,30 @@ check("personal records finds the current PR", unitIds("personal records")[0] ==
 const personalBest = classifyIntent("personal best marathon", testClock);
 check("personal best plus a distance is the fastest at it", personalBest.intent?.kind === "fastest" && personalBest.isDeterministic, JSON.stringify(personalBest));
 
+console.log("\nregressions after the v5 consumers:\n");
+
+const regIndex = buildIndex([
+  // The geocoder named a region but no city; the export's place is the only city name.
+  act({ id: 160, name: "Long Run", start_date_local: "2025-10-10T08:00:00", distance_m: 35800, moving_time_s: 8900, primary_stimulus: "long", place: "Los Angeles", place_source: "gps", place_region: "California", place_country: "United States" }),
+  act({ id: 161, name: "Cool down", start_date_local: "2025-09-06T09:30:00", distance_m: 4000, moving_time_s: 1500, primary_stimulus: "recovery", place: "Naperville", place_source: "gps", place_region: "Illinois", place_country: "United States" }),
+  act({ id: 162, name: "Easy Run", start_date_local: "2026-01-05T08:00:00", distance_m: 10000, moving_time_s: 3000, primary_stimulus: "easy", place: "Chicago", place_city: "Chicago", place_region: "Illinois", place_country: "United States" }),
+  act({ id: 163, name: "Morning Walk", sport_type: "Walk", start_date_local: "2019-05-02T08:00:00", distance_m: 900, moving_time_s: 600, primary_stimulus: "other", place: "Barcelona", place_city: "Barcelona", place_region: "Catalunya", place_country: "España" }),
+  act({ id: 164, name: "Indy Marathon", start_date_local: "2025-11-08T08:00:00", distance_m: 42400, moving_time_s: 9959, primary_stimulus: "race", place_city: "Indianapolis", place_region: "Indiana", place_country: "United States" }),
+  act({ id: 165, name: "Corporate Challenge", start_date_local: "2026-05-14T08:00:00", distance_m: 5900, moving_time_s: 1200, primary_stimulus: "race", place_city: "Chicago", place_region: "Illinois", place_country: "United States" }),
+]);
+const regIds = (query) => searchActivities(regIndex, query, 50, testClock).map((hit) => hit.activity.id);
+check("a region-only geocode still matches the export's city", JSON.stringify(regIds("long run in Los Angeles")) === "[160]", JSON.stringify(regIds("long run in Los Angeles")));
+check("a region-only geocode keeps the city as a search word", regIds("cool down after the Naperville half")[0] === 161, JSON.stringify(regIds("cool down after the Naperville half")));
+check("Catalonia and Spain find Catalunya, España", JSON.stringify(regIds("walks in Catalonia")) === "[163]" && JSON.stringify(regIds("walks in Spain")) === "[163]", JSON.stringify([regIds("walks in Catalonia"), regIds("walks in Spain")]));
+const marathonRaces = classifyIntent("marathon races", testClock);
+check("marathon races is not a place named marathon", marathonRaces.place === null && marathonRaces.intent?.kind !== "place_filter" && regIds("marathon races")[0] === 164, JSON.stringify({ marathonRaces, ids: regIds("marathon races") }));
+const thisSummer = classifyIntent("longest run this summer", testClock);
+check("this summer is this year's June through August", thisSummer.dateWindow?.start === "2026-06-01" && thisSummer.dateWindow?.end === "2026-08-31" && thisSummer.isDeterministic, JSON.stringify(thisSummer));
+const lastWinter = classifyIntent("hilliest ride last winter", testClock);
+check("last winter is the most recent finished winter", lastWinter.dateWindow?.start === "2025-12-01" && lastWinter.dateWindow?.end === "2026-02-28", JSON.stringify(lastWinter.dateWindow));
+const thisFall = classifyIntent("runs this fall", testClock);
+check("this fall includes the current season", thisFall.dateWindow?.start === "2026-09-01", JSON.stringify(thisFall.dateWindow));
+
 console.log();
 if (failures === 0) {
   console.log("✅ All tests pass!");

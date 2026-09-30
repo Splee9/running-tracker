@@ -56,5 +56,16 @@
   { "query": "PBs", "relevant": [16581498275, 16395507671, 15717720773] },
   { "query": "personal records", "relevant": [16581498275, 16395507671, 15717720773] },
   { "query": "PR races", "relevant": [16581498275, 16395507671, 15717720773] },
-  { "query": "personal best half marathon", "relevant": [15717720773] }
+  { "query": "personal best half marathon", "relevant": [15717720773] },
+  { "query": "long run in Los Angeles", "relevant": [16096240368] },
+  { "query": "cool down after the Naperville half", "relevant": [15718132666] },
+  { "query": "runs in Naperville", "relevant": [15718132666, 15717720773, 15716407471] },
+  { "query": "Los Angeles hike", "relevant": [7760491595] },
+  { "query": "longest run this summer", "relevant": [19948671500] },
+  { "query": "longest ride this spring", "relevant": [18719071109] },
+  { "query": "hilliest ride last winter", "relevant": [17294730215] },
+  { "query": "marathon races", "relevant": [16395507671, 14365806243, 12646956965, 10206804378, 7973230558, 7070976078] },
+  { "query": "5k races", "relevant": [15511067385, 5979694472, 5948870126, 3536154398, 3142739862, 1898411828] },
+  { "query": "España", "relevant": [2560827088, 2560827006, 2560826980, 2560826996, 2560826968, 2560826924, 2560826928, 2560826886] },
+  { "query": "walks in Catalonia", "relevant": [2560827088, 2560827006, 2560826980, 2560826996, 2560826968, 2560826924, 2560826928, 2560826886] }
 ]
