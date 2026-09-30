@@ -231,11 +231,8 @@ grokbot calls it through `VERCEL_DEPLOY_HOOK_SPENCERRUNS`.
 is a secret and is not in this repo. A ping rebuilds the latest `main` commit,
 which re-runs `scripts/fetch-activities.mjs`.
 
-`URL` is already set, and `scripts/page-meta.mjs` reads it at build time.
-The production deployment from 2026-09-30 10:15Z (commit `9473046`) was built
-before that, so live canonical and Open Graph tags still name
-`https://running-tracker-sage.vercel.app`. The next production deploy bakes
-`https://iamspencerlee.com`.
+`URL` is set, and the production deploy that finished 2026-09-30 12:26Z baked
+it in. Live canonical and Open Graph tags name `https://iamspencerlee.com`.
 
 ## Notes
 
