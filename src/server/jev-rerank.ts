@@ -1,12 +1,12 @@
-// POST /.netlify/functions/jev-rerank  { query: string, ids: number[], settled?, removed? }
+// POST /api/jev-rerank  { query: string, ids: number[], settled?, removed? }
 //   → { scores: { [id]: p }, facets: IntentFacets, companions }
 // One packed Jev call. State is the query, the closed stimulus vocab, and the
 // shortlist. Intent facets and per-activity membership noul run in parallel.
 // Code applies a facet only when it fills a gap. Membership re-ranks unlocked
 // branches on the client. Locked metric and date order stay in code.
 
-import snapshot from "../../src/activities.json" with { type: "json" };
-import gradeFile from "../../src/activity-grades.json" with { type: "json" };
+import snapshot from "../activities.json" with { type: "json" };
+import gradeFile from "../activity-grades.json" with { type: "json" };
 import {
   buildJevRequest,
   classifyIntent,
@@ -19,14 +19,20 @@ import {
   type ActivityGrades,
   type IntentFacets,
   type JevCompanions,
-} from "../../src/lib/activitySearch.ts";
-import { getJevProvider } from "../../src/lib/jevProvider.ts";
+} from "../lib/activitySearch.ts";
+import { getJevProvider } from "../lib/jevProvider.ts";
+
+declare const process: { env: Record<string, string | undefined> };
 
 const MAX_CANDIDATES = 25;
 const MAX_QUERY_LENGTH = 120;
-const TIMEOUT_MS = 1_500;
+// The abort covers the Jev request only. A cold start happens before this runs,
+// so the budget is longer than the old 1.5s Netlify limit.
+const TIMEOUT_MS = 4_000;
 const WINDOW_MS = 60_000;
 const MAX_REQUESTS_PER_WINDOW = 60;
+
+export const maxDuration = 15;
 
 const byId = new Map(
   withGrades(snapshot.activities as Activity[], gradeFile as ActivityGrades).map((a) => [a.id, a]),
@@ -48,6 +54,12 @@ function cacheKey(model: string, day: string, interpreted: string, query: string
 function remember(key: string, value: CachedJudgment) {
   if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value as string);
   cache.set(key, value);
+}
+
+function clientIp(request: Request) {
+  const forwarded = request.headers.get("x-forwarded-for");
+  const first = forwarded?.split(",")[0]?.trim();
+  return first || request.headers.get("x-real-ip") || "unknown";
 }
 
 function rateLimited(ip: string) {
@@ -82,13 +94,12 @@ function json(body: unknown, status = 200) {
   });
 }
 
-export default async (req: Request, context: { ip?: string }) => {
-  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+export async function POST(request: Request) {
   const provider = getJevProvider(process.env);
   if (!provider) return json({ error: "Jev is not configured" }, 503);
-  if (rateLimited(context.ip ?? "unknown")) return json({ error: "Too many requests" }, 429);
+  if (rateLimited(clientIp(request))) return json({ error: "Too many requests" }, 429);
 
-  const body = (await req.json().catch(() => null)) as
+  const body = (await request.json().catch(() => null)) as
     | { query?: unknown; ids?: unknown; settled?: unknown; removed?: unknown }
     | null;
   const query = typeof body?.query === "string" ? body.query.trim().toLowerCase() : "";
@@ -194,4 +205,4 @@ export default async (req: Request, context: { ip?: string }) => {
     clearTimeout(timer);
   }
   return json({ scores, facets: facetCache.get(facetKey) ?? {}, companions });
-};
+}

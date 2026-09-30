@@ -3,8 +3,9 @@ import { useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from
 /**
  * A two-route site doesn't need a router library: the pathname lives in
  * history, `navigate` pushes to it, and components re-render on popstate.
- * Netlify serves index.html for every path (see netlify.toml), so deep links
- * like /training resolve here on first load too.
+ * Vercel serves each route's static HTML file (see vercel.json cleanUrls), and
+ * unknown paths fall back to index.html, so deep links like /training resolve
+ * here on first load too.
  */
 
 const subscribe = (onChange: () => void) => {

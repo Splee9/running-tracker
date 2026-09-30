@@ -27,7 +27,7 @@ The aggregate numbers live in `src/data.json`, `src/chicago-data.json`, and the
 npm install
 npm run fetch:activities  # build src/activities.json (see below)
 npm run dev               # local dev server with hot reload
-npm run build             # type-check + production bundle to dist/
+npm run build             # type-check, production bundle to dist/, and the Jev function
 npm run preview           # serve the production build locally
 npm run test:intent       # Activity Lookup search/intent tests
 npm run og:images         # re-render the link-preview cards in public/og/
@@ -35,7 +35,7 @@ npm run og:images         # re-render the link-preview cards in public/og/
 
 `fetch:activities` downloads the real activity list when `BRAIN_GITHUB_TOKEN` is
 set. Without it, it keeps an existing `src/activities.json` or writes an empty
-placeholder, so a fresh clone builds (the Lookup page is just empty). On Netlify
+placeholder, so a fresh clone builds (the Lookup page is just empty). On Vercel
 a missing token with no file fails the build instead.
 
 CI (`.github/workflows/ci.yml`) runs the intent tests and the production build
@@ -68,8 +68,9 @@ src/
                           (per-route title and link-preview text)
   styles/global.css       design tokens + base styles
 public/og/                link-preview cards, 1200×630 (committed; npm run og:images)
-netlify/functions/
-  jev-rerank.mts          Jev reranking for /activity-lookup (holds the API key)
+src/server/jev-rerank.ts  Jev reranking for /activity-lookup (holds the API key).
+                          The build bundles it to api/jev-rerank.js, which is
+                          gitignored.
 scripts/                  data export, grading, and eval scripts (see below)
 ```
 
@@ -157,7 +158,7 @@ BRAIN_GITHUB_TOKEN=... node scripts/fetch-activities.mjs   # BRAIN_ACTIVITIES_PA
 ```
 
 Without `BRAIN_GITHUB_TOKEN` it keeps an existing local file (or writes an empty
-placeholder off Netlify). To build that file
+placeholder off Vercel). To build that file
 straight from Strava instead (incremental by default; `--full` re-downloads
 everything and waits out 429s):
 
@@ -166,23 +167,33 @@ STRAVA_ACCESS_TOKEN=... node scripts/export-activities.mjs [--full]
 ```
 
 Routing is a ~50-line `history.pushState` wrapper (`src/lib/router.tsx`), not a
-library. `netlify.toml` rewrites every path to `index.html` so deep links load.
+library. `vercel.json` turns on clean URLs and rewrites unknown paths to
+`index.html`, so deep links load.
 
 Link previews: crawlers don't run JS, so after `vite build`,
 `scripts/page-meta.mjs` writes a static page per route (`dist/miles.html`,
 `dist/training/chicago.html`, …) with that route's title, description, canonical
-URL, and Open Graph / Twitter card tags. Netlify serves those files ahead of the
-SPA fallback. The text comes from `src/lib/pages.ts`, which also sets
-`document.title`; absolute URLs use Netlify's `URL` build variable. To add a
+URL, and Open Graph / Twitter card tags. Clean URLs serve those files at
+`/miles`, `/training/chicago`, and so on, ahead of the SPA fallback. The text
+comes from `src/lib/pages.ts`, which also sets `document.title`. Absolute URLs
+use `URL` when it is set, otherwise Vercel's production domain. To add a
 route, add it to `PAGES` and run `npm run og:images` for its card.
 
 ## Deploy
 
-Netlify builds from source on every push (see `netlify.toml`):
-`node scripts/fetch-activities.mjs && npm run build`, publishing `dist/`. No
-manual upload step. A daily build hook picks up grokbot's activity updates.
+Vercel builds from source on every push to `main`, and opens a preview per pull
+request (see `vercel.json`): `node scripts/fetch-activities.mjs && npm run build`,
+publishing `dist/`. No manual upload step. A deploy hook picks up grokbot's
+activity updates. `npm run dev` does not run the Jev function; lookup stays on
+the local shortlist (the request 404s). `npx vercel dev` serves `/api/jev-rerank`
+locally.
 
-Environment variables (Netlify → Site configuration → Environment variables):
+The Hobby plan is for personal, non-commercial use. This project fits it.
+
+Environment variables (Vercel → Project → Settings → Environment Variables).
+Enable each one for Production and Preview. `BRAIN_GITHUB_TOKEN` has to be
+available at build time, and the Jev key at runtime. The default exposure
+(build and runtime) is what you want.
 
 | Variable             | Purpose                                                              |
 | -------------------- | -------------------------------------------------------------------- |
@@ -191,6 +202,15 @@ Environment variables (Netlify → Site configuration → Environment variables)
 | `OPENROUTER_API_KEY` | Jev via OpenRouter's Decisions API (`typesafe/jev-1.13-20260917`).   |
 | `TYPESAFE_API_KEY`   | Alternative: Jev direct from TypeSafe (`jev-1.13.0`). Used only if no OpenRouter key. |
 | `JEV_MODEL`          | Optional model override.                                             |
+| `URL`                | Optional canonical origin for link-preview tags (`https://…`). Falls back to the Vercel production domain. |
+
+Cutover once the project builds green:
+
+1. Import this repo. Framework preset Vite. The build command and output directory come from `vercel.json`.
+2. Set the variables above, then deploy.
+3. Settings → Git → Deploy Hooks: create a hook and point grokbot's daily ping at that URL instead of the Netlify build hook.
+4. Add the custom domain. Set `URL` to that origin if it should win over the `vercel.app` hostname, and redeploy so the cards pick it up.
+5. After DNS serves Vercel, turn off the Netlify site so it stops billing.
 
 ## Notes
 

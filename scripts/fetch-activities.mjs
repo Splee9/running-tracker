@@ -1,6 +1,6 @@
 // Builds src/activities.json for /activity-lookup from the public Strava activities export
 // that grokbot keeps up to date in the private Splee9/spencer-brain repo. Runs before every
-// Netlify build.
+// Vercel build.
 //
 // The export must be a tracked file: the vault's raw/metrics.db and raw/exports/ are
 // gitignored, so the contents API can't serve them.
@@ -11,7 +11,7 @@
 //   BRAIN_REF              optional branch/tag/sha (default: the repo's default branch)
 //
 // Without BRAIN_GITHUB_TOKEN it keeps an existing src/activities.json, so local builds work
-// offline; if there is none it writes an empty placeholder (except on Netlify, where that
+// offline; if there is none it writes an empty placeholder (except on Vercel, where that
 // would ship an empty lookup, so it fails instead). With a token, any download or format problem fails the build rather than
 // shipping a stale or partial list.
 //
@@ -90,7 +90,7 @@ async function main() {
       return;
     } catch {
       // A deploy without the token must not ship an empty /activity-lookup.
-      if (process.env.NETLIFY) {
+      if (process.env.VERCEL || process.env.NETLIFY) {
         throw new Error(`No BRAIN_GITHUB_TOKEN and no existing ${OUT} to fall back to`);
       }
     }

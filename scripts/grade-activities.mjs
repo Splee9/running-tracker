@@ -4,7 +4,7 @@
 //
 // Run: npm run grade -- [--dry-run] [--limit N]
 //
-// Env: TYPESAFE_API_KEY or OPENROUTER_API_KEY (same as the Netlify function), optional
+// Env: TYPESAFE_API_KEY or OPENROUTER_API_KEY (same as the Vercel function), optional
 // JEV_MODEL / JEV_API_URL. Needs src/activities.json (scripts/fetch-activities.mjs).
 //
 // Only ungraded activities are sent, one activity per request so no state carries another

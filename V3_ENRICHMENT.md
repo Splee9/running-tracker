@@ -167,6 +167,6 @@ This allows Jev to better understand and rank activities based on effort level, 
 The feature will go live when:
 1. ✅ This PR is merged to main
 2. ⏳ The spencer-brain vault is updated to export v3 schema
-3. ⏳ Netlify rebuild fetches the new v3 data
+3. ⏳ The production rebuild fetches the new v3 data
 
 No additional configuration or deployment steps are required.

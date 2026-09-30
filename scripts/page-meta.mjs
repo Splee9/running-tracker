@@ -2,12 +2,12 @@
 // iMessage, social cards) see each page's own title, description, and image. Crawlers
 // don't run the app's JS, so document.title alone never reaches them.
 //
-// dist/index.html is "/", and every other route gets dist/<route>.html, which Netlify
-// serves at the clean URL ahead of the SPA fallback in netlify.toml. Asset URLs from
-// Vite are absolute, so the same page body works at any depth.
+// dist/index.html is "/", and every other route gets dist/<route>.html. vercel.json
+// cleanUrls serves that file at the extensionless path, ahead of the SPA fallback.
+// Asset URLs from Vite are absolute, so the same page body works at any depth.
 //
-// Env: URL (set by Netlify to the site's primary URL) makes the og:url and og:image
-// links absolute, as preview crawlers require.
+// Env: URL, when set, is the canonical origin. On Vercel, VERCEL_PROJECT_PRODUCTION_URL
+// is used otherwise. Absolute og:url and og:image links are what preview crawlers require.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -15,7 +15,19 @@ import { fileURLToPath } from "node:url";
 import { PAGES } from "../src/lib/pages.ts";
 
 const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
-const SITE = (process.env.URL || "https://spencerruns.netlify.app").replace(/\/+$/, "");
+
+function siteOrigin() {
+  const explicit = process.env.URL?.trim().replace(/\/+$/, "");
+  if (explicit) return explicit;
+  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/+$/, "");
+  if (production) return `https://${production}`;
+  // Local and CI builds have no deploy URL. Cards still need an absolute origin.
+  return "https://spencerruns.netlify.app";
+}
+
+const SITE = siteOrigin();
 
 const escape = (s) =>
   s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

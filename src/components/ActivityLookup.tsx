@@ -50,7 +50,7 @@ type JevState =
   | { status: "done"; query: string; scores: Record<number, number>; companions: MembershipCompanions }
   | { status: "error"; query: string };
 
-const JEV_ENDPOINT = "/.netlify/functions/jev-rerank";
+const JEV_ENDPOINT = "/api/jev-rerank";
 const JEV_CANDIDATES = 25;
 const JEV_DEBOUNCE_MS = 300;
 const PAGE_SIZE = 50;
