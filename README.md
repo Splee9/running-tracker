@@ -205,13 +205,12 @@ available at build time, and the Jev key at runtime. The default exposure
 | `JEV_MODEL`          | Optional model override.                                             |
 | `URL`                | Optional canonical origin for link-preview tags (`https://…`). Falls back to the Vercel production domain. |
 
-Cutover once the project builds green:
+Setting up the project from scratch:
 
 1. Import this repo. Framework preset Vite. The build command and output directory come from `vercel.json`.
 2. Set the variables above, then deploy.
-3. Settings → Git → Deploy Hooks: create a hook and point grokbot's daily ping at that URL instead of the Netlify build hook.
+3. Settings → Git → Deploy Hooks: create a hook and point grokbot's daily ping at it.
 4. Add the custom domain. Set `URL` to that origin if it should win over the `vercel.app` hostname, and redeploy so the cards pick it up.
-5. After DNS serves Vercel, turn off the Netlify site so it stops billing.
 
 ## Notes
 

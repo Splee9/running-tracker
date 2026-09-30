@@ -27,7 +27,7 @@ declare const process: { env: Record<string, string | undefined> };
 const MAX_CANDIDATES = 25;
 const MAX_QUERY_LENGTH = 120;
 // The abort covers the Jev request only. A cold start happens before this runs,
-// so the budget is longer than the old 1.5s Netlify limit.
+// and the function's 15s maxDuration leaves room for it.
 const TIMEOUT_MS = 4_000;
 const WINDOW_MS = 60_000;
 const MAX_REQUESTS_PER_WINDOW = 60;
