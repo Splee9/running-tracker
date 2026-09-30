@@ -30,6 +30,7 @@ npm run dev               # local dev server with hot reload
 npm run build             # type-check + production bundle to dist/
 npm run preview           # serve the production build locally
 npm run test:intent       # Activity Lookup search/intent tests
+npm run og:images         # re-render the link-preview cards in public/og/
 ```
 
 `fetch:activities` downloads the real activity list when `BRAIN_GITHUB_TOKEN` is
@@ -63,8 +64,10 @@ src/
   lib/                    data types, formatting, comparisons, tiny history router,
                           activitySearch (keyword + fuzzy index), lookupView
                           (status and "Read as" text), jevProvider (API routing),
-                          chicago-data / chicago-format (Chicago page)
+                          chicago-data / chicago-format (Chicago page), pages
+                          (per-route title and link-preview text)
   styles/global.css       design tokens + base styles
+public/og/                link-preview cards, 1200×630 (committed; npm run og:images)
 netlify/functions/
   jev-rerank.mts          Jev reranking for /activity-lookup (holds the API key)
 scripts/                  data export, grading, and eval scripts (see below)
@@ -164,6 +167,14 @@ STRAVA_ACCESS_TOKEN=... node scripts/export-activities.mjs [--full]
 
 Routing is a ~50-line `history.pushState` wrapper (`src/lib/router.tsx`), not a
 library. `netlify.toml` rewrites every path to `index.html` so deep links load.
+
+Link previews: crawlers don't run JS, so after `vite build`,
+`scripts/page-meta.mjs` writes a static page per route (`dist/miles.html`,
+`dist/training/chicago.html`, …) with that route's title, description, canonical
+URL, and Open Graph / Twitter card tags. Netlify serves those files ahead of the
+SPA fallback. The text comes from `src/lib/pages.ts`, which also sets
+`document.title`; absolute URLs use Netlify's `URL` build variable. To add a
+route, add it to `PAGES` and run `npm run og:images` for its card.
 
 ## Deploy
 

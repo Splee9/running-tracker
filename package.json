@@ -7,20 +7,21 @@
   "scripts": {
     "dev": "vite",
     "fetch:activities": "node scripts/fetch-activities.mjs",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node --experimental-strip-types scripts/page-meta.mjs",
+    "og:images": "node --experimental-strip-types scripts/render-og.mjs",
     "preview": "vite preview",
     "test:intent": "node --experimental-strip-types test-intent.mjs",
     "grade": "node --experimental-strip-types scripts/grade-activities.mjs",
     "eval:jev": "node --experimental-strip-types scripts/eval-jev.mjs"
   },
   "dependencies": {
-    "framer-motion": "^11.15.0",
+    "motion": "^11.18.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.7.2",
     "vite": "^6.0.5"

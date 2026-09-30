@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "motion/react";
 import { data, PHASE_VAR } from "../../lib/chicago-data";
 import { formatDate } from "../../lib/chicago-format";
 import styles from "./PhaseTimeline.module.css";

@@ -6,7 +6,7 @@ import {
   useMotionValueEvent,
   useReducedMotion,
   type MotionValue,
-} from "framer-motion";
+} from "motion/react";
 import { marathonResults } from "../lib/data";
 import { formatTime } from "../lib/format";
 import styles from "./MarathonTimes.module.css";

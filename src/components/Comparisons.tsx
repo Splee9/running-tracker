@@ -1,10 +1,10 @@
-import { motion } from "framer-motion";
+import { motion, type Variants } from "motion/react";
 import { Rich } from "./Rich";
 import { lifetime } from "../lib/data";
 import { cardsFor, headlineFor } from "../lib/comparisons";
 import styles from "./Comparisons.module.css";
 
-const reveal = {
+const reveal: Variants = {
   hidden: { opacity: 0, y: 18 },
   show: (i: number) => ({
     opacity: 1,

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, type Variants } from "motion/react";
 import { AnimatedNumber } from "./AnimatedNumber";
 import { Chip } from "./Chip";
 import { TvChart } from "./TvChart";
@@ -21,7 +21,7 @@ import {
 } from "../lib/training";
 import styles from "./Training.module.css";
 
-const rise = {
+const rise: Variants = {
   hidden: { opacity: 0, y: 16 },
   show: (i: number) => ({
     opacity: 1,

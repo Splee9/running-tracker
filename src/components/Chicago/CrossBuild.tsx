@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "motion/react";
 import { data } from "../../lib/chicago-data";
 import { fmt1 } from "../../lib/chicago-format";
 import styles from "./CrossBuild.module.css";

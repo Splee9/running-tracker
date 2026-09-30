@@ -1,8 +1,8 @@
-import { motion } from "framer-motion";
+import { motion, type Variants } from "motion/react";
 import { Link } from "../lib/router";
 import styles from "./Home.module.css";
 
-const rise = {
+const rise: Variants = {
   hidden: { opacity: 0, y: 16 },
   show: (i: number) => ({
     opacity: 1,

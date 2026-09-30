@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { AnimatedNumber } from "./AnimatedNumber";
 import { Chip } from "./Chip";
 import { Rich } from "./Rich";
