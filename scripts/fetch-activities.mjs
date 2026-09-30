@@ -90,7 +90,7 @@ async function main() {
       return;
     } catch {
       // A deploy without the token must not ship an empty /activity-lookup.
-      if (process.env.VERCEL || process.env.NETLIFY) {
+      if (process.env.VERCEL) {
         throw new Error(`No BRAIN_GITHUB_TOKEN and no existing ${OUT} to fall back to`);
       }
     }

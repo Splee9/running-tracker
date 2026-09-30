@@ -24,7 +24,7 @@ function siteOrigin() {
     .replace(/\/+$/, "");
   if (production) return `https://${production}`;
   // Local and CI builds have no deploy URL. Cards still need an absolute origin.
-  return "https://spencerruns.netlify.app";
+  return "https://running-tracker.vercel.app";
 }
 
 const SITE = siteOrigin();
