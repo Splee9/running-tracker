@@ -5,8 +5,6 @@
 // Code applies a facet only when it fills a gap. Membership re-ranks unlocked
 // branches on the client. Locked metric and date order stay in code.
 
-import snapshot from "../activities.json" with { type: "json" };
-import gradeFile from "../activity-grades.json" with { type: "json" };
 import {
   buildJevRequest,
   classifyIntent,
@@ -14,13 +12,12 @@ import {
   needsIntentFacets,
   parseRemovedParts,
   splitJevAnswers,
-  withGrades,
   type Activity,
-  type ActivityGrades,
   type IntentFacets,
   type JevCompanions,
 } from "../lib/activitySearch.ts";
 import { getJevProvider } from "../lib/jevProvider.ts";
+import { loadActivities } from "./activity-source.ts";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -34,9 +31,14 @@ const MAX_REQUESTS_PER_WINDOW = 60;
 
 export const maxDuration = 15;
 
-const byId = new Map(
-  withGrades(snapshot.activities as Activity[], gradeFile as ActivityGrades).map((a) => [a.id, a]),
-);
+// Same list the page searched, so a shortlist that includes a new activity can be scored.
+let indexed: { list: Activity[]; byId: Map<number, Activity> } | null = null;
+
+async function activityById() {
+  const { activities } = await loadActivities();
+  if (indexed?.list !== activities) indexed = { list: activities, byId: new Map(activities.map((a) => [a.id, a])) };
+  return indexed.byId;
+}
 
 type CachedJudgment = { membership: number; stimulus?: number; place?: number };
 
@@ -120,6 +122,7 @@ export async function POST(request: Request) {
   const scores: Record<number, number> = {};
   const companions: JevCompanions = {};
   const pending: Activity[] = [];
+  const byId = await activityById();
   for (const id of ids as number[]) {
     const activity = byId.get(id);
     if (!activity) continue;

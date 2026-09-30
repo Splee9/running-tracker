@@ -1,0 +1,27 @@
+name: Scheduled rebuild
+
+# The API endpoints read activities live, so this rebuild is a safety net: it refreshes the
+# snapshot bundled into the functions (their fallback when GitHub is unreachable) and
+# rebuilds the static pages even on a day grokbot's deploy-hook ping doesn't arrive.
+# Set the VERCEL_DEPLOY_HOOK_URL repository secret (Vercel → Settings → Git → Deploy Hooks).
+
+on:
+  schedule:
+    - cron: "17 11 * * *" # daily, 11:17 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Vercel deploy hook
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::notice::VERCEL_DEPLOY_HOOK_URL is not set; skipping the rebuild."
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK" --retry 3 --retry-delay 5

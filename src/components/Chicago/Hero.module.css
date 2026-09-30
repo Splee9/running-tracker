@@ -68,3 +68,13 @@
   font-size: var(--text-meta);
   color: var(--muted);
 }
+
+.liveDot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--status-good);
+  vertical-align: 1px;
+}

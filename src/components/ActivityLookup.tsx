@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, type Variants } from "motion/react";
 import { Chip } from "./Chip";
-import snapshot from "../activities.json";
-import gradeFile from "../activity-grades.json";
 import {
   applyJevIntent,
   buildIndex,
@@ -24,9 +22,7 @@ import {
   type MembershipCompanions,
   type SearchHit,
   parseRemovedParts,
-  withGrades,
   withoutParts,
-  type ActivityGrades,
   type IntentPartKey,
 } from "../lib/activitySearch";
 import { calendarLabel, holidayOf } from "../lib/calendar";
@@ -40,6 +36,8 @@ import {
   USER_ORDERS,
   type UserOrder,
 } from "../lib/lookupView";
+import { useApi } from "../lib/useApi";
+import type { ActivitySource } from "../lib/pulse";
 import styles from "./ActivityLookup.module.css";
 
 type SportFilter = "all" | "run" | "ride" | "other";
@@ -50,14 +48,13 @@ type JevState =
   | { status: "done"; query: string; scores: Record<number, number>; companions: MembershipCompanions }
   | { status: "error"; query: string };
 
+const ACTIVITIES_ENDPOINT = "/api/activities";
 const JEV_ENDPOINT = "/api/jev-rerank";
 const JEV_CANDIDATES = 25;
 const JEV_DEBOUNCE_MS = 300;
 const PAGE_SIZE = 50;
 
-const activities = withGrades(snapshot.activities as Activity[], gradeFile as ActivityGrades);
-const standoutGraded = activities.some((a) => a.standout !== undefined);
-const index = buildIndex(activities);
+const NO_ACTIVITIES: Activity[] = [];
 
 const SPORT_FILTERS: { key: SportFilter; label: string }[] = [
   { key: "all", label: "All" },
@@ -108,6 +105,13 @@ function matchesSport(a: Activity, filter: SportFilter) {
 }
 
 export function ActivityLookup() {
+  // Served by /api/activities (read live from spencer-brain, graded, newest first) instead of
+  // bundled, so new activities show up without a redeploy and the page chunk stays small.
+  const source = useApi<ActivitySource>(ACTIVITIES_ENDPOINT);
+  const activities = source.status === "ready" ? source.data.activities : NO_ACTIVITIES;
+  const ready = source.status === "ready";
+  const standoutGraded = useMemo(() => activities.some((a) => a.standout !== undefined), [activities]);
+  const index = useMemo(() => buildIndex(activities), [activities]);
   const [initial] = useState(readParams);
   const [query, setQuery] = useState(initial.query);
   const [sport, setSport] = useState<SportFilter>(initial.sport);
@@ -180,7 +184,7 @@ export function ActivityLookup() {
     return searchActivities(index, trimmed, 500, undefined, intentClassification).filter((h) =>
       matchesSport(h.activity, sport),
     );
-  }, [trimmed, sport, intentClassification]);
+  }, [index, trimmed, sport, intentClassification]);
 
   const candidateIds = useMemo(
     () => localHits.slice(0, JEV_CANDIDATES).map((h) => h.activity.id),
@@ -193,7 +197,7 @@ export function ActivityLookup() {
   const shouldScoreWithJev = jevAvailable;
 
   useEffect(() => {
-    if (!shouldScoreWithJev || !trimmed) {
+    if (!shouldScoreWithJev || !trimmed || !ready) {
       setJev({ status: "idle" });
       return;
     }
@@ -249,7 +253,7 @@ export function ActivityLookup() {
       controller.abort();
     };
     // candidateKey stands in for candidateIds so identical shortlists don't refetch.
-  }, [shouldScoreWithJev, trimmed, candidateKey, hardKey, intentClassification, filledClassification, removedKey]);
+  }, [shouldScoreWithJev, ready, trimmed, candidateKey, hardKey, intentClassification, filledClassification, removedKey]);
 
   const jevScores = jev.status === "done" && jev.query === trimmed ? jev.scores : null;
   const jevCompanions = jev.status === "done" && jev.query === trimmed ? jev.companions : undefined;
@@ -265,14 +269,14 @@ export function ActivityLookup() {
     const grade = rankGradeFor(trimmed, intentClassification, standoutGraded)?.value;
     if (!jevScores) return grade ? rerankUnlockedHits(localHits, {}, undefined, grade) : localHits;
     return rerankUnlockedHits(localHits, jevScores, jevCompanions, grade);
-  }, [trimmed, sport, localHits, jevScores, jevCompanions, intentClassification]);
+  }, [activities, standoutGraded, trimmed, sport, localHits, jevScores, jevCompanions, intentClassification]);
 
   useEffect(() => setVisible(PAGE_SIZE), [trimmed, sport, order]);
 
   const ordered = useMemo(() => orderHits(results, order), [results, order]);
   const shown = ordered.slice(0, visible);
 
-  const status = lookupStatus(
+  const lookup = lookupStatus(
     trimmed,
     results,
     intentClassification,
@@ -285,6 +289,12 @@ export function ActivityLookup() {
     rankGradeFor(trimmed, intentClassification, standoutGraded)?.label,
     USER_ORDERS.find((o) => o.key === order && o.key !== "match")?.status,
   );
+  const status =
+    source.status === "loading"
+      ? "Loading activities…"
+      : source.status === "error"
+        ? `Couldn't load the activity list (${source.error}). Try reloading the page.`
+        : lookup;
   const readAs = intentClassification ? interpretationParts(intentClassification, codeClassification) : [];
   const totals = trimmed ? resultTotals(primaryHits(results, intentClassification).map((h) => h.activity)) : null;
 
@@ -341,7 +351,7 @@ export function ActivityLookup() {
             type="search"
             autoComplete="off"
             spellCheck={false}
-            placeholder={`Search ${activities.length.toLocaleString()} activities…`}
+            placeholder={ready ? `Search ${activities.length.toLocaleString()} activities…` : "Search activities…"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onSearchKey}
@@ -466,7 +476,7 @@ export function ActivityLookup() {
 
       <footer className={styles.footer}>
         <p>
-          Public activities only, rebuilt from the Strava log. Names, dates, distance, time,
+          Public activities only, read from the Strava log as it updates. Names, dates, distance, time,
           elevation, HR, pace, power, stimulus, place and intervals — no routes, polylines or stream data.
         </p>
       </footer>

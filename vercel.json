@@ -5,9 +5,9 @@
   "outputDirectory": "dist",
   "cleanUrls": true,
   "functions": {
-    "api/jev-rerank.js": {
-      "maxDuration": 15
-    }
+    "api/jev-rerank.js": { "maxDuration": 15 },
+    "api/activities.js": { "maxDuration": 10 },
+    "api/pulse.js": { "maxDuration": 10 }
   },
   "rewrites": [{ "source": "/(.*)", "destination": "/index" }]
 }

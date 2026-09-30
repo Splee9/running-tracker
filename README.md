@@ -26,9 +26,10 @@ The aggregate numbers live in `src/data.json`, `src/chicago-data.json`, and the
 ```bash
 npm install
 npm run fetch:activities  # build src/activities.json (see below)
-npm run dev               # local dev server with hot reload
-npm run build             # type-check, production bundle to dist/, and the Jev function
+npm run dev               # local dev server with hot reload, plus the /api/* handlers
+npm run build             # type-check, production bundle to dist/, and the API functions
 npm run preview           # serve the production build locally
+npm run smoke:api         # call the bundled /api/activities and /api/pulse (after build)
 npm run test:intent       # Activity Lookup search/intent tests
 npm run og:images         # re-render the link-preview cards in public/og/
 ```
@@ -38,8 +39,37 @@ set. Without it, it keeps an existing `src/activities.json` or writes an empty
 placeholder, so a fresh clone builds (the Lookup page is just empty). On Vercel
 a missing token with no file fails the build instead.
 
-CI (`.github/workflows/ci.yml`) runs the intent tests and the production build
-on every pull request and on pushes to `main`, using the empty placeholder.
+CI (`.github/workflows/ci.yml`) runs the intent tests, the production build, and
+the API smoke test on every pull request and on pushes to `main`, using the
+empty placeholder.
+
+## Live data
+
+The activity list is read at request time rather than baked into the page:
+
+- `GET /api/activities`: every public activity, graded and newest first. The
+  Activity Lookup page loads it on open.
+- `GET /api/pulse`: the newest 60 activities. It powers the "Latest run" card on
+  Home and the "mi this week" stat on `/training/chicago`. The week is summed in
+  the browser from Monday.
+
+Both read `data/public/strava-activities.json` from `spencer-brain` with
+`BRAIN_GITHUB_TOKEN`, apply the same public-only mapping as the build
+(`scripts/brain-activities.mjs`), and keep a copy for 5 minutes per function
+instance. Responses carry `s-maxage=300, stale-while-revalidate=86400`, so
+Vercel's CDN answers most requests and grokbot's updates appear within about 5
+minutes, with no redeploy. If the token is missing or GitHub fails, they serve
+the snapshot bundled at build time; `source` in the response says which. Jev
+scores against the same list, so new activities can be reranked too.
+
+The Chicago countdown, current week, and phase follow today's date, not the
+export date. The rest of the Chicago page and the `/miles` and `/training`
+aggregates are still committed JSON.
+
+`.github/workflows/refresh.yml` pings a Vercel deploy hook daily (and on manual
+dispatch) as a safety net. It refreshes the bundled fallback and the static
+pages even if grokbot's ping doesn't arrive. It needs the
+`VERCEL_DEPLOY_HOOK_URL` repository secret; without it the job skips.
 
 ## Project layout
 
@@ -52,8 +82,9 @@ src/
   training-variability.json  weekly training-variability series (generated)
   training-weekly-hours.json weekly hours derived from the TV series
                           (scripts/derive_weekly_hours.py)
-  activities.json         public activity list for /activity-lookup (built from
-                          spencer-brain at deploy time; gitignored)
+  activities.json         public activity snapshot, bundled into the API functions
+                          as their fallback (built from spencer-brain at deploy
+                          time; gitignored)
   activity-grades.json    offline Jev "standout" Score per activity (committed;
                           scripts/grade-activities.mjs)
   components/             Nav, Home (/), Miles + Hero, YearChart, CumulativeJourney,
@@ -64,14 +95,19 @@ src/
   lib/                    data types, formatting, comparisons, tiny history router,
                           activitySearch (keyword + fuzzy index), lookupView
                           (status and "Read as" text), jevProvider (API routing),
+                          useApi (cached JSON fetch hook), pulse (live-data types,
+                          latest run, week-so-far),
                           chicago-data / chicago-format (Chicago page), pages
                           (per-route title and link-preview text)
   styles/global.css       design tokens + base styles
 public/og/                link-preview cards, 1200×630 (committed; npm run og:images)
-src/server/jev-rerank.ts  Jev reranking for /activity-lookup (holds the API key).
-                          The build bundles it to server-dist/ (gitignored);
-                          api/jev-rerank.js is the committed Vercel entry that
-                          re-exports it.
+src/server/               API handlers, one file per route: activities.ts,
+                          pulse.ts, and jev-rerank.ts (Jev reranking; holds the
+                          API key). activity-source.ts reads the live list with
+                          the bundled snapshot as fallback. The build bundles each
+                          handler to server-dist/ (gitignored,
+                          scripts/bundle-functions.mjs); api/<name>.js is the
+                          committed Vercel entry that re-exports it.
 scripts/                  data export, grading, and eval scripts (see below)
 ```
 
@@ -185,21 +221,25 @@ route, add it to `PAGES` and run `npm run og:images` for its card.
 Vercel builds from source on every push to `main`, and opens a preview per pull
 request (see `vercel.json`): `node scripts/fetch-activities.mjs && npm run build`,
 publishing `dist/`. No manual upload step. A deploy hook picks up grokbot's
-activity updates. `npm run dev` does not run the Jev function; lookup stays on
-the local shortlist (the request 404s). `npx vercel dev` serves `/api/jev-rerank`
-locally.
+activity updates. `npm run dev` serves `/api/*` from `src/server/` through a
+small Vite middleware (`vite.config.ts`), so the lookup, the latest-run card,
+and the week stat all work locally. Without `BRAIN_GITHUB_TOKEN` they read
+`src/activities.json`; without a Jev key the lookup stays on its local
+shortlist.
 
 The Hobby plan is for personal, non-commercial use. This project fits it.
 
 Environment variables (Vercel → Project → Settings → Environment Variables).
-Enable each one for Production and Preview. `BRAIN_GITHUB_TOKEN` has to be
-available at build time, and the Jev key at runtime. The default exposure
+Enable each one for Production and Preview. `BRAIN_GITHUB_TOKEN` is used at
+build time (the fallback snapshot) and at runtime (the live list), and the Jev
+key at runtime. The default exposure
 (build and runtime) is what you want.
 
 | Variable             | Purpose                                                              |
 | -------------------- | -------------------------------------------------------------------- |
 | `BRAIN_GITHUB_TOKEN` | Fine-grained GitHub token, Contents: read on `Splee9/spencer-brain`. |
 | `BRAIN_ACTIVITIES_PATH` | Optional; defaults to `data/public/strava-activities.json`.      |
+| `BRAIN_REF`          | Optional branch, tag, or sha to read from `spencer-brain`.           |
 | `OPENROUTER_API_KEY` | Jev via OpenRouter's Decisions API (`typesafe/jev-1.13-20260917`).   |
 | `TYPESAFE_API_KEY`   | Alternative: Jev direct from TypeSafe (`jev-1.13.0`). Used only if no OpenRouter key. |
 | `JEV_MODEL`          | Optional model override.                                             |
@@ -209,7 +249,7 @@ Setting up the project from scratch:
 
 1. Import this repo. Framework preset Vite. The build command and output directory come from `vercel.json`.
 2. Set the variables above, then deploy.
-3. Settings → Git → Deploy Hooks: create a hook and point grokbot's daily ping at it.
+3. Settings → Git → Deploy Hooks: create a hook and point grokbot's daily ping at it. Also save it as the `VERCEL_DEPLOY_HOOK_URL` secret in this GitHub repo for the scheduled rebuild.
 4. Add the custom domain. Set `URL` to that origin if it should win over the `vercel.app` hostname, and redeploy so the cards pick it up.
 
 ## Notes

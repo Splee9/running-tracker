@@ -19,3 +19,4 @@ jobs:
       - run: npm run fetch:activities
       - run: npm run test:intent
       - run: npm run build
+      - run: npm run smoke:api

@@ -1,5 +1,6 @@
 import { motion, type Variants } from "motion/react";
 import { Link } from "../lib/router";
+import { LatestRun } from "./LatestRun";
 import styles from "./Home.module.css";
 
 const rise: Variants = {
@@ -26,7 +27,11 @@ export function Home() {
         focused on running — lifetime mileage, training variability, and marathon builds.
       </motion.p>
 
-      <motion.div className={styles.projects} variants={rise} custom={3} initial="hidden" animate="show">
+      <motion.div variants={rise} custom={3} initial="hidden" animate="show">
+        <LatestRun />
+      </motion.div>
+
+      <motion.div className={styles.projects} variants={rise} custom={4} initial="hidden" animate="show">
         <h2 className={styles.projectsTitle}>Training</h2>
         <div className={styles.projectGrid}>
           <Link href="/miles" className={styles.projectCard}>
