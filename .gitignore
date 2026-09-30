@@ -7,8 +7,9 @@ dist-ssr/
 # Generated at build time from spencer-brain (scripts/fetch-activities.mjs)
 src/activities.json
 
-# Bundled Vercel function (scripts/bundle-jev.mjs). Source is src/server/jev-rerank.ts.
-api/
+# Bundled Vercel function (scripts/bundle-jev.mjs). Source is src/server/jev-rerank.ts;
+# api/jev-rerank.js re-exports it.
+server-dist/
 
 # TypeScript incremental build cache
 *.tsbuildinfo

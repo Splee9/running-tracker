@@ -69,8 +69,9 @@ src/
   styles/global.css       design tokens + base styles
 public/og/                link-preview cards, 1200×630 (committed; npm run og:images)
 src/server/jev-rerank.ts  Jev reranking for /activity-lookup (holds the API key).
-                          The build bundles it to api/jev-rerank.js, which is
-                          gitignored.
+                          The build bundles it to server-dist/ (gitignored);
+                          api/jev-rerank.js is the committed Vercel entry that
+                          re-exports it.
 scripts/                  data export, grading, and eval scripts (see below)
 ```
 
