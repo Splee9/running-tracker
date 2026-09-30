@@ -1517,6 +1517,25 @@ check("last winter is the most recent finished winter", lastWinter.dateWindow?.s
 const thisFall = classifyIntent("runs this fall", testClock);
 check("this fall includes the current season", thisFall.dateWindow?.start === "2026-09-01", JSON.stringify(thisFall.dateWindow));
 
+console.log("\nrace over-weighting in the membership rubric:\n");
+
+const rubric = (query) => {
+  const request = buildJevRequest(query, [act({ id: 170, name: "Jacquie's First Half", start_date_local: "2023-12-24T08:00:00", distance_m: 20700, moving_time_s: 6400, primary_stimulus: "long" })], testClock);
+  return request.questions.a170?.criteria ?? {};
+};
+const jacquie = rubric("Jacquie half");
+check(
+  "a distance beside other words names one activity, race or not",
+  jacquie.true.includes('"jacquie" is a strong yes') && !jacquie.false.includes("is not the race"),
+  JSON.stringify(jacquie),
+);
+const halfRaces = rubric("half marathon races");
+check("a bare distance search still wants the races", halfRaces.true.includes("a race at that distance") && halfRaces.false.includes("is not the race"), JSON.stringify(halfRaces));
+const currentPr = rubric("current PR");
+check("current PR means race_pr, not a past PR in the name", currentPr.true.includes("race_pr") && currentPr.false.includes("past PR"), JSON.stringify(currentPr));
+const anyPr = rubric("races that were PRs");
+check("a PR search explains race_pr and PR in the name", anyPr.true.includes("race_pr") && anyPr.true.includes("was a PR when it happened"), JSON.stringify(anyPr));
+
 console.log();
 if (failures === 0) {
   console.log("✅ All tests pass!");

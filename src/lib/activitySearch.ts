@@ -2695,6 +2695,15 @@ function membershipCriteria(
   const tokens = tokenize(query);
   const raceTokens = tokens.filter((token) => RACE_DISTANCE_TOKENS.has(token));
   const raceNamed = raceTokens.length > 0 && !metricKind(c);
+  // Leftover words beside a distance or a guessed race name one activity: "Jacquie half"
+  // is the long run named Jacquie's First Half, not any half-marathon race.
+  const nameWords = c.remainingTokens.filter(
+    (token) => !RACE_DISTANCE_TOKENS.has(token) && !["race", "races", "my", "the", "a"].includes(token) && !PR_WORDS.includes(token),
+  );
+  const raceGuess = c.softStimulus && c.stimulus?.primary === "race";
+  const namesOne = nameWords.length > 0 && (raceNamed || raceGuess);
+  const asksPr = tokens.some((token) => PR_WORDS.includes(token))
+    || tokens.some((token, i) => token === "personal" && ["best", "bests", "record", "records"].includes(tokens[i + 1]));
   const best = tokens.includes("best") && !metricKind(c) && !standoutGraded;
   const hilly = tokens.some((token) => token === "hilly" || token === "hill") && c.stimulus?.primary !== "hills";
 
@@ -2707,9 +2716,21 @@ function membershipCriteria(
   if (c.softStimulus && stimulusParts.length > 0) {
     yes.push(`${stimulusParts.join(" with ")} fits, and so does an activity whose name is what the query asks for, whatever its stimulus label.`);
   }
-  if (raceNamed) {
+  if (namesOne) {
+    yes.push(`An activity whose name contains "${nameWords.join(" ")}" is a strong yes, whether or not it is a race.`);
+    no.push(`An official race that only shares the distance, without "${nameWords.join(" ")}" in its name, is a weak match.`);
+  } else if (raceNamed) {
     yes.push("A race-labeled activity, or one with a race record, whose name is that race, or a race at that distance, is a yes.");
     no.push("A training run, commute, or quality session that only shares the city or a nearby distance is not the race.");
+  }
+  if (asksPr) {
+    if (tokens.includes("current")) {
+      yes.push("A current PR is an activity with race_pr: the best at that distance today.");
+      no.push("A race whose name says PR but has no race_pr is a past PR, not a current one.");
+    } else {
+      yes.push("PR means a personal record. race_pr marks the current best at that distance and is a strong yes; a race whose name says PR was a PR when it happened.");
+      no.push("A race with no race_pr and no PR in its name is not a PR, however fast.");
+    }
   }
   if (best) {
     yes.push("Best means a standout effort: a race, a notably fast run, or a memorable long run. The newest easy run is not automatically best.");
