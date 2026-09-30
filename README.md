@@ -203,85 +203,39 @@ available at build time, and the Jev key at runtime. The default exposure
 | `OPENROUTER_API_KEY` | Jev via OpenRouter's Decisions API (`typesafe/jev-1.13-20260917`).   |
 | `TYPESAFE_API_KEY`   | Alternative: Jev direct from TypeSafe (`jev-1.13.0`). Used only if no OpenRouter key. |
 | `JEV_MODEL`          | Optional model override.                                             |
-| `URL`                | Canonical origin for link-preview tags, no trailing slash. Production value: `https://iamspencerlee.com`. Falls back to `VERCEL_PROJECT_PRODUCTION_URL`, then `https://spencerruns.netlify.app` for local and CI. |
+| `URL`                | Canonical origin for link-preview tags, no trailing slash. Set to `https://iamspencerlee.com` on Production and Preview. Falls back to `VERCEL_PROJECT_PRODUCTION_URL`, then `https://spencerruns.netlify.app` for local and CI. |
 
-The site is already on Vercel. Import and the first production deploy are done.
-Custom domain, deploy hook, `URL`, and switching Netlify off are still open.
-There is no Vercel token in this environment, so the domain has not been added
-and Vercel has not issued project-specific DNS values. Copy those from the
-domain card (or `vercel domains inspect iamspencerlee.com`) after the domain
-is added. Docs examples are not a substitute.
+Production is Vercel project `running-tracker` (team `spencers-projects-40ee9c92`):
+https://vercel.com/spencers-projects-40ee9c92/running-tracker.
+The public origin is https://iamspencerlee.com. `www` 308s to the apex.
+`running-tracker-sage.vercel.app` still serves the same deployment.
 
-| | Value |
-| --- | --- |
-| Project | `running-tracker` |
-| Team | `spencers-projects-40ee9c92` |
-| Dashboard | https://vercel.com/spencers-projects-40ee9c92/running-tracker |
-| Production URL | https://running-tracker-sage.vercel.app/ |
+DNS stays on Netlify (NS1). Registrar Hostinger, nameservers
+`dns1.p06.nsone.net` through `dns4.p06.nsone.net`, zone
+`6a229eb9b2d0eb02368a36b0` on site `spencerruns`. Hostinger's zone editor is
+empty. Live records, checked 2026-09-30:
 
-### Domain
+| Host | Type | Value |
+| --- | --- | --- |
+| apex | A | `216.198.79.1` |
+| apex | A | `64.29.17.1` |
+| `www` | CNAME | `67703c4c2985eec9.vercel-dns-017.com` |
 
-On the project, Settings → Domains, add `iamspencerlee.com` and
-`www.iamspencerlee.com`. Redirect `www` to the apex. The canonical origin is
-`https://iamspencerlee.com` (the Jev `HTTP-Referer` already uses that host).
+Leave the Netlify site up while those nameservers are still NS1. Deleting
+`spencerruns` can delete the zone and take `iamspencerlee.com` offline. Move
+nameservers only when the domain should leave Netlify DNS entirely.
 
-The domain card is the source of truth for records. Vercel's general-purpose
-examples are an apex `A` of `76.76.21.21` and a `www` `CNAME` of
-`cname.vercel-dns-0.com`; a project can be assigned a different anycast address
-and a project-specific CNAME target, so use the card. If the card shows a
-`_vercel` TXT (`vc-domain-verify=…`), add that too — it appears only when
-Vercel asks to claim the domain. Vercel does not use `AAAA`.
+Deploy hook `grokbot-daily` (branch `main`) is the daily activity refresh.
+grokbot calls it through `VERCEL_DEPLOY_HOOK_SPENCERRUNS`.
+`NETLIFY_BUILD_HOOK_SPENCERRUNS` is an alias of that same URL. The hook URL
+is a secret and is not in this repo. A ping rebuilds the latest `main` commit,
+which re-runs `scripts/fetch-activities.mjs`.
 
-Authoritative DNS is Netlify DNS on NS1, not Hostinger's zone editor.
-Checked 2026-09-30:
-
-- Registrar Hostinger. Nameservers `dns1.p06.nsone.net` through
-  `dns4.p06.nsone.net`. SOA mailbox `domains+netlify.netlify.com`.
-- Zone `6a229eb9b2d0eb02368a36b0` on Netlify site `spencerruns`. Hostinger's
-  zone editor is empty because those nameservers are external, so record
-  edits go in the Netlify zone.
-- Apex and `www` both answer `A` `18.208.88.157` and `98.84.224.111`, the same
-  addresses as `spencerruns.netlify.app`. No MX, TXT, CAA, or AAAA.
-
-In that Netlify zone, replace the NETLIFY records that alias the apex and
-`www` to `spencerruns.netlify.app` with the domain-card records. The other
-option is a nameserver change at the Hostinger registrar, from the four
-`p06.nsone.net` hosts to the nameservers printed on the Vercel domain card.
-That is a registrar nameserver update. It does not fill Hostinger's empty zone.
-
-### Deploy hook
-
-Settings → Git → Deploy Hooks. Name `grokbot-daily`, branch `main`. Vercel
-returns a URL shaped like
-`https://api.vercel.com/v1/integrations/deploy/prj_…/…`. grokbot's daily job
-should `POST` it (a `GET` also triggers a deploy) with an empty body. Treat
-the URL like a password. Point the existing Netlify build-hook ping at this
-URL and retire the Netlify hook in the same change. The hook rebuilds the
-latest `main` commit, which re-runs `scripts/fetch-activities.mjs`. This repo
-does not contain the ping; it lives in grokbot's config.
-
-### `URL`
-
-Set `URL` to `https://iamspencerlee.com` for Production and Preview, available
-at build time. `scripts/page-meta.mjs` bakes canonical and Open Graph tags
-from it. Redeploy after saving the variable. Saving it before DNS finishes is
-fine: the tags name the custom origin, and they are correct once the name
-resolves.
-
-### Turning Netlify off
-
-Wait until `https://iamspencerlee.com` responds with `server: Vercel` and `dig`
-shows the new records.
-
-1. grokbot posts to the Vercel hook, and a manual post creates a Vercel deployment.
-2. A production page's canonical tag is `https://iamspencerlee.com/…`.
-3. `www` redirects to the apex.
-4. While nameservers are still the Netlify NS1 hosts, keep the DNS zone.
-   Stopping builds is safe. Deleting site `spencerruns` can delete zone
-   `6a229eb9b2d0eb02368a36b0` and take the domain offline.
-5. After the registrar nameservers are the ones on the Vercel domain card and
-   `dig NS iamspencerlee.com` no longer returns `p06.nsone.net`, stop or delete
-   the Netlify site so it stops billing, and remove the old build hook.
+`URL` is already set, and `scripts/page-meta.mjs` reads it at build time.
+The production deployment from 2026-09-30 10:15Z (commit `9473046`) was built
+before that, so live canonical and Open Graph tags still name
+`https://running-tracker-sage.vercel.app`. The next production deploy bakes
+`https://iamspencerlee.com`.
 
 ## Notes
 
