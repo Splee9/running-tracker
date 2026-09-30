@@ -300,15 +300,12 @@ function derivedTags(a: Activity): string[] {
   if (a.primary_stimulus) tags.push(a.primary_stimulus);
   if (a.modifiers) tags.push(...a.modifiers);
   if (a.stimulus_cluster) tags.push(...tokenize(a.stimulus_cluster));
-  if (a.place && !hasStructuredPlace(a)) tags.push(...tokenize(a.place));
+  tags.push(...tokenize(placeWords(a)));
   if (a.has_intervals) tags.push("intervals", "reps", "repeats");
   tags.push(...calendarSearchTags(a.start_date_local));
-  if (a.place_city) tags.push(...tokenize(a.place_city));
-  if (a.place_region) tags.push(...tokenize(a.place_region));
-  if (a.place_country) tags.push(...tokenize(a.place_country));
   if (a.race?.event_name) tags.push(...tokenize(a.race.event_name));
   tags.push(...raceBandTags(a.race?.distance));
-  if (a.race?.is_pr) tags.push("pr", "prs", "pb", "pbs");
+  if (a.race?.is_pr) tags.push("pr", "prs", "pb", "pbs", "personal", "best", "record");
   if (a.workout_structure) tags.push(...workoutStructureTags(a.workout_structure));
   if (a.gear) tags.push(...tokenize(a.gear));
   if (a.with) {
@@ -361,15 +358,27 @@ function tokenize(text: string): string[] {
  * "8×400m" matches `8x400` and `400 repeats`. The rep distance and the compact
  * form are both indexed. "repeats" is only added when a structure is present.
  */
+const STRUCTURE_UNIT_WORDS: Record<string, string[]> = {
+  mi: ["mile", "miles"],
+  km: ["kilometer", "kilometers"],
+  m: ["meter", "meters"],
+};
+
 function workoutStructureTags(structure: string): string[] {
   const tags = new Set<string>(tokenize(structure));
   const compact = structure.toLowerCase().replace(/×/g, "x").replace(/[^a-z0-9x]/g, "");
   if (compact) tags.add(compact);
   const noUnit = compact.replace(/m/g, "");
   if (noUnit) tags.add(noUnit);
-  for (const match of compact.matchAll(/x(\d+)/g)) {
-    tags.add(match[1]);
-    tags.add(`${match[1]}m`);
+  // The rep distance and its unit words: "4×1mi" is "mile repeats", "3×2mi" is
+  // "2 mile", "5×2km" is "2k" and "kilometer", "8×400m" is "400 meter".
+  for (const match of compact.matchAll(/x(\d+)(mi|km|k|m)?/g)) {
+    const [, n, unit = "m"] = match;
+    tags.add(n);
+    if (unit === "m") tags.add(`${n}m`);
+    else if (unit === "mi") tags.add(`${n}mi`);
+    else tags.add(`${n}k`).add(`${n}km`);
+    STRUCTURE_UNIT_WORDS[unit === "k" ? "km" : unit].forEach((word) => tags.add(word));
   }
   tags.add("repeats");
   tags.add("reps");
@@ -429,6 +438,25 @@ function parseDateWindow(tokens: string[], now?: Date): { window: DateWindow | n
     };
   }
   
+  // "this summer" / "last winter" is one season, not every year's. Seasons match
+  // calendar.ts: winter Dec–Feb, spring Mar–May, summer Jun–Aug, fall Sep–Nov.
+  // "this" is the most recent one that has started; "last" the most recent one that has ended.
+  const seasonStart: Record<string, number> = { winter: 11, spring: 2, summer: 5, fall: 8, autumn: 8 };
+  for (let i = 0; i + 1 < tokens.length; i++) {
+    const startMonth = seasonStart[tokens[i + 1]];
+    if (startMonth === undefined || !["this", "last", "past"].includes(tokens[i])) continue;
+    // Months since the season's start this calendar year, wrapping for winter.
+    let year = today.getFullYear();
+    if (today.getMonth() < startMonth) year -= 1;
+    const inSeason = (today.getMonth() - startMonth + 12) % 12 < 3;
+    if (tokens[i] !== "this" && inSeason) year -= 1;
+    const start = new Date(year, startMonth, 1);
+    const end = new Date(year, startMonth + 3, 0);
+    consumedIndices.add(i);
+    consumedIndices.add(i + 1);
+    return { window: { start: formatDate(start), end: formatDate(end) }, consumedIndices };
+  }
+
   // Check for "yesterday"
   const yesterdayIdx = tokens.indexOf("yesterday");
   if (yesterdayIdx >= 0) {
@@ -954,9 +982,37 @@ export function structuredPlaceText(activity: Activity): string {
   return [activity.place_city, activity.place_region, activity.place_country].filter(Boolean).join(", ");
 }
 
+// English names for the export's local-language places, so "in Spain" finds España.
+const PLACE_NAME_ALIASES: Record<string, string> = {
+  "espana": "spain",
+  "catalunya": "catalonia",
+  "united states": "usa united states america",
+};
+
+/**
+ * The activity's place names: city / region / country, with English aliases. The
+ * export's place field counts only when the geocoder named no city ("Long Run" in
+ * Los Angeles has just California); a GPS city still wins over a title's place.
+ */
+function placeWords(activity: Activity): string {
+  const place = activity.place_city ? undefined : activity.place;
+  const text = [place, activity.place_city, activity.place_region, activity.place_country].filter(Boolean).join(" ");
+  const folded = ` ${tokenize(text).join(" ")} `;
+  const aliases = Object.entries(PLACE_NAME_ALIASES)
+    .filter(([name]) => folded.includes(` ${name} `))
+    .map(([, alias]) => alias);
+  return [text, ...aliases].join(" ");
+}
+
+// "marathon races" / "5k races": the words before "races" are a distance, not a place.
+function isDistancePhrase(tokens: string[]): boolean {
+  const { band, consumedIndices } = parseDistanceBand(tokens.join(" "));
+  return band !== null && consumedIndices.size === tokens.length;
+}
+
 function activityMatchesPlace(activity: Activity, place: string): boolean {
   // GPS names win over a title that merely mentions the city.
-  if (hasStructuredPlace(activity)) return textHasPlace(structuredPlaceText(activity), place);
+  if (hasStructuredPlace(activity)) return textHasPlace(placeWords(activity), place);
   return textHasPlace(`${activity.place ?? ""} ${activity.name}`, place);
 }
 
@@ -1143,12 +1199,19 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
   // Detect fastest
   if (!intent) {
     let fastestIdx = tokens.findIndex(t => SPEED_WORDS.includes(t));
+    let personalIdx = -1;
     if (fastestIdx < 0 && parseDistanceBand(query).band) {
       fastestIdx = tokens.findIndex(t => PR_WORDS.includes(t));
+      // "personal best half marathon" / "personal record 10k" are a PR too.
+      if (fastestIdx < 0) {
+        personalIdx = tokens.findIndex((t, i) => t === "personal" && ["best", "record", "records", "bests"].includes(tokens[i + 1]));
+        if (personalIdx >= 0) fastestIdx = personalIdx + 1;
+      }
     }
     if (fastestIdx >= 0) {
       intent = { kind: "fastest" };
       consumedIndices.add(fastestIdx);
+      if (personalIdx >= 0) consumedIndices.add(personalIdx);
       const sportIdx = tokens.findIndex(t => ["run", "runs", "running"].includes(t));
       if (sportIdx >= 0) {
         intent.sport = "run";
@@ -1247,7 +1310,7 @@ function detectSuperlativeIntent(query: string, now?: Date): IntentClassificatio
         const filterType = raceIdx >= 0 ? "race" as const : workoutIdx >= 0 ? "workout" as const : undefined;
         // "Chicago races" is a city plus a race word. A bare "fartlek session"
         // is not a place: workout/session only keeps a place when it is a known alias.
-        const acceptPlace = filterType === "race" || isKnownPlaceTokens(placeTokens);
+        const acceptPlace = (filterType === "race" || isKnownPlaceTokens(placeTokens)) && !isDistancePhrase(placeTokens);
         if (place && acceptPlace && !isBlockedPlaceName(place)) {
           intent = { kind: "place_filter", place, filterType };
           consumedIndices.add(raceIdx >= 0 ? raceIdx : workoutIdx);
@@ -1791,7 +1854,7 @@ function scoreToken(token: string, words: string[]): { score: number; fuzzy: boo
   // Years and distances ("2025", "10k") must not fuzz into their neighbours.
   const maxEdits = /\d/.test(token) ? 0 : token.length >= 7 ? 2 : token.length >= 4 ? 1 : 0;
   // "marathons" names a marathon. A plural is not a typo, so it must not read as fuzzy.
-  const singular = token.length >= 4 && token.endsWith("s") ? token.slice(0, -1) : null;
+  const singular = token.length >= 3 && token.endsWith("s") ? token.slice(0, -1) : null;
   for (const w of words) {
     if (w === token) return { score: 1, fuzzy: false };
     if (singular && w === singular) {
@@ -2632,6 +2695,15 @@ function membershipCriteria(
   const tokens = tokenize(query);
   const raceTokens = tokens.filter((token) => RACE_DISTANCE_TOKENS.has(token));
   const raceNamed = raceTokens.length > 0 && !metricKind(c);
+  // Leftover words beside a distance or a guessed race name one activity: "Jacquie half"
+  // is the long run named Jacquie's First Half, not any half-marathon race.
+  const nameWords = c.remainingTokens.filter(
+    (token) => !RACE_DISTANCE_TOKENS.has(token) && !["race", "races", "my", "the", "a"].includes(token) && !PR_WORDS.includes(token),
+  );
+  const raceGuess = c.softStimulus && c.stimulus?.primary === "race";
+  const namesOne = nameWords.length > 0 && (raceNamed || raceGuess);
+  const asksPr = tokens.some((token) => PR_WORDS.includes(token))
+    || tokens.some((token, i) => token === "personal" && ["best", "bests", "record", "records"].includes(tokens[i + 1]));
   const best = tokens.includes("best") && !metricKind(c) && !standoutGraded;
   const hilly = tokens.some((token) => token === "hilly" || token === "hill") && c.stimulus?.primary !== "hills";
 
@@ -2644,9 +2716,21 @@ function membershipCriteria(
   if (c.softStimulus && stimulusParts.length > 0) {
     yes.push(`${stimulusParts.join(" with ")} fits, and so does an activity whose name is what the query asks for, whatever its stimulus label.`);
   }
-  if (raceNamed) {
+  if (namesOne) {
+    yes.push(`An activity whose name contains "${nameWords.join(" ")}" is a strong yes, whether or not it is a race.`);
+    no.push(`An official race that only shares the distance, without "${nameWords.join(" ")}" in its name, is a weak match.`);
+  } else if (raceNamed) {
     yes.push("A race-labeled activity, or one with a race record, whose name is that race, or a race at that distance, is a yes.");
     no.push("A training run, commute, or quality session that only shares the city or a nearby distance is not the race.");
+  }
+  if (asksPr) {
+    if (tokens.includes("current")) {
+      yes.push("A current PR is an activity with race_pr: the best at that distance today.");
+      no.push("A race whose name says PR but has no race_pr is a past PR, not a current one.");
+    } else {
+      yes.push("PR means a personal record. race_pr marks the current best at that distance and is a strong yes; a race whose name says PR was a PR when it happened.");
+      no.push("A race with no race_pr and no PR in its name is not a PR, however fast.");
+    }
   }
   if (best) {
     yes.push("Best means a standout effort: a race, a notably fast run, or a memorable long run. The newest easy run is not automatically best.");

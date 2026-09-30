@@ -1475,6 +1475,67 @@ check(
   JSON.stringify(virtualEnriched),
 );
 
+console.log("\nlap units and PR spellings:\n");
+
+const unitIndex = buildIndex([
+  act({ id: 150, name: "Quality Session", start_date_local: "2026-09-19T08:00:00", distance_m: 20000, moving_time_s: 5600, primary_stimulus: "quality", modifiers: ["intervals"], workout_structure: "3×2mi" }),
+  act({ id: 151, name: "Quality Session", start_date_local: "2026-09-12T08:00:00", distance_m: 16000, moving_time_s: 4500, primary_stimulus: "quality", modifiers: ["intervals"], workout_structure: "4×1mi" }),
+  act({ id: 152, name: "Quality Session", start_date_local: "2026-09-05T08:00:00", distance_m: 14000, moving_time_s: 4000, primary_stimulus: "quality", modifiers: ["intervals"], workout_structure: "8×400m" }),
+  act({ id: 153, name: "Indy Marathon", start_date_local: "2025-11-08T08:00:00", distance_m: 42500, moving_time_s: 9959, primary_stimulus: "race", race: { distance: "marathon", is_pr: true } }),
+  act({ id: 154, name: "Chicago Marathon", start_date_local: "2024-10-13T08:00:00", distance_m: 42900, moving_time_s: 10745, primary_stimulus: "race", race: { distance: "marathon", is_pr: false } }),
+]);
+const unitIds = (query) => searchActivities(unitIndex, query, 50, testClock).map((hit) => hit.activity.id);
+check("mile intervals finds sessions stored as ×1mi and ×2mi", JSON.stringify(unitIds("mile intervals").sort()) === "[150,151]", JSON.stringify(unitIds("mile intervals")));
+check("2 mile repeats puts the ×2mi session first", unitIds("2 mile repeats")[0] === 150, JSON.stringify(unitIds("2 mile repeats")));
+check("400 meter repeats finds ×400m", unitIds("400 meter repeats")[0] === 152, JSON.stringify(unitIds("400 meter repeats")));
+check("PBs finds the current PR only", JSON.stringify(unitIds("PBs")) === "[153]", JSON.stringify(unitIds("PBs")));
+check("personal records finds the current PR", unitIds("personal records")[0] === 153, JSON.stringify(unitIds("personal records")));
+const personalBest = classifyIntent("personal best marathon", testClock);
+check("personal best plus a distance is the fastest at it", personalBest.intent?.kind === "fastest" && personalBest.isDeterministic, JSON.stringify(personalBest));
+
+console.log("\nregressions after the v5 consumers:\n");
+
+const regIndex = buildIndex([
+  // The geocoder named a region but no city; the export's place is the only city name.
+  act({ id: 160, name: "Long Run", start_date_local: "2025-10-10T08:00:00", distance_m: 35800, moving_time_s: 8900, primary_stimulus: "long", place: "Los Angeles", place_source: "gps", place_region: "California", place_country: "United States" }),
+  act({ id: 161, name: "Cool down", start_date_local: "2025-09-06T09:30:00", distance_m: 4000, moving_time_s: 1500, primary_stimulus: "recovery", place: "Naperville", place_source: "gps", place_region: "Illinois", place_country: "United States" }),
+  act({ id: 162, name: "Easy Run", start_date_local: "2026-01-05T08:00:00", distance_m: 10000, moving_time_s: 3000, primary_stimulus: "easy", place: "Chicago", place_city: "Chicago", place_region: "Illinois", place_country: "United States" }),
+  act({ id: 163, name: "Morning Walk", sport_type: "Walk", start_date_local: "2019-05-02T08:00:00", distance_m: 900, moving_time_s: 600, primary_stimulus: "other", place: "Barcelona", place_city: "Barcelona", place_region: "Catalunya", place_country: "España" }),
+  act({ id: 164, name: "Indy Marathon", start_date_local: "2025-11-08T08:00:00", distance_m: 42400, moving_time_s: 9959, primary_stimulus: "race", place_city: "Indianapolis", place_region: "Indiana", place_country: "United States" }),
+  act({ id: 165, name: "Corporate Challenge", start_date_local: "2026-05-14T08:00:00", distance_m: 5900, moving_time_s: 1200, primary_stimulus: "race", place_city: "Chicago", place_region: "Illinois", place_country: "United States" }),
+]);
+const regIds = (query) => searchActivities(regIndex, query, 50, testClock).map((hit) => hit.activity.id);
+check("a region-only geocode still matches the export's city", JSON.stringify(regIds("long run in Los Angeles")) === "[160]", JSON.stringify(regIds("long run in Los Angeles")));
+check("a region-only geocode keeps the city as a search word", regIds("cool down after the Naperville half")[0] === 161, JSON.stringify(regIds("cool down after the Naperville half")));
+check("Catalonia and Spain find Catalunya, España", JSON.stringify(regIds("walks in Catalonia")) === "[163]" && JSON.stringify(regIds("walks in Spain")) === "[163]", JSON.stringify([regIds("walks in Catalonia"), regIds("walks in Spain")]));
+const marathonRaces = classifyIntent("marathon races", testClock);
+check("marathon races is not a place named marathon", marathonRaces.place === null && marathonRaces.intent?.kind !== "place_filter" && regIds("marathon races")[0] === 164, JSON.stringify({ marathonRaces, ids: regIds("marathon races") }));
+const thisSummer = classifyIntent("longest run this summer", testClock);
+check("this summer is this year's June through August", thisSummer.dateWindow?.start === "2026-06-01" && thisSummer.dateWindow?.end === "2026-08-31" && thisSummer.isDeterministic, JSON.stringify(thisSummer));
+const lastWinter = classifyIntent("hilliest ride last winter", testClock);
+check("last winter is the most recent finished winter", lastWinter.dateWindow?.start === "2025-12-01" && lastWinter.dateWindow?.end === "2026-02-28", JSON.stringify(lastWinter.dateWindow));
+const thisFall = classifyIntent("runs this fall", testClock);
+check("this fall includes the current season", thisFall.dateWindow?.start === "2026-09-01", JSON.stringify(thisFall.dateWindow));
+
+console.log("\nrace over-weighting in the membership rubric:\n");
+
+const rubric = (query) => {
+  const request = buildJevRequest(query, [act({ id: 170, name: "Jacquie's First Half", start_date_local: "2023-12-24T08:00:00", distance_m: 20700, moving_time_s: 6400, primary_stimulus: "long" })], testClock);
+  return request.questions.a170?.criteria ?? {};
+};
+const jacquie = rubric("Jacquie half");
+check(
+  "a distance beside other words names one activity, race or not",
+  jacquie.true.includes('"jacquie" is a strong yes') && !jacquie.false.includes("is not the race"),
+  JSON.stringify(jacquie),
+);
+const halfRaces = rubric("half marathon races");
+check("a bare distance search still wants the races", halfRaces.true.includes("a race at that distance") && halfRaces.false.includes("is not the race"), JSON.stringify(halfRaces));
+const currentPr = rubric("current PR");
+check("current PR means race_pr, not a past PR in the name", currentPr.true.includes("race_pr") && currentPr.false.includes("past PR"), JSON.stringify(currentPr));
+const anyPr = rubric("races that were PRs");
+check("a PR search explains race_pr and PR in the name", anyPr.true.includes("race_pr") && anyPr.true.includes("was a PR when it happened"), JSON.stringify(anyPr));
+
 console.log();
 if (failures === 0) {
   console.log("✅ All tests pass!");
