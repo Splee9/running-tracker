@@ -1,4 +1,4 @@
-// Where Jev requests go. Shared by the Netlify function and the offline grading script.
+// Where Jev requests go. Shared by the Vercel function and the offline grading script.
 // Server-side only: keys come from the environment and never reach the browser bundle.
 
 export type JevProvider = { url: string; model: string; key: string; headers: Record<string, string> };

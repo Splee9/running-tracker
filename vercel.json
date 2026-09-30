@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "node scripts/fetch-activities.mjs && npm run build",
+  "outputDirectory": "dist",
+  "cleanUrls": true,
+  "functions": {
+    "api/jev-rerank.js": {
+      "maxDuration": 15
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/index" }]
+}
