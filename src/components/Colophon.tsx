@@ -29,7 +29,7 @@ export function Colophon() {
         line's still moving.
       </p>
       <p className={styles.byline}>
-        — Spencer Lee ·{" "}
+        — Spencer Lee · Senior Manager, Value Engineering — Applied AI, BMO US ·{" "}
         <a href="https://www.linkedin.com/in/applied-ai-spencer-lee" target="_blank" rel="noreferrer">
           linkedin.com/in/applied-ai-spencer-lee
         </a>

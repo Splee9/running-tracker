@@ -63,7 +63,10 @@ export function Nav() {
 
       <div id="primary-menu" className={`${styles.menu} ${isMenuOpen ? styles.menuOpen : ""}`}>
         {NAV_ITEMS.map((item) => {
-          const current = pathname === item.href;
+          const current =
+            pathname === item.href ||
+            (item.href === "/training/chicago" && pathname === "/chicago") ||
+            (item.href === "/activity-lookup" && pathname === "/lookup");
           return (
             <Link
               key={item.href}

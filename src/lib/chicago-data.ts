@@ -105,6 +105,32 @@ export interface TrackerData {
 
 export const data = raw as TrackerData;
 
+export type RaceWeekTape = {
+  daysToRace: number;
+  blockMiles: number;
+  lastUpdated: string;
+  /** The build file's current week, including a partial week still in progress. */
+  current: WeekDatum | null;
+  /** Latest earlier week that logged quality miles. A week total, not one session. */
+  priorQuality: WeekDatum | null;
+};
+
+/** Race-week facts already on the Chicago build file. No figures are invented here. */
+export function raceWeekTape(source: TrackerData = data): RaceWeekTape {
+  const current =
+    source.weeks.find((week) => week.week === source.meta.currentWeek) ?? source.weeks.at(-1) ?? null;
+  const priorQuality =
+    [...source.weeks].reverse().find((week) => (!current || week.week < current.week) && week.types.quality > 0) ??
+    null;
+  return {
+    daysToRace: source.meta.daysToRace,
+    blockMiles: source.meta.blockMilesToDate,
+    lastUpdated: source.meta.lastUpdated,
+    current,
+    priorQuality,
+  };
+}
+
 /** CSS custom-property name for a phase index (0-3). */
 export const PHASE_VAR = ["--p1", "--p2", "--p3", "--p4"] as const;
 

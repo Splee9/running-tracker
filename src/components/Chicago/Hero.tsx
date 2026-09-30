@@ -1,5 +1,6 @@
 import { motion, type Variants } from "motion/react";
 import { AnimatedNumber } from "../AnimatedNumber";
+import { RaceWeekTape } from "./RaceWeekTape";
 import { data, PHASE_VAR } from "../../lib/chicago-data";
 import { fmt1, formatDate } from "../../lib/chicago-format";
 import styles from "./Hero.module.css";
@@ -60,7 +61,11 @@ export function Hero() {
         </div>
       </motion.div>
 
-      <motion.p className={styles.scrollCue} variants={rise} custom={5} initial="hidden" animate="show">
+      <motion.div variants={rise} custom={5} initial="hidden" animate="show">
+        <RaceWeekTape />
+      </motion.div>
+
+      <motion.p className={styles.scrollCue} variants={rise} custom={6} initial="hidden" animate="show">
         Scroll for the plan, week by week ↓
       </motion.p>
     </header>

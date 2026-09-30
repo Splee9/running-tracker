@@ -14,15 +14,37 @@ export type PageMeta = {
   headline: string;
 };
 
+const home: PageMeta = {
+  title: "Spencer Lee — Value Engineering, Applied AI",
+  description:
+    "Personal ops on a training log: typed Jev decisions for activity lookup, and a Chicago race-week dashboard. Code owns the policy. Calendar and spend stay human.",
+  image: "/og/home.png",
+  eyebrow: "Value engineering · Applied AI",
+  headline: "A typed judgment layer.",
+};
+
+const chicago: PageMeta = {
+  title: "Chicago Marathon 2026 — Training tracker",
+  description:
+    "Race-week tape for the 2026 Chicago Marathon build: days out, block miles, this week's load, and training variability against earlier builds.",
+  image: "/og/chicago.png",
+  eyebrow: "The road to Chicago",
+  headline: "26.2 miles, one build at a time.",
+};
+
+const lookup: PageMeta = {
+  title: "Activity lookup — Miles",
+  description:
+    "Semantic search over the public training log. Code shortlists; Jev scores membership. Share any ask with /lookup?q=…",
+  image: "/og/lookup.png",
+  eyebrow: "Activity lookup",
+  headline: "Find any session.",
+};
+
 export const PAGES: Record<string, PageMeta> = {
-  "/": {
-    title: "Spencer Lee — Projects",
-    description:
-      "Tools for tracking training and visualizing progress — a running log, training variability, and a Chicago Marathon build.",
-    image: "/og/home.png",
-    eyebrow: "Personal projects",
-    headline: "Spencer Lee",
-  },
+  "/": home,
+  // Same framing as home. Static HTML so a shared /portfolio link previews cleanly.
+  "/portfolio": home,
   "/miles": {
     title: "Miles — a running log",
     description: "Every mile since 2018 — a running log that reframes distance as journeys.",
@@ -38,22 +60,12 @@ export const PAGES: Record<string, PageMeta> = {
     eyebrow: "Training variability",
     headline: "How steady is the work?",
   },
-  "/training/chicago": {
-    title: "Chicago Marathon 2026 — Training tracker",
-    description:
-      "A 23-week build for the 2026 Chicago Marathon: phases, weekly load by workout type, and comparisons with past marathon builds.",
-    image: "/og/chicago.png",
-    eyebrow: "The road to Chicago",
-    headline: "26.2 miles, one build at a time.",
-  },
-  "/activity-lookup": {
-    title: "Activity lookup — Miles",
-    description:
-      "Search every public activity the way you'd describe it: a distance, a place, a date, or a kind of workout.",
-    image: "/og/lookup.png",
-    eyebrow: "Activity lookup",
-    headline: "Find any session.",
-  },
+  "/training/chicago": chicago,
+  // Share URL. Same card as /training/chicago.
+  "/chicago": chicago,
+  "/activity-lookup": lookup,
+  // Share URL. Query string (?q=) stays on this page; previews use the page card.
+  "/lookup": lookup,
 };
 
 export const NOT_FOUND_TITLE = "Not found — Spencer Lee";

@@ -128,6 +128,20 @@ export function ActivityLookup() {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
+  // Deep links (/lookup?q=…) and in-app navigations land in the same fields the page writes back.
+  useEffect(() => {
+    function syncFromUrl() {
+      const next = readParams();
+      setQuery(next.query);
+      setSport(next.sport);
+      setUnits(next.units);
+      setOrder(next.order);
+      setRemoved({ query: next.query.trim(), keys: next.removed });
+    }
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
+  }, []);
+
   // Keep the search in the URL so it can be shared or bookmarked. Other params (debug) are left alone.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

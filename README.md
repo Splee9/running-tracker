@@ -77,18 +77,23 @@ scripts/                  data export, grading, and eval scripts (see below)
 
 ## Routes
 
-- `/` — projects home page linking to the pages below.
+- `/` and `/portfolio` — portfolio home: judgment-layer framing, Activity Lookup and
+  Chicago / training-variability case cards, a labeled featured-judgment example, and
+  the about block. Prescribe-time Choice, the stimulus-label pipeline, and
+  brief-relevance are held and have no UI.
 - `/miles` — the running log: lifetime and per-year mileage reframed as journeys.
 - `/training` — training variability: how much weekly hours swing around their
   mean over rolling 8 / 12 / 52-week windows, for Run, Bike, or All. Lower is
   steadier (Steady < 35, Moderate 35–55, Uneven 55–80, Erratic ≥ 80). One
   window is shown at a time; a switch overlays weekly hours as bars on a second
   axis.
-- `/training/chicago` — Chicago Marathon 2026 training tracker: 23-week phase
-  plan, weekly load by workout type, aerobic efficiency trend, and head-to-head
+- `/training/chicago` and `/chicago` — Chicago Marathon 2026 training tracker:
+  race-week tape (days out, block miles, this week's miles, quality miles), 23-week
+  phase plan, weekly load by workout type, aerobic efficiency trend, and head-to-head
   comparison against prior marathon builds. Aggregate weekly figures only — no
   pace, GPS, heart rate, or health data.
-- `/activity-lookup` — search every public activity. Three stages:
+- `/activity-lookup` and `/lookup` — search every public activity. A shared ask is
+  `/lookup?q=…` (same fields as `/activity-lookup?q=…`). Three stages:
   1. **Label hard filters**, in the browser: modality, date, distance, place,
      weekday, and stimulus words (`easy`, `intervals`, `quality`, `long`,
      `race`, `recovery`, `probe`, `hills`, plus modifiers such as `tempo`).

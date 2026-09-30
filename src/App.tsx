@@ -30,7 +30,7 @@ export default function App() {
       <CursorSpotlight />
       <Nav />
       <main>
-        {path === "/" ? (
+        {path === "/" || path === "/portfolio" ? (
           <Home />
         ) : path === "/miles" ? (
           <Miles />
@@ -38,11 +38,11 @@ export default function App() {
           <Suspense fallback={null}>
             <Training />
           </Suspense>
-        ) : path === "/training/chicago" ? (
+        ) : path === "/training/chicago" || path === "/chicago" ? (
           <Suspense fallback={null}>
             <ChicagoTracker />
           </Suspense>
-        ) : path === "/activity-lookup" ? (
+        ) : path === "/activity-lookup" || path === "/lookup" ? (
           <Suspense fallback={null}>
             <ActivityLookup />
           </Suspense>
