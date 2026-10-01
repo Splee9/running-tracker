@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "buildCommand": "node scripts/fetch-activities.mjs && npm run build",
+  "buildCommand": "node scripts/fetch-activities.mjs && node scripts/fetch-chicago.mjs && npm run build",
   "outputDirectory": "dist",
   "cleanUrls": true,
   "functions": {

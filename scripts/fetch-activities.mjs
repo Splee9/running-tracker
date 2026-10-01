@@ -20,28 +20,11 @@
 import { access, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { REPO, download } from "./brain-contents.mjs";
 import { isPublic, toActivity } from "./strava-activity.mjs";
 
-const REPO = "Splee9/spencer-brain";
 const DEFAULT_PATH = "data/public/strava-activities.json";
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "activities.json");
-
-async function download(token, filePath, ref) {
-  const url = new URL(
-    `https://api.github.com/repos/${REPO}/contents/${filePath.split("/").map(encodeURIComponent).join("/")}`,
-  );
-  if (ref) url.searchParams.set("ref", ref);
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github.raw+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "running-tracker-build",
-    },
-  });
-  if (!res.ok) throw new Error(`GitHub ${res.status} for ${REPO}/${filePath}: ${await res.text()}`);
-  return res.text();
-}
 
 function parseRecords(text) {
   const trimmed = text.trim();

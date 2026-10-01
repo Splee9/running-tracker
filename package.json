@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "fetch:activities": "node scripts/fetch-activities.mjs",
+    "fetch:chicago": "node scripts/fetch-chicago.mjs",
     "build": "tsc -b && vite build && node --experimental-strip-types scripts/page-meta.mjs && node scripts/bundle-jev.mjs",
     "og:images": "node --experimental-strip-types scripts/render-og.mjs",
     "preview": "vite preview",

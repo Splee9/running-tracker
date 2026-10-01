@@ -26,6 +26,7 @@ The aggregate numbers live in `src/data.json`, `src/chicago-data.json`, and the
 ```bash
 npm install
 npm run fetch:activities  # build src/activities.json (see below)
+npm run fetch:chicago     # refresh src/chicago-data.json from spencer-brain
 npm run dev               # local dev server with hot reload
 npm run build             # type-check, production bundle to dist/, and the Jev function
 npm run preview           # serve the production build locally
@@ -167,6 +168,17 @@ everything and waits out 429s):
 STRAVA_ACCESS_TOKEN=... node scripts/export-activities.mjs [--full]
 ```
 
+`src/chicago-data.json` stays committed, but every deploy overwrites it with
+`data/public/chicago-tracker.json` from `Splee9/spencer-brain`, which the box
+republishes each morning before it calls the deploy hook:
+
+```bash
+BRAIN_GITHUB_TOKEN=... node scripts/fetch-chicago.mjs   # BRAIN_CHICAGO_PATH overrides the path
+```
+
+Without `BRAIN_GITHUB_TOKEN` it keeps the committed file. With a token, a missing
+or malformed snapshot fails the build, so the last good deploy stays live.
+
 Routing is a ~50-line `history.pushState` wrapper (`src/lib/router.tsx`), not a
 library. `vercel.json` turns on clean URLs and rewrites unknown paths to
 `index.html`, so deep links load.
@@ -183,9 +195,9 @@ route, add it to `PAGES` and run `npm run og:images` for its card.
 ## Deploy
 
 Vercel builds from source on every push to `main`, and opens a preview per pull
-request (see `vercel.json`): `node scripts/fetch-activities.mjs && npm run build`,
+request (see `vercel.json`): `node scripts/fetch-activities.mjs && node scripts/fetch-chicago.mjs && npm run build`,
 publishing `dist/`. No manual upload step. A deploy hook picks up grokbot's
-activity updates. `npm run dev` does not run the Jev function; lookup stays on
+activity and Chicago updates. `npm run dev` does not run the Jev function; lookup stays on
 the local shortlist (the request 404s). `npx vercel dev` serves `/api/jev-rerank`
 locally.
 
@@ -200,6 +212,7 @@ available at build time, and the Jev key at runtime. The default exposure
 | -------------------- | -------------------------------------------------------------------- |
 | `BRAIN_GITHUB_TOKEN` | Fine-grained GitHub token, Contents: read on `Splee9/spencer-brain`. |
 | `BRAIN_ACTIVITIES_PATH` | Optional; defaults to `data/public/strava-activities.json`.      |
+| `BRAIN_CHICAGO_PATH` | Optional; defaults to `data/public/chicago-tracker.json`.            |
 | `OPENROUTER_API_KEY` | Jev via OpenRouter's Decisions API (`typesafe/jev-1.13-20260917`).   |
 | `TYPESAFE_API_KEY`   | Alternative: Jev direct from TypeSafe (`jev-1.13.0`). Used only if no OpenRouter key. |
 | `JEV_MODEL`          | Optional model override.                                             |
