@@ -233,25 +233,34 @@
   border-bottom: 1px solid var(--line);
 }
 
-.rowLink {
+.rowOpen {
+  background: rgba(26, 26, 26, 0.02);
+}
+
+.rowButton {
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr) auto;
   gap: 4px 20px;
   align-items: start;
+  width: 100%;
   padding: 14px 8px;
   margin: 0 -8px;
   color: inherit;
-  text-decoration: none;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: none;
   border-radius: 8px;
+  cursor: pointer;
   transition: background 0.15s ease;
 }
 
-.rowLink:hover,
-.rowLink:focus-visible {
+.rowButton:hover,
+.rowButton:focus-visible {
   background: rgba(26, 26, 26, 0.035);
 }
 
-.rowLink:focus-visible {
+.rowButton:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: -2px;
 }
@@ -301,6 +310,26 @@
 .metaTag {
   font-style: italic;
   opacity: 0.7;
+}
+
+.decisionChip,
+.decisionReview {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+  font-style: normal;
+  align-self: center;
+}
+
+.decisionChip {
+  color: var(--ink);
+  opacity: 1;
+}
+
+.decisionReview {
+  color: var(--status-warn);
+  opacity: 1;
 }
 
 .sport {
@@ -399,7 +428,7 @@
     min-height: 44px;
   }
 
-  .rowLink {
+  .rowButton {
     grid-template-columns: 4rem minmax(0, 1fr);
   }
 

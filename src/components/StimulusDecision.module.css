@@ -1,0 +1,172 @@
+.panel {
+  margin: 0 0 8px;
+  padding: 16px 16px 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.name {
+  margin: 4px 0 0;
+  font-size: 18px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.when {
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.close {
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  min-height: 36px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.close:hover {
+  border-color: var(--ink);
+}
+
+.subtitle {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.score {
+  margin-top: 8px;
+}
+
+.scoreValue {
+  font-size: clamp(56px, 14vw, 88px);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+
+.scoreStatus {
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.clear {
+  color: var(--status-good);
+}
+
+.escalate {
+  color: var(--status-warn);
+}
+
+.unavailable {
+  color: var(--muted);
+}
+
+.unavailable .scoreValue {
+  font-size: clamp(36px, 9vw, 52px);
+  letter-spacing: -0.03em;
+}
+
+.track {
+  position: relative;
+  height: 8px;
+  max-width: 280px;
+  margin-top: 10px;
+  background: var(--bar);
+  border-radius: var(--radius-pill);
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: currentColor;
+}
+
+.reviewMark {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink);
+  box-shadow: 0 0 0 1px var(--card);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 16px 0 0;
+}
+
+.facts div {
+  min-width: 0;
+}
+
+.facts dt {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.facts dd {
+  margin-top: 1px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.reasons {
+  margin: 12px 0 0;
+  padding-left: 1.1em;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.reasons li + li {
+  margin-top: 2px;
+}
+
+.strava {
+  display: inline-block;
+  margin-top: 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 640px) {
+  .close {
+    min-height: 44px;
+  }
+
+  .scoreValue {
+    font-size: 64px;
+  }
+
+  .unavailable .scoreValue {
+    font-size: 40px;
+  }
+}

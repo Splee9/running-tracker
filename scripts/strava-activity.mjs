@@ -85,6 +85,32 @@ function positiveCount(value) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+/** A published probability. Values outside 0–1 are left off rather than rescaled. */
+function unitInterval(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : undefined;
+}
+
+function primaryConfidenceFor(a) {
+  return unitInterval(a.primary_confidence) ?? unitInterval(a.confidence) ?? unitInterval(a.stimulus_confidence);
+}
+
+function probabilitiesFor(a) {
+  const raw = a.probabilities ?? a.stimulus_probabilities;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof key !== "string" || !key.trim()) continue;
+    const n = unitInterval(value);
+    if (n === undefined) continue;
+    out[key] = n;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function runnerUpFor(a) {
+  return cleanString(a.runner_up) ?? cleanString(a.secondary_stimulus);
+}
+
 function companionsFor(a) {
   const withRecord = a.with && typeof a.with === "object" && !Array.isArray(a.with) ? a.with : null;
   const names = Array.isArray(a.with)
@@ -128,6 +154,14 @@ export function toActivity(a) {
   if (a.stimulus_cluster !== undefined && a.stimulus_cluster !== "") base.stimulus_cluster = a.stimulus_cluster;
   if (a.modality !== undefined && a.modality !== "") base.modality = a.modality;
   if (a.low_confidence) base.low_confidence = true;
+  // Layer A: classification confidence for the stimulus label. `primary_confidence`
+  // wins; `confidence` and `stimulus_confidence` are older aliases. Not a fit score.
+  const primaryConfidence = primaryConfidenceFor(a);
+  if (primaryConfidence !== undefined) base.primary_confidence = primaryConfidence;
+  const probabilities = probabilitiesFor(a);
+  if (probabilities) base.probabilities = probabilities;
+  const runnerUp = runnerUpFor(a);
+  if (runnerUp) base.runner_up = runnerUp;
   // v3 enrichment (omit undefined fields to keep backward compatibility)
   if (a.average_heartrate !== undefined) base.average_heartrate = a.average_heartrate;
   if (a.max_heartrate !== undefined) base.max_heartrate = a.max_heartrate;

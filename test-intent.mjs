@@ -4,6 +4,7 @@
 import { activityFacts, applyJevIntent, buildGradeRequest, buildIndex, buildJevRequest, classifyIntent, climbingLabel, rankGradeFor, readStandout, STANDOUT_LEVELS, withGrades, withoutParts, describeActivity, describeIntent, jevCacheScope, MEMBERSHIP_DEMOTE_BELOW, needsIntentFacets, planShortlist, rerankUnlockedHits, resolveInterpretation, searchActivities, settledIntentPayload, splitJevAnswers } from "./src/lib/activitySearch.ts";
 import { toActivity } from "./scripts/strava-activity.mjs";
 import { formatHours, formatWindow, interpretationParts, lookupStatus, orderHits, primaryHits, resultTotals } from "./src/lib/lookupView.ts";
+import { stimulusDecision } from "./src/lib/stimulusDecision.ts";
 
 const testClock = new Date("2026-09-29T12:00:00-05:00");
 
@@ -992,6 +993,141 @@ check(
   "toActivity omits an absent stimulus cluster",
   !("stimulus_cluster" in mappedBlank) && !("modality" in mappedBlank) && !("low_confidence" in mappedBlank),
   JSON.stringify(mappedBlank),
+);
+
+const mappedDecision = toActivity({
+  id: 4,
+  name: "repeats",
+  sport_type: "Run",
+  start_date_local: "2024-06-02T00:00:00Z",
+  primary_stimulus: "quality",
+  modifiers: ["intervals"],
+  stimulus_cluster: "quality_intervals",
+  primary_confidence: 0.4,
+  confidence: 0.9,
+  stimulus_confidence: 0.2,
+  stimulus_probabilities: { quality: 0.82, easy: 0.11, long: 1.4 },
+  secondary_stimulus: "easy",
+  low_confidence: false,
+});
+check(
+  "toActivity keeps primary_confidence ahead of older aliases",
+  mappedDecision.primary_confidence === 0.4 &&
+    !("confidence" in mappedDecision) &&
+    mappedDecision.probabilities.quality === 0.82 &&
+    mappedDecision.probabilities.easy === 0.11 &&
+    !("long" in mappedDecision.probabilities) &&
+    mappedDecision.runner_up === "easy" &&
+    !("low_confidence" in mappedDecision),
+  JSON.stringify(mappedDecision),
+);
+const mappedAlias = toActivity({
+  id: 5,
+  name: "repeats",
+  sport_type: "Run",
+  start_date_local: "2024-06-03T00:00:00Z",
+  stimulus_confidence: 0.82,
+});
+check(
+  "toActivity maps an older stimulus_confidence alias onto primary_confidence",
+  mappedAlias.primary_confidence === 0.82 && !("stimulus_confidence" in mappedAlias),
+  JSON.stringify(mappedAlias),
+);
+check(
+  "toActivity does not invent a classification confidence",
+  !("primary_confidence" in mappedBlank) && !("confidence" in mappedBlank) && !("probabilities" in mappedBlank) && !("runner_up" in mappedBlank),
+  JSON.stringify(mappedBlank),
+);
+
+console.log("\nstimulus decision panel:\n");
+
+const qualityDecision = stimulusDecision({
+  primary_stimulus: "quality",
+  modifiers: ["intervals", "marathon_pace"],
+  stimulus_cluster: "quality_intervals",
+  hard_lap_count: 7,
+  workout_structure: "3×800m",
+});
+check(
+  "a labeled session explains the published cluster and modifiers",
+  qualityDecision.modifierText.includes("intervals") &&
+    qualityDecision.modifierText.includes("marathon pace") &&
+    qualityDecision.reasons.includes("7 hard laps") &&
+    qualityDecision.reasons.includes("3×800m") &&
+    !qualityDecision.reasons.join(" ").toLowerCase().includes("tempo") &&
+    qualityDecision.tone === "unavailable" &&
+    qualityDecision.scoreLabel === "Unavailable" &&
+    qualityDecision.scope === "Classifier confidence on this label — not fit for the day" &&
+    qualityDecision.escalate === false &&
+    qualityDecision.listLabel === "quality",
+  qualityDecision.reasons.join(" | "),
+);
+const reviewDecision = stimulusDecision({
+  primary_stimulus: "easy",
+  stimulus_cluster: "quality_intervals",
+  low_confidence: true,
+  primary_confidence: 0.91,
+});
+check(
+  "low_confidence escalates even when classification confidence is high, and a mismatched cluster is named",
+  reviewDecision.escalate === true &&
+    reviewDecision.tone === "escalate" &&
+    reviewDecision.reasons.some((line) => line.includes("does not match")) &&
+    reviewDecision.status.includes("low_confidence") &&
+    reviewDecision.primaryConfidence === 0.91 &&
+    reviewDecision.bars[0].marked === true &&
+    reviewDecision.listLabel === "easy · review",
+  reviewDecision.status,
+);
+const underBar = stimulusDecision({
+  primary_stimulus: "long",
+  stimulus_cluster: "long_aerobic",
+  primary_confidence: 0.4,
+});
+check(
+  "primary_confidence under 0.55 escalates without a low_confidence flag",
+  underBar.escalate === true && underBar.scoreLabel === "40%" && underBar.status === "Review · under 0.55",
+  underBar.status,
+);
+const clearDecision = stimulusDecision({
+  primary_stimulus: "race",
+  stimulus_cluster: "race",
+  primary_confidence: 0.55,
+  probabilities: { race: 0.8, easy: 0.2 },
+});
+check(
+  "0.55 is not under the classification bar, and probabilities stay off that flag",
+  clearDecision.escalate === false &&
+    clearDecision.tone === "clear" &&
+    clearDecision.scoreLabel === "55%" &&
+    clearDecision.status === "Above 0.55" &&
+    clearDecision.bars.length === 1 &&
+    clearDecision.bars[0].marked === true,
+  JSON.stringify(clearDecision.bars),
+);
+const probabilityOnly = stimulusDecision({
+  primary_stimulus: "hills",
+  stimulus_cluster: "hills_session",
+  probabilities: { hills: 0.4, easy: 0.35 },
+});
+check(
+  "a probability map without primary_confidence does not flag the label",
+  probabilityOnly.escalate === false &&
+    probabilityOnly.primaryConfidence === null &&
+    probabilityOnly.scoreLabel === "Unavailable" &&
+    probabilityOnly.status === "Unavailable" &&
+    probabilityOnly.bars.length === 0,
+  probabilityOnly.status,
+);
+const unlabeled = stimulusDecision({});
+check(
+  "a session with no stimulus fields does not grow a label",
+  unlabeled.primary === null &&
+    unlabeled.cluster === null &&
+    unlabeled.reasons[0] === "No stimulus label published" &&
+    unlabeled.listLabel === null &&
+    unlabeled.bars.length === 0,
+  unlabeled.reasons.join(" | "),
 );
 
 console.log("\neval misses:\n");

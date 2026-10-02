@@ -40,6 +40,8 @@ import {
   USER_ORDERS,
   type UserOrder,
 } from "../lib/lookupView";
+import { stimulusDecision } from "../lib/stimulusDecision";
+import { StimulusDecisionPanel } from "./StimulusDecision";
 import styles from "./ActivityLookup.module.css";
 
 type SportFilter = "all" | "run" | "ride" | "other";
@@ -97,7 +99,14 @@ function readParams() {
     removed: parseRemovedParts(params.get("drop")?.split(",") ?? []),
     // Match kind and branch are for tuning. ?debug=1 shows them on each row.
     debug: params.has("debug"),
+    activity: activityId(params.get("activity")),
   };
+}
+
+function activityId(raw: string | null): number | null {
+  if (!raw || !/^\d+$/.test(raw)) return null;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
 function matchesSport(a: Activity, filter: SportFilter) {
@@ -121,6 +130,7 @@ export function ActivityLookup() {
   const removedKeys = removed.query === query.trim() ? removed.keys : [];
   const removedKey = removedKeys.join(",");
   const debug = initial.debug;
+  const [openId, setOpenId] = useState<number | null>(initial.activity);
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [jev, setJev] = useState<JevState>({ status: "idle" });
   // Flips off for the session once the function reports Jev isn't configured.
@@ -142,12 +152,25 @@ export function ActivityLookup() {
     else params.delete("sort");
     if (removedKey) params.set("drop", removedKey);
     else params.delete("drop");
+    if (openId != null) params.set("activity", String(openId));
+    else params.delete("activity");
     const search = params.toString();
     const url = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`;
     if (url !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
       window.history.replaceState(window.history.state, "", url);
     }
-  }, [query, sport, units, order, removedKey]);
+  }, [query, sport, units, order, removedKey, openId]);
+
+  useEffect(() => {
+    if (openId == null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && document.activeElement !== inputRef.current) {
+        setOpenId(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openId]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -271,6 +294,13 @@ export function ActivityLookup() {
 
   const ordered = useMemo(() => orderHits(results, order), [results, order]);
   const shown = ordered.slice(0, visible);
+  const openActivity = openId != null ? activities.find((a) => a.id === openId) : undefined;
+  const openInList = openActivity != null && shown.some((hit) => hit.activity.id === openActivity.id);
+
+  useEffect(() => {
+    if (openId == null || !openInList) return;
+    listRef.current?.querySelector<HTMLElement>(`[data-activity-id="${openId}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [openId, openInList]);
 
   const status = lookupStatus(
     trimmed,
@@ -289,9 +319,9 @@ export function ActivityLookup() {
   const totals = trimmed ? resultTotals(primaryHits(results, intentClassification).map((h) => h.activity)) : null;
 
   function focusRow(index: number) {
-    const links = listRef.current?.querySelectorAll<HTMLAnchorElement>("a");
-    if (!links || links.length === 0) return;
-    links[Math.max(0, Math.min(index, links.length - 1))].focus();
+    const rows = listRef.current?.querySelectorAll<HTMLButtonElement>("button[data-activity-row]");
+    if (!rows || rows.length === 0) return;
+    rows[Math.max(0, Math.min(index, rows.length - 1))].focus();
   }
 
   function onSearchKey(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -306,8 +336,8 @@ export function ActivityLookup() {
 
   function onListKey(e: React.KeyboardEvent<HTMLUListElement>) {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    const links = Array.from(listRef.current?.querySelectorAll<HTMLAnchorElement>("a") ?? []);
-    const at = links.indexOf(document.activeElement as HTMLAnchorElement);
+    const links = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>("button[data-activity-row]") ?? []);
+    const at = links.indexOf(document.activeElement as HTMLButtonElement);
     if (at < 0) return;
     e.preventDefault();
     if (e.key === "ArrowUp" && at === 0) inputRef.current?.focus();
@@ -326,7 +356,8 @@ export function ActivityLookup() {
         <motion.p className={styles.intro} variants={rise} custom={2} initial="hidden" animate="show">
           Ask for a session the way you'd describe it: a distance, a place, a date, a kind of workout.
           Exact asks like "longest run" sort by the numbers; looser ones like "best Chicago runs" are
-          ranked by <b>Jev</b>.
+          ranked by <b>Jev</b>. Open a row for the stimulus label stored on that activity, how
+          sure the classifier is of that label, and when a person should review it.
         </motion.p>
       </header>
 
@@ -436,6 +467,10 @@ export function ActivityLookup() {
           </p>
         )}
 
+        {openActivity && !openInList && (
+          <StimulusDecisionPanel activity={openActivity} onClose={() => setOpenId(null)} />
+        )}
+
         {shown.length > 0 && (
           <ul className={styles.list} ref={listRef} onKeyDown={onListKey}>
             {shown.map((hit) => (
@@ -443,6 +478,8 @@ export function ActivityLookup() {
                 key={hit.activity.id}
                 hit={hit}
                 units={units}
+                open={openId === hit.activity.id}
+                onToggle={() => setOpenId((current) => (current === hit.activity.id ? null : hit.activity.id))}
                 showMatch={debug && Boolean(trimmed)}
                 jevScore={trimmed ? jevScores?.[hit.activity.id] : undefined}
                 demoted={
@@ -468,6 +505,7 @@ export function ActivityLookup() {
         <p>
           Public activities only, rebuilt from the Strava log. Names, dates, distance, time,
           elevation, HR, pace, power, stimulus, place and intervals — no routes, polylines or stream data.
+          Open a row for the stimulus label. Classification confidence is about that label, and the page does not relabel the session.
         </p>
       </footer>
     </div>
@@ -477,6 +515,8 @@ export function ActivityLookup() {
 function ActivityRow({
   hit,
   units,
+  open,
+  onToggle,
   showMatch,
   jevScore,
   demoted,
@@ -484,6 +524,8 @@ function ActivityRow({
 }: {
   hit: SearchHit;
   units: Units;
+  open: boolean;
+  onToggle: () => void;
   showMatch: boolean;
   jevScore?: number;
   demoted?: boolean;
@@ -525,9 +567,7 @@ function ActivityRow({
   if (a.gear) enrichmentChips.push(a.gear);
   if (a.with && a.with.length > 0) enrichmentChips.push(`with ${a.with.slice(0, 2).join(", ")}`);
   else if (a.athlete_count != null && a.athlete_count > 1) enrichmentChips.push(`${a.athlete_count} athletes`);
-  if (a.primary_stimulus && !["other", "easy"].includes(a.primary_stimulus)) {
-    enrichmentChips.push(a.primary_stimulus);
-  }
+  const decision = stimulusDecision(a);
   if (a.has_intervals) {
     const intervalLabel = a.hard_lap_count ? `${a.hard_lap_count} hard laps` : "intervals";
     enrichmentChips.push(intervalLabel);
@@ -550,12 +590,13 @@ function ActivityRow({
   }
 
   return (
-    <li className={styles.row}>
-      <a
-        href={`https://www.strava.com/activities/${a.id}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={styles.rowLink}
+    <li className={`${styles.row} ${open ? styles.rowOpen : ""}`} data-activity-id={a.id}>
+      <button
+        type="button"
+        className={styles.rowButton}
+        data-activity-row=""
+        aria-expanded={open}
+        onClick={onToggle}
       >
         <span className={styles.date}>
           <b>{date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</b>
@@ -582,6 +623,11 @@ function ActivityRow({
                 {chip}
               </span>
             ))}
+            {decision.listLabel && (
+              <span className={decision.escalate ? styles.decisionReview : styles.decisionChip}>
+                {decision.listLabel}
+              </span>
+            )}
             {enrichmentChips.map((chip, i) => (
               <span key={i} className={styles.metaTag}>
                 {chip}
@@ -617,7 +663,8 @@ function ActivityRow({
             )}
           </span>
         )}
-      </a>
+      </button>
+      {open && <StimulusDecisionPanel activity={a} onClose={onToggle} />}
     </li>
   );
 }
