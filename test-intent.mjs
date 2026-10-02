@@ -1377,6 +1377,14 @@ check(
     overcooked.clauses[2].term.confidences[0]?.value === 0.66,
   overcooked.comparison,
 );
+check(
+  "the fit pill names the verdict, so its percent reads as confidence in it",
+  overcooked.verdictLabel === "Overcooked" &&
+    stimulusFit({ stimulus_fit: "appropriate" }).verdictLabel === "On target" &&
+    stimulusFit({ stimulus_fit: "undercooked" }).verdictLabel === "Undercooked" &&
+    stimulusFit({ fit_confidence: 0.5 }).verdictLabel === null,
+  String(overcooked.verdictLabel),
+);
 const fitWithoutScore = stimulusFit({
   macro_readiness: "baseline",
   activity_side_load: "typical_for_stratum",
