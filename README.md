@@ -151,11 +151,18 @@ modifiers, and an amber Review mark when `low_confidence` is set. `runner_up` /
 ### Stimulus fit (Layer B)
 
 Under that classification line, when the export includes them, the same expand
-row shows a second score: whether the delivered stimulus fit readiness and the
-plan. The line is Jev2 macro readiness compared with Jev3 activity-side load
-(and variability, when present), summarized as Jev4 `stimulus_fit`. The number
-beside it is `fit_confidence`. It is not `primary_confidence`, and the page
-does not invent a fit from the label or from Layer A.
+row shows whether the delivered stimulus fit readiness and the plan. It is one
+sentence: the body was set for a push, a normal day, an easy day, or rest; the
+workout delivered a bigger-than-usual easy volume day, a typical easy or quality
+day, or harder intensity than usual; so it was on target, more than readiness
+wanted, or lighter than it could have been. Those three phrases are underlined.
+Hover or keyboard focus shows a short rationale and that piece's confidence
+(`macro_readiness_confidence`, the load and variability confidences, and
+`fit_confidence`). The fit score beside the sentence is `fit_confidence`. It is
+not `primary_confidence`, and the page does not invent a fit from the label.
+The stimulus label on the classification line uses the same underline: its
+tooltip is the competing probabilities, the short why, and classification
+confidence. Stored field names stay on the activity; they are not the sentence.
 
 Older activities with none of these fields keep the classification line only.
 If a label arrived without `fit_confidence`, the fit score says Unavailable and

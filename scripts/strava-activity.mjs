@@ -175,6 +175,29 @@ function fitConfidenceFor(sources) {
   return undefined;
 }
 
+function explicitUnit(sources, keys) {
+  for (const source of sources) {
+    for (const key of keys) {
+      const n = unitFrom(source?.[key]);
+      if (n !== undefined) return n;
+    }
+  }
+  return undefined;
+}
+
+/** Confidence stored on a judgment object, such as `{ choice, confidence }`. Not the activity's label confidence. */
+function nestedConfidence(sources, labelKeys) {
+  for (const source of sources) {
+    for (const key of labelKeys) {
+      const record = objectRecord(source?.[key]);
+      if (!record) continue;
+      const n = unitFrom(record.confidence);
+      if (n !== undefined) return n;
+    }
+  }
+  return undefined;
+}
+
 function companionsFor(a) {
   const withRecord = a.with && typeof a.with === "object" && !Array.isArray(a.with) ? a.with : null;
   const names = Array.isArray(a.with)
@@ -241,6 +264,23 @@ export function toActivity(a) {
   if (sideLoad !== undefined) base.activity_side_load = sideLoad;
   const variability = firstToken(layer, ["session_variability_impact", "sessionVariabilityImpact"]);
   if (variability !== undefined) base.session_variability_impact = variability;
+  // Piece confidences for the fit sentence. A confidence nested on that piece's
+  // judgment object counts. Top-level `confidence` stays the Layer A alias.
+  const readinessConfidence =
+    explicitUnit(layer, ["macro_readiness_confidence", "macroReadinessConfidence"]) ??
+    nestedConfidence(layer, ["macro_readiness", "macroReadiness"]);
+  if (readinessConfidence !== undefined) base.macro_readiness_confidence = readinessConfidence;
+  const loadConfidence =
+    explicitUnit(layer, ["activity_side_load_confidence", "activitySideLoadConfidence"]) ??
+    nestedConfidence(layer, ["activity_side_load", "activitySideLoad"]);
+  if (loadConfidence !== undefined) base.activity_side_load_confidence = loadConfidence;
+  const variabilityConfidence =
+    explicitUnit(layer, [
+      "session_variability_confidence",
+      "sessionVariabilityConfidence",
+      "session_variability_impact_confidence",
+    ]) ?? nestedConfidence(layer, ["session_variability_impact", "sessionVariabilityImpact"]);
+  if (variabilityConfidence !== undefined) base.session_variability_confidence = variabilityConfidence;
   // v3 enrichment (omit undefined fields to keep backward compatibility)
   if (a.average_heartrate !== undefined) base.average_heartrate = a.average_heartrate;
   if (a.max_heartrate !== undefined) base.max_heartrate = a.max_heartrate;

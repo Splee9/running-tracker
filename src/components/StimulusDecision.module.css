@@ -63,11 +63,111 @@
 }
 
 .comparison {
-  margin: 6px 0 0;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.35;
+  margin: 8px 0 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.termWrap {
+  position: relative;
+  display: inline;
+}
+
+.term {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-style: italic;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+.readiness {
+  color: #0c5c62;
+}
+
+.load {
+  color: #795300;
+}
+
+.termFit {
+  color: #176a4f;
+}
+
+.fitOver {
+  color: #8d2a24;
+}
+
+.fitUnder {
+  color: #3a4d8f;
+}
+
+.label {
+  color: #2f2342;
+}
+
+.tip {
+  position: absolute;
+  z-index: 6;
+  left: 0;
+  top: calc(100% + 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: max-content;
+  max-width: 240px;
+  padding: 8px 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.1);
+  color: var(--ink);
+  font-style: normal;
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-align: left;
+  text-decoration: none;
+  text-transform: none;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  /* Stay out of the page width until the phrase is hovered or focused. */
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.termWrap:hover .tip,
+.termWrap:focus-within .tip {
+  opacity: 1;
+  clip: auto;
+  clip-path: none;
+  width: max-content;
+  max-width: min(240px, calc(100vw - 48px));
+  height: auto;
+  overflow: visible;
+}
+
+.tipBody {
+  display: block;
+}
+
+.tipConf {
+  display: block;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .fitSpacer {

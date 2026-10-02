@@ -54,6 +54,17 @@ export type ConfidenceBar = {
 
 export type StimulusDecisionTone = "escalate" | "clear" | "unavailable";
 
+/** Hover gloss for the stimulus label. Competing probabilities and classification confidence. */
+export type LabelTerm = {
+  text: string;
+  /** Short why. Not a field name. */
+  rationale: string;
+  confidence: number | null;
+  confidenceLabel: string;
+  /** Other published labels, highest first, already phrased. */
+  competitors: string[];
+};
+
 export type StimulusDecisionView = {
   primary: string | null;
   cluster: string | null;
@@ -79,6 +90,8 @@ export type StimulusDecisionView = {
   /** Short status under the score. */
   status: string;
   reviewBelow: number;
+  /** The primary stimulus label, when one was published, with its gloss. */
+  labelTerm: LabelTerm | null;
 };
 
 export function humanLabel(value: string): string {
@@ -144,6 +157,21 @@ export function stimulusDecision(activity: StimulusDecisionActivity): StimulusDe
   const escalate = low || (primaryConfidence != null && primaryConfidence < STIMULUS_ESCALATE_BELOW);
   const tone: StimulusDecisionTone = escalate ? "escalate" : primaryConfidence == null ? "unavailable" : "clear";
   const listCore = primary ? humanLabel(primary) : cluster ? humanLabel(cluster) : null;
+  const reasons = whyLines(activity, primary, cluster);
+  const competitors = Object.entries(activity.probabilities ?? {})
+    .filter(([key, value]) => key !== primary && typeof value === "number")
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([key, value]) => `${humanLabel(key)} ${percent(value)}`);
+  const labelTerm: LabelTerm | null = primary
+    ? {
+        text: humanLabel(primary),
+        rationale: reasons.filter((line) => line !== "No stimulus label published").join(" · ") || "Published stimulus label.",
+        confidence: primaryConfidence,
+        confidenceLabel: primaryConfidence == null ? "Unavailable" : percent(primaryConfidence),
+        competitors,
+      }
+    : null;
   return {
     primary,
     cluster,
@@ -153,7 +181,7 @@ export function stimulusDecision(activity: StimulusDecisionActivity): StimulusDe
     clusterText: cluster ? humanLabel(cluster) : "None published",
     modifierText: modifiers.length > 0 ? modifiers.map(humanLabel).join(", ") : "None published",
     listLabel: listCore ? (escalate ? `${listCore} · review` : listCore) : escalate ? "review" : null,
-    reasons: whyLines(activity, primary, cluster),
+    reasons,
     primaryConfidence,
     scoreLabel: primaryConfidence == null ? "Unavailable" : percent(primaryConfidence),
     bars,
@@ -163,5 +191,6 @@ export function stimulusDecision(activity: StimulusDecisionActivity): StimulusDe
     scope: STIMULUS_CLASSIFICATION_NOTE,
     status: statusText(low, primaryConfidence),
     reviewBelow: STIMULUS_ESCALATE_BELOW,
+    labelTerm,
   };
 }

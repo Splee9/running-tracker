@@ -65,14 +65,20 @@ export type Activity = {
   stimulus_fit?: string;
   /** 0–1 confidence in `stimulus_fit`. Missing means the export did not include one. */
   fit_confidence?: number;
-  /** Jev2 macro readiness, when the export sends it. */
+  /** Macro readiness, when the export sends it. */
   macro_readiness?: string;
+  /** 0–1 confidence in macro readiness. Not classification confidence. */
+  macro_readiness_confidence?: number;
   /** Optional gate on that readiness judgment. */
   macro_readiness_gate?: string;
-  /** Jev3 activity-side load. */
+  /** Activity-side load. */
   activity_side_load?: string;
-  /** Optional Jev3 variability impact. */
+  /** 0–1 confidence in the load judgment. */
+  activity_side_load_confidence?: number;
+  /** Optional variability impact. */
   session_variability_impact?: string;
+  /** 0–1 confidence in the variability judgment. */
+  session_variability_confidence?: number;
   // v3 enrichment (optional, backward compatible)
   average_heartrate?: number;
   max_heartrate?: number;

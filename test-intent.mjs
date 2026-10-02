@@ -1139,9 +1139,38 @@ check(
     !("fit_confidence" in mappedBlank) &&
     !("macro_readiness" in mappedBlank) &&
     !("macro_readiness_gate" in mappedBlank) &&
+    !("macro_readiness_confidence" in mappedBlank) &&
     !("activity_side_load" in mappedBlank) &&
-    !("session_variability_impact" in mappedBlank),
+    !("activity_side_load_confidence" in mappedBlank) &&
+    !("session_variability_impact" in mappedBlank) &&
+    !("session_variability_confidence" in mappedBlank),
   JSON.stringify(mappedBlank),
+);
+const mappedPieceConf = toActivity({
+  id: 10,
+  name: "tempo",
+  sport_type: "Run",
+  start_date_local: "2026-09-24T00:00:00Z",
+  primary_confidence: 0.91,
+  confidence: 0.91,
+  macro_readiness: { choice: "ready_to_reach", confidence: 0.74 },
+  activity_side_load: { choice: "reach_volume", confidence: 0.63 },
+  session_variability_impact: { choice: "monotony_add", confidence: 0.58 },
+  stimulus_fit: "appropriate",
+  fit_confidence: 0.81,
+});
+check(
+  "toActivity keeps each piece confidence and does not copy label confidence into them",
+  mappedPieceConf.macro_readiness === "ready_to_reach" &&
+    mappedPieceConf.activity_side_load === "reach_volume" &&
+    mappedPieceConf.session_variability_impact === "monotony_add" &&
+    mappedPieceConf.macro_readiness_confidence === 0.74 &&
+    mappedPieceConf.activity_side_load_confidence === 0.63 &&
+    mappedPieceConf.session_variability_confidence === 0.58 &&
+    mappedPieceConf.fit_confidence === 0.81 &&
+    mappedPieceConf.primary_confidence === 0.91 &&
+    mappedPieceConf.stimulus_fit === "appropriate",
+  JSON.stringify(mappedPieceConf),
 );
 
 console.log("\nstimulus decision panel:\n");
@@ -1231,8 +1260,26 @@ check(
     unlabeled.cluster === null &&
     unlabeled.reasons[0] === "No stimulus label published" &&
     unlabeled.listLabel === null &&
-    unlabeled.bars.length === 0,
+    unlabeled.bars.length === 0 &&
+    unlabeled.labelTerm === null,
   unlabeled.reasons.join(" | "),
+);
+const glossedLabel = stimulusDecision({
+  primary_stimulus: "quality",
+  primary_confidence: 0.72,
+  probabilities: { quality: 0.72, easy: 0.2, long: 0.08 },
+  runner_up: "easy",
+  hard_lap_count: 4,
+});
+check(
+  "the stimulus label gloss carries competing probabilities, the why, and classification confidence",
+  glossedLabel.labelTerm?.text === "quality" &&
+    glossedLabel.labelTerm?.confidence === 0.72 &&
+    glossedLabel.labelTerm?.confidenceLabel === "72%" &&
+    glossedLabel.labelTerm?.competitors.join(", ") === "easy 20%, long 8%" &&
+    glossedLabel.labelTerm?.rationale.includes("Runner-up easy") &&
+    glossedLabel.labelTerm?.rationale.includes("4 hard laps"),
+  JSON.stringify(glossedLabel.labelTerm),
 );
 
 console.log("\nstimulus fit panel:\n");
@@ -1245,35 +1292,95 @@ const layerBActivity = act({
   distance_m: 14000,
   moving_time_s: 4200,
   elevation_gain_m: 40,
-  primary_stimulus: "quality",
-  stimulus_cluster: "quality_tempo",
-  modifiers: ["tempo"],
+  primary_stimulus: "easy",
+  stimulus_cluster: "easy_shell",
   primary_confidence: 0.91,
-  macro_readiness: "ready",
+  macro_readiness: "ready_to_reach",
   macro_readiness_gate: "open",
-  activity_side_load: "moderate",
-  session_variability_impact: "elevated",
-  stimulus_fit: "aligned",
+  activity_side_load: "reach_volume",
+  session_variability_impact: "monotony_add",
+  stimulus_fit: "appropriate",
   fit_confidence: 0.81,
 });
 const layerBFit = stimulusFit(layerBActivity);
 const layerBLabel = stimulusDecision(layerBActivity);
+const layerBProse =
+  "The body was set for a push; this workout delivered a bigger-than-usual easy volume day, and it added more of the same; so it was on target.";
 check(
-  "Layer B shows Jev2 vs Jev3 leading to stimulus fit, scored by fit confidence",
+  "Layer B says readiness, what the workout delivered, and whether it fit, scored by fit confidence",
   layerBFit.published === true &&
     layerBFit.scoreLabel === "81%" &&
     layerBFit.fitConfidence === 0.81 &&
-    layerBFit.comparison ===
-      "Jev2: ready · gate open  vs  Jev3: moderate (+ elevated variability)  →  aligned" &&
-    layerBFit.scope.includes("not how sure we are of the label") &&
+    layerBFit.comparison === layerBProse &&
+    layerBFit.clauses.map((clause) => clause.term.text).join("|") ===
+      "a push|a bigger-than-usual easy volume day, and it added more of the same|on target" &&
+    layerBFit.clauses[0].term.role === "readiness" &&
+    layerBFit.clauses[1].term.role === "load" &&
+    layerBFit.clauses[2].term.role === "fit" &&
+    layerBFit.clauses[2].term.notes.some((note) => note.includes("not how sure we are of the label")) &&
+    !layerBFit.comparison.includes("Jev") &&
+    !layerBFit.comparison.includes("ready_to_reach") &&
+    !layerBFit.comparison.includes("reach_volume") &&
+    !layerBFit.comparison.includes("monotony_add") &&
+    !layerBFit.comparison.includes("appropriate") &&
+    !layerBFit.comparison.toLowerCase().includes("gate") &&
     layerBLabel.primaryConfidence === 0.91 &&
-    layerBLabel.scoreLabel === "91%",
+    layerBLabel.scoreLabel === "91%" &&
+    layerBLabel.labelTerm?.text === "easy" &&
+    layerBLabel.labelTerm?.confidence === 0.91,
   layerBFit.comparison,
 );
+const glossed = stimulusFit({
+  ...layerBActivity,
+  macro_readiness_confidence: 0.74,
+  activity_side_load_confidence: 0.63,
+  session_variability_confidence: 0.58,
+  primary_confidence: 0.91,
+});
+check(
+  "each fit phrase keeps its own confidence and does not borrow the label confidence",
+  glossed.clauses[0].term.confidences[0]?.value === 0.74 &&
+    glossed.clauses[1].term.confidences.map((item) => item.value).join(",") === "0.63,0.58" &&
+    glossed.clauses[2].term.confidences[0]?.value === 0.81 &&
+    glossed.clauses.every((clause) => clause.term.confidences.every((item) => item.value !== 0.91)),
+  JSON.stringify(glossed.clauses.map((clause) => clause.term.confidences)),
+);
+const typicalQuality = stimulusFit({
+  primary_stimulus: "quality",
+  primary_confidence: 0.4,
+  macro_readiness: "chill",
+  activity_side_load: "typical_for_stratum",
+  stimulus_fit: "undercooked",
+});
+check(
+  "a typical day is named from the stimulus label, and undercooked stays lighter than it could have been",
+  typicalQuality.scoreLabel === "Unavailable" &&
+    typicalQuality.fitConfidence === null &&
+    typicalQuality.comparison ===
+      "The body was set to keep it easy; this workout delivered a typical quality day; so it was lighter than it could have been." &&
+    typicalQuality.clauses[2].term.confidences.length === 0,
+  typicalQuality.comparison,
+);
+const overcooked = stimulusFit({
+  macro_readiness: "rest",
+  activity_side_load: "reach_intensity",
+  stimulus_fit: "overcooked",
+  fit_confidence: 0.66,
+  primary_confidence: 0.99,
+});
+check(
+  "overcooked means more than readiness wanted, and that score is not primary_confidence",
+  overcooked.fitConfidence === 0.66 &&
+    overcooked.scoreLabel === "66%" &&
+    overcooked.comparison ===
+      "The body was set for rest; this workout delivered harder intensity than usual for that type; so it was more than readiness wanted." &&
+    overcooked.clauses[2].term.confidences[0]?.value === 0.66,
+  overcooked.comparison,
+);
 const fitWithoutScore = stimulusFit({
-  macro_readiness: "ready",
-  activity_side_load: "too_hard",
-  stimulus_fit: "overreached",
+  macro_readiness: "baseline",
+  activity_side_load: "typical_for_stratum",
+  stimulus_fit: "appropriate",
   primary_confidence: 0.99,
 });
 check(
@@ -1281,8 +1388,19 @@ check(
   fitWithoutScore.published === true &&
     fitWithoutScore.fitConfidence === null &&
     fitWithoutScore.scoreLabel === "Unavailable" &&
-    fitWithoutScore.comparison === "Jev2: ready  vs  Jev3: too hard  →  overreached",
+    fitWithoutScore.comparison ===
+      "The body was set for a normal day; this workout delivered a typical day for that kind of session; so it was on target." &&
+    fitWithoutScore.clauses[2].term.confidences.length === 0,
   fitWithoutScore.comparison,
+);
+const scoreOnly = stimulusFit({ fit_confidence: 0.5, primary_confidence: 0.1, macro_readiness_gate: "closed" });
+check(
+  "a fit score with no labels does not invent a sentence or use the readiness gate",
+  scoreOnly.published === true &&
+    scoreOnly.scoreLabel === "50%" &&
+    scoreOnly.comparison === null &&
+    scoreOnly.clauses.length === 0,
+  JSON.stringify(scoreOnly),
 );
 const olderActivity = stimulusFit({ primary_stimulus: "easy", primary_confidence: 0.88, confidence: 0.12 });
 check(
