@@ -1,0 +1,32 @@
+.strip {
+  margin-top: 10px;
+}
+
+.line {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 6px 0 0;
+  font-size: 14px;
+}
+
+.line a,
+.actions a {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1px;
+}
+
+.line a:hover,
+.actions a:hover {
+  border-bottom-color: var(--ink);
+}

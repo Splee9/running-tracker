@@ -32,7 +32,11 @@
 
 .title {
   font-size: var(--text-page);
-  margin: 8px 0 16px;
+  margin: 8px 0 0;
+}
+
+.strip {
+  margin-bottom: 16px;
 }
 
 .intro {
@@ -247,6 +251,17 @@
   color: var(--muted);
   font-size: 13px;
   margin-bottom: clamp(8px, 2vw, 14px);
+}
+
+.weekNote {
+  margin: -4px 0 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.panel {
+  scroll-margin-top: 16px;
 }
 
 .legend {

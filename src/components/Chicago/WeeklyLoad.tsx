@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { AnimatedNumber } from "../AnimatedNumber";
 import { data, PHASE_VAR, TYPE_VAR, type WeekDatum } from "../../lib/chicago-data";
 import { fmt1, formatDate } from "../../lib/chicago-format";
+import { readWeekMonday } from "../../lib/focus";
 import { lookupWeekHref, trainingWeekHref } from "../../lib/links";
-import { Link } from "../../lib/router";
+import { Link, useSearchString } from "../../lib/router";
 import styles from "./WeeklyLoad.module.css";
 
 const W = 1000;
@@ -13,10 +14,28 @@ const PAD = { t: 20, r: 14, b: 38, l: 36 };
 const plotW = W - PAD.l - PAD.r;
 const plotH = H - PAD.t - PAD.b;
 
+function weekIndex(search: string, weeks: { weekStart: string }[]): number {
+  const monday = readWeekMonday(search);
+  if (!monday) return -1;
+  return weeks.findIndex((week) => week.weekStart === monday);
+}
+
 export function WeeklyLoad() {
   const reduce = useReducedMotion();
   const { weeks, typeOrder, typeLabels } = data;
-  const [selected, setSelected] = useState<number>(weeks.length - 1);
+  const search = useSearchString();
+  const sectionRef = useRef<HTMLElement>(null);
+  const [selected, setSelected] = useState<number>(() => {
+    const idx = weekIndex(window.location.search, weeks);
+    return idx >= 0 ? idx : weeks.length - 1;
+  });
+
+  useEffect(() => {
+    const idx = weekIndex(search, weeks);
+    if (idx < 0) return;
+    setSelected(idx);
+    sectionRef.current?.scrollIntoView({ block: "start" });
+  }, [search, weeks]);
   const sel = weeks[selected];
 
   const maxMiles = Math.max(...weeks.map((w) => w.miles), ...weeks.map((w) => w.rolling4)) * 1.15;
@@ -57,7 +76,7 @@ export function WeeklyLoad() {
     : "";
 
   return (
-    <section className={styles.section} aria-label="Weekly training load">
+    <section ref={sectionRef} className={styles.section} aria-label="Weekly training load">
       <p className="eyebrow">Week by week</p>
       <h2 className={styles.heading}>
         Every week of the build — mileage, what kind of running it was, and the

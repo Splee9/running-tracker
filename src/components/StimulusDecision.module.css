@@ -139,6 +139,43 @@
   outline-offset: 2px;
 }
 
+.context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.contextLink,
+.contextLabel {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+.contextLink {
+  color: var(--ink);
+}
+
+.contextLink:hover {
+  border-color: var(--ink);
+}
+
+.contextLabel {
+  color: var(--muted);
+}
+
+.contextLink:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
 /* Fit confidence: a pill tinted by the verdict, with its meter inside. */
 .fitScore {
   --pill: var(--muted);

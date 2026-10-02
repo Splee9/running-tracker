@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { formatDate } from "../lib/format";
 import { lookupWeekHref, milesYearHref, type LookupSport } from "../lib/links";
@@ -24,6 +24,8 @@ interface Props {
   label: string;
   /** Lookup sport for the week link. Null is every sport (the All chart). */
   lookupSport: LookupSport | null;
+  /** Sunday `week_end` to select on arrival. Null leaves the chart unselected. */
+  focusWeek?: string | null;
 }
 
 /**
@@ -60,6 +62,7 @@ function Plot({
   drawKey,
   label,
   lookupSport,
+  focusWeek = null,
   W,
   H,
 }: Props & { W: number; H: number }) {
@@ -67,6 +70,12 @@ function Plot({
   const tipRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
   const [hovered, setHovered] = useState<number | null>(null);
+  const focusIndex = focusWeek ? weeks.indexOf(focusWeek) : -1;
+  const active = hovered ?? (focusIndex >= 0 ? focusIndex : null);
+
+  useEffect(() => {
+    setHovered(null);
+  }, [focusWeek]);
 
   const narrow = W < 560;
   const padLeft = narrow ? 30 : 40;
@@ -129,11 +138,11 @@ function Plot({
   const lastX = px(last.week_end);
   const lastY = py(last.tv);
 
-  const activeWeek = hovered === null ? null : weeks[hovered];
+  const activeWeek = active === null ? null : weeks[active];
   const sessionsHref = activeWeek ? lookupWeekHref(activeWeek, lookupSport) : null;
   const yearHref = activeWeek ? milesYearHref(activeWeek) : null;
   const activePoint = activeWeek ? byWeek.get(activeWeek) : undefined;
-  const activeHours = hovered === null ? 0 : hours[hovered];
+  const activeHours = active === null ? 0 : hours[active];
   const tipColor = activePoint ? BAND_COLOR[activePoint.band] : "var(--ink)";
   const tipX = activeWeek ? px(activeWeek) : 0;
   const tipY = activePoint ? py(activePoint.tv) : showHours ? hy(activeHours) : baseline;
@@ -214,7 +223,7 @@ function Plot({
                   y={hy(hours[i])}
                   width={barW}
                   height={baseline - hy(hours[i])}
-                  className={`${styles.bar} ${hovered === i ? styles.barActive : ""}`}
+                  className={`${styles.bar} ${active === i ? styles.barActive : ""}`}
                 />
               ))}
             </motion.g>

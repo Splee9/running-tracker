@@ -5,7 +5,10 @@ import { activityFacts, applyJevIntent, buildGradeRequest, buildIndex, buildJevR
 import { toActivity } from "./scripts/strava-activity.mjs";
 import { formatHours, formatWindow, interpretationParts, lookupStatus, mergeMachineWindow, orderHits, primaryHits, resultTotals } from "./src/lib/lookupView.ts";
 import { planNavigation } from "./src/lib/navigation.ts";
-import { lookupWeekHref, lookupYearHref, milesYearHref, trainingWeekHref } from "./src/lib/links.ts";
+import { readFileSync } from "node:fs";
+import { contextChips, describeChicagoStrip, lookupTvSport, tvBandFrom } from "./src/lib/crosslink.ts";
+import { readMilesYear, readTrainingQuery, readWeekMonday, widenDateRange } from "./src/lib/focus.ts";
+import { chicagoWeekHref, lookupWeekHref, lookupYearHref, milesYearHref, trainingWeekHref } from "./src/lib/links.ts";
 import { inDayWindow, machineWindow, weekMonday, weekSunday, weekWindow, yearOf } from "./src/lib/week.ts";
 import { stimulusDecision } from "./src/lib/stimulusDecision.ts";
 import { stimulusFit } from "./src/lib/stimulusFit.ts";
@@ -2171,6 +2174,150 @@ check(
     "/activity-lookup?from=2026-09-21&to=2026-09-27",
   ).push,
 );
+
+console.log("\ninbound focus:\n");
+
+check("week=21 is not a Monday", readWeekMonday("?week=21") === null);
+check("a Wednesday does not select a bar", readWeekMonday("?week=2026-09-23") === null);
+check("a Monday is the inbound week", readWeekMonday("?week=2026-09-21") === "2026-09-21");
+const trainingQuery = readTrainingQuery("?week=2026-09-21&sport=bike&horizon=short&range=12wk&hours=1");
+check(
+  "training reads week, sport, horizon, range, and hours",
+  trainingQuery.week === "2026-09-21"
+    && trainingQuery.sport === "bike"
+    && trainingQuery.horizon === "short"
+    && trainingQuery.range === "12wk"
+    && trainingQuery.hours === true,
+);
+const trainingDefault = readTrainingQuery("?sport=swim&horizon=nope&range=nope&hours=yes");
+check(
+  "unknown training params fall back",
+  trainingDefault.sport === "run" && trainingDefault.horizon === "medium" && trainingDefault.range === "52wk" && trainingDefault.hours === false && trainingDefault.week === null,
+);
+check(
+  "a known miles year is selected",
+  readMilesYear("?year=2024", [2018, 2024, 2026]) === 2024 && readMilesYear("?year=lifetime", [2024]) === "lifetime",
+);
+check(
+  "an unknown miles year stays on lifetime",
+  readMilesYear("?year=1999", [2024]) === "lifetime" && readMilesYear("", [2024]) === "lifetime",
+);
+
+const weeklyHours = JSON.parse(readFileSync(new URL("./src/training-weekly-hours.json", import.meta.url), "utf8"));
+const lastSunday = weeklyHours.weeks[weeklyHours.weeks.length - 1];
+const oldestSunday = weeklyHours.weeks[0];
+const widened = widenDateRange(oldestSunday, "52wk", lastSunday);
+check("a Sunday after the series does not widen the range", widenDateRange("2026-10-04", "52wk", "2026-09-27") === "52wk");
+check(
+  "an old week widens past 52 weeks",
+  widened !== "52wk" && oldestSunday >= shiftBack(lastSunday, widened),
+  `${oldestSunday} via ${widened} from ${lastSunday}`,
+);
+
+console.log("\nlookup context:\n");
+
+const chicago = JSON.parse(readFileSync(new URL("./src/chicago-data.json", import.meta.url), "utf8"));
+const miles = JSON.parse(readFileSync(new URL("./src/data.json", import.meta.url), "utf8"));
+const variability = JSON.parse(readFileSync(new URL("./src/training-variability.json", import.meta.url), "utf8"));
+const sources = {
+  phases: chicago.phases,
+  weeks: chicago.weeks,
+  years: miles.years.map((year) => year.year),
+  raceEvents: miles.raceEvents,
+  marathonResults: miles.marathonResults,
+};
+
+const strip = describeChicagoStrip(chicago.meta, chicago.phases, chicago.weeks);
+check(
+  "the strip is the current Chicago phase and week mileage",
+  strip?.sentence === "Taper · week 22 · 37 mi so far · Chicago Oct 11" && strip?.monday === "2026-09-28" && strip?.partial === true,
+  strip?.sentence,
+);
+
+function chipsFor(date, extra = {}) {
+  return contextChips({ start_date_local: `${date}T08:00:00`, ...extra }, sources);
+}
+const sharpen = chipsFor("2026-09-21");
+check(
+  "a Sharpen session links its week and year",
+  sharpen.some((chip) => chip.key === "chicago" && chip.label === "Sharpen · week of Sep 21" && chip.href === "/training/chicago?week=2026-09-21")
+    && sharpen.some((chip) => chip.key === "year" && chip.label === "2026" && chip.href === "/miles?year=2026"),
+  JSON.stringify(sharpen),
+);
+const taperRaceDay = chipsFor("2026-10-11");
+check(
+  "race day still names Taper when that Monday is not a bar yet",
+  taperRaceDay.some((chip) => chip.key === "chicago" && chip.label === "Taper" && chip.href === "/training/chicago")
+    && !taperRaceDay.some((chip) => chip.label.includes("week of")),
+  JSON.stringify(taperRaceDay),
+);
+check("a day before the block omits Chicago", !chipsFor("2026-05-03").some((chip) => chip.key === "chicago"));
+
+const besideMarathon = chipsFor("2024-10-12");
+check(
+  "a nearby marathon uses its name",
+  besideMarathon.some((chip) => chip.kind === "label" && chip.label === "Chicago Marathon"),
+  JSON.stringify(besideMarathon),
+);
+const ownMarathon = chipsFor("2024-10-13", { race: { event_name: "Chicago Marathon" } });
+check(
+  "the session's own race is not repeated",
+  !ownMarathon.some((chip) => chip.key.startsWith("race-")),
+  JSON.stringify(ownMarathon),
+);
+const turkey = chipsFor("2024-11-26");
+check(
+  "a race with no name is the distance and date",
+  turkey.some((chip) => chip.kind === "label" && chip.label === "10K · Nov 28"),
+  JSON.stringify(turkey),
+);
+check("Run and VirtualRun use the run series", lookupTvSport("TrailRun") === "run" && lookupTvSport("VirtualRun") === "run");
+check("Ride and VirtualRide use the bike series", lookupTvSport("VirtualRide") === "bike" && lookupTvSport("Ride") === "bike");
+check("a swim can only borrow All", lookupTvSport("Swim") === "all");
+
+const band = tvBandFrom(variability, "2026-09-21", "run");
+check(
+  "Sep 21 has a 12-week band on Training",
+  band.status === "band" && band.label.endsWith("· 12-week") && band.href === "/training?week=2026-09-21&sport=run&horizon=medium",
+  JSON.stringify(band),
+);
+const pending = tvBandFrom(variability, "2026-09-28", "run");
+check(
+  "the partial week says variability is not in yet",
+  pending.status === "pending" && pending.label === "Variability not in yet" && pending.href.includes("week=2026-09-28"),
+  JSON.stringify(pending),
+);
+check("a week before TV history is omitted", tvBandFrom(variability, "2021-12-20", "run").status === "absent");
+const swim = tvBandFrom(variability, "2026-09-28", "all", false);
+check("another sport does not invent a pending All chip", swim.status === "absent");
+check(
+  "the horizon chip still names medium when the chart link omits it",
+  trainingWeekHref("2026-09-27", "run") === "/training?week=2026-09-21&sport=run"
+    && chicagoWeekHref("2026-09-23") === "/training/chicago?week=2026-09-21",
+);
+
+const decisionSrc = readFileSync(new URL("./src/components/StimulusDecision.tsx", import.meta.url), "utf8");
+const stripSrc = readFileSync(new URL("./src/components/ContextStrip.tsx", import.meta.url), "utf8");
+const sessionSrc = readFileSync(new URL("./src/lib/sessionContext.ts", import.meta.url), "utf8");
+check(
+  "variability stays a lazy import off the lookup chunk",
+  decisionSrc.includes('import("../lib/tvBand")')
+    && !decisionSrc.includes('from "../lib/tvBand"')
+    && !sessionSrc.includes("training-variability")
+    && !stripSrc.includes("training-variability")
+    && !stripSrc.includes("activities.json"),
+);
+
+function shiftBack(last, range) {
+  const weeks = { "12wk": 12, "26wk": 26, "52wk": 52, "2yr": 104, all: null }[range];
+  if (weeks == null) return "0000-01-01";
+  const [year, month, day] = last.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day - weeks * 7));
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
 console.log();
 if (failures === 0) {

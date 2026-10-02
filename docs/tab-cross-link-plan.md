@@ -5,8 +5,10 @@ Sources stay separate files. This document does not merge them, and it does not 
 ## Status
 
 - **Phase 0 — done.** Shared Monday key (`src/lib/week.ts`), router search handling, Lookup `from`/`to`.
-- **Phase 1 — done.** Chicago week readout, the training-variability hover card, and the selected Miles year link out to Lookup. `/training?week=` and `/miles?year=` are written and not yet read.
-- **Phases 2–4 — not started.** Inbound focus, Lookup context chips, and the Miles/Training strip.
+- **Phase 1 — done.** Chicago week readout, the training-variability hover card, and the selected Miles year link out to Lookup.
+- **Phase 2 — done.** `/training?week=`, `/miles?year=`, and `/training/chicago?week=` select the week or year on arrival.
+- **Phase 3 — done.** Lookup expand chips: Chicago phase, that week's variability band (lazy), the miles year, and nearby race labels.
+- **Phase 4 — done.** A thin strip on Miles and Training shows the current Chicago phase and week mileage. Fit sentences stay on Lookup.
 
 Context for later Fit UI work: see [AGENTS.md](../AGENTS.md) §Fit. Layer A is `primary_stimulus` / `primary_confidence`. Layer B is `macro_readiness` → `activity_side_load` → `stimulus_fit` + `fit_confidence`. A cross-link may quote a published fit sentence. It must not invent `fit_confidence` or copy `primary_confidence` into it.
 
@@ -273,7 +275,7 @@ Exit: `/activity-lookup?from=2026-09-21&to=2026-09-27` filters on a full load an
 
 Exit: from the current Chicago week and from a hovered TV week, a person lands on the public sessions for that Monday–Sunday.
 
-### Phase 2 — Inbound selection (not started)
+### Phase 2 — Inbound selection (done)
 
 - `/training?week=&sport=&horizon=` highlights the week, switches sport/horizon, and expands the range preset if needed.
 - `/miles?year=` selects the year chip.
@@ -281,13 +283,13 @@ Exit: from the current Chicago week and from a hovered TV week, a person lands o
 
 Exit: the phase 1 links open the destination already focused on the same week or year. Sharing a URL restores that focus.
 
-### Phase 3 — Lookup context chips (not started)
+### Phase 3 — Lookup context chips (done)
 
 Chips described above, on the expand row, under the fit sentence. Lazy-load TV for the band. Omit chips the data cannot support. Do not change fit copy in `src/lib/stimulusFit.ts` unless the chip layout forces a real Fit UI change; if it does, the PR says `Context: see AGENTS.md §Fit`.
 
 Exit: opening a session in the Chicago block shows phase, TV band (when the Sunday exists), year, and any race in that week, each as a link except the race label.
 
-### Phase 4 — Strip (not started)
+### Phase 4 — Strip (done)
 
 `ContextStrip` on `/miles` and `/training` from Chicago `meta` + current `weekStart`. Links into phase 2 URLs. No Fit text.
 
@@ -320,7 +322,7 @@ Accepted with the plan: ship the recommended defaults.
 
 ## Next
 
-Phase 2: `/training?week=`, `/miles?year=`, and `/training/chicago?week=` select the week or year the phase 1 links already name.
+Phases 0–4 are in. A Fit sidecar on the Miles and Training strip is a later request; this plan does not add one.
 
 ## Non-goals
 

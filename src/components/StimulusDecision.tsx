@@ -1,5 +1,7 @@
-import { useId, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { sportLabel, type Activity } from "../lib/activitySearch";
+import { Link } from "../lib/router";
+import { lookupTvSport, sessionChips, type SessionChip } from "../lib/sessionContext";
 import { stimulusDecision } from "../lib/stimulusDecision";
 import { STIMULUS_FIT_NOTE, stimulusFit, type FitBasisChip, type FitTerm } from "../lib/stimulusFit";
 import styles from "./StimulusDecision.module.css";
@@ -81,6 +83,50 @@ function pillTone(value: string | null): "pillFit" | "pillOver" | "pillUnder" | 
   if (value === "overcooked") return "pillOver";
   if (value === "undercooked") return "pillUnder";
   return "pillNone";
+}
+
+function SessionContext({ activity }: { activity: Activity }) {
+  const chips = useMemo(
+    () => sessionChips({ start_date_local: activity.start_date_local, race: activity.race }),
+    [activity],
+  );
+  const [tv, setTv] = useState<SessionChip | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTv(null);
+    const sport = lookupTvSport(activity.sport_type);
+    const day = activity.start_date_local.slice(0, 10);
+    import("../lib/tvBand").then((mod) => {
+      if (cancelled) return;
+      const result = mod.tvBandChip(day, sport, sport !== "all");
+      setTv(result.status === "absent" ? null : { kind: "link", key: "tv", label: result.label, href: result.href });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activity]);
+
+  const chicago = chips.filter((chip) => chip.key === "chicago");
+  const rest = chips.filter((chip) => chip.key !== "chicago");
+  const row = [...chicago, ...(tv ? [tv] : []), ...rest];
+  if (row.length === 0) return null;
+
+  return (
+    <div className={styles.context} aria-label="Where this session sits">
+      {row.map((chip) =>
+        chip.kind === "link" ? (
+          <Link key={chip.key} href={chip.href} className={styles.contextLink}>
+            {chip.label}
+          </Link>
+        ) : (
+          <span key={chip.key} className={styles.contextLabel}>
+            {chip.label}
+          </span>
+        ),
+      )}
+    </div>
+  );
 }
 
 /** Reasons the row's own chips already show. Dropped from the expand so they are not read twice. */
@@ -238,6 +284,7 @@ export function StimulusDecisionPanel({
           </div>
         </div>
       )}
+      <SessionContext activity={activity} />
       <p className="sr-only">
         {view.scope}. {view.status}.
         {fit.published
