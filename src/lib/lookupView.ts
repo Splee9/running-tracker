@@ -11,6 +11,7 @@ import {
 } from "./activitySearch.ts";
 import { calendarLabel } from "./calendar.ts";
 import { stimulusSummary, type Sport } from "./stimulus.ts";
+import { intersectWindows } from "./week.ts";
 
 export type InterpretationPart = {
   key: IntentPartKey;
@@ -111,6 +112,36 @@ function partValues(c: IntentClassification): Map<InterpretationPart["key"], { l
  * What the search was read as, in display order. `code` is the parse before Jev filled any gaps;
  * a part that differs from it is marked fromJev. Words Jev resolved drop out of `words`.
  */
+/**
+ * Fold a machine `from`/`to` window into a parsed query.
+ * No query yet becomes a most-recent list of that window.
+ * A query that already has dates is intersected with the machine window.
+ * An empty intersection keeps `start > end` so the list matches nothing
+ * instead of widening back out to the query's year.
+ */
+export function mergeMachineWindow(
+  c: IntentClassification | null,
+  machine: { start: string; end: string } | null,
+): IntentClassification | null {
+  if (!machine) return c;
+  const dateWindow = c?.dateWindow ? intersectWindows(c.dateWindow, machine) : machine;
+  if (!dateWindow) return c;
+  if (!c) {
+    return {
+      intent: { kind: "list" },
+      dateWindow,
+      distanceBand: null,
+      place: null,
+      weekday: null,
+      stimulus: null,
+      calendar: null,
+      remainingTokens: [],
+      isDeterministic: true,
+    };
+  }
+  return { ...c, dateWindow };
+}
+
 export function interpretationParts(c: IntentClassification, code: IntentClassification | null): InterpretationPart[] {
   const before = code ? partValues(code) : null;
   const parts: InterpretationPart[] = [];

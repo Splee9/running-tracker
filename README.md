@@ -125,9 +125,13 @@ scripts/                  data export, grading, and eval scripts (see below)
   The page shows what the query was read as; each part can be removed, and the
   removal reaches Jev's question too. An order menu (newest, longest, fastest
   pace, most climbing) overrides the ranking. Query, sport, units, order, and
-  removed parts live in the URL (`?q=&sport=&u=&sort=&drop=`). `?debug=1` shows
-  match kind, branch, and Jev score on each row. `?activity=` opens one
-  session's stimulus decision.
+  removed parts live in the URL (`?q=&sport=&u=&sort=&drop=`). `?from=` and
+  `?to=` are an inclusive local-date window (a missing `to` runs through the
+  Sunday of `from`'s Monday–Sunday week). They show up as the dates chip and
+  intersect a date already parsed from `q`, instead of being written into `q`.
+  `?debug=1` shows match kind, branch, and Jev score on each row. `?activity=`
+  opens one session's stimulus decision, including when that session sits
+  outside the date window.
 
 ### Stimulus decision (Layer A)
 

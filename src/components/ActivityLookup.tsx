@@ -34,6 +34,7 @@ import {
   formatHours,
   interpretationParts,
   lookupStatus,
+  mergeMachineWindow,
   orderHits,
   primaryHits,
   resultTotals,
@@ -41,6 +42,8 @@ import {
   type UserOrder,
 } from "../lib/lookupView";
 import { stimulusDecision } from "../lib/stimulusDecision";
+import { useSearchString } from "../lib/router";
+import { machineWindow, inDayWindow, type DayWindow } from "../lib/week";
 import { StimulusDecisionPanel } from "./StimulusDecision";
 import styles from "./ActivityLookup.module.css";
 
@@ -91,15 +94,19 @@ const rise: Variants = {
 function readParams() {
   const params = new URLSearchParams(window.location.search);
   const sport = params.get("sport");
+  const removed = parseRemovedParts(params.get("drop")?.split(",") ?? []);
   return {
     query: params.get("q") ?? "",
     sport: (SPORT_FILTERS.some((f) => f.key === sport) ? sport : "all") as SportFilter,
     units: (params.get("u") === "km" ? "km" : "mi") as Units,
     order: (USER_ORDERS.find((o) => o.key === params.get("sort"))?.key ?? "match") as UserOrder,
-    removed: parseRemovedParts(params.get("drop")?.split(",") ?? []),
+    removed,
     // Match kind and branch are for tuning. ?debug=1 shows them on each row.
     debug: params.has("debug"),
     activity: activityId(params.get("activity")),
+    // A removed dates chip drops the machine window too, even if the URL still has it
+    // for the instant before the write effect cleans the params.
+    window: removed.includes("dates") ? null : machineWindow(params.get("from"), params.get("to")),
   };
 }
 
@@ -131,15 +138,42 @@ export function ActivityLookup() {
   const removedKey = removedKeys.join(",");
   const debug = initial.debug;
   const [openId, setOpenId] = useState<number | null>(initial.activity);
+  // Machine date window (`?from=&to=`). Independent of `q`, until the dates chip is removed.
+  const [listedWindow, setListedWindow] = useState<DayWindow | null>(initial.window);
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [jev, setJev] = useState<JevState>({ status: "idle" });
   // Flips off for the session once the function reports Jev isn't configured.
   const [jevAvailable, setJevAvailable] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const search = useSearchString();
+  // Search string this component last wrote, or the one it was opened with.
+  // A popstate that doesn't match is someone else's navigation (a week link, Back).
+  const writtenSearch = useRef(search);
+  const applyingExternal = useRef(false);
+
+  // Client-side hops update the query string without remounting Lookup.
+  // Copy them into state before the write effect can put the old search back.
+  useEffect(() => {
+    if (search === writtenSearch.current) return;
+    applyingExternal.current = true;
+    writtenSearch.current = search;
+    const next = readParams();
+    setQuery(next.query);
+    setSport(next.sport);
+    setUnits(next.units);
+    setOrder(next.order);
+    setRemoved({ query: next.query.trim(), keys: next.removed });
+    setListedWindow(next.window);
+    setOpenId(next.activity);
+  }, [search]);
 
   // Keep the search in the URL so it can be shared or bookmarked. Other params (debug) are left alone.
   useEffect(() => {
+    if (applyingExternal.current) {
+      applyingExternal.current = false;
+      return;
+    }
     const params = new URLSearchParams(window.location.search);
     const q = query.trim();
     if (q) params.set("q", q);
@@ -154,12 +188,20 @@ export function ActivityLookup() {
     else params.delete("drop");
     if (openId != null) params.set("activity", String(openId));
     else params.delete("activity");
-    const search = params.toString();
-    const url = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`;
+    if (listedWindow) {
+      params.set("from", listedWindow.start);
+      params.set("to", listedWindow.end);
+    } else {
+      params.delete("from");
+      params.delete("to");
+    }
+    const searchString = params.toString();
+    const url = `${window.location.pathname}${searchString ? `?${searchString}` : ""}${window.location.hash}`;
     if (url !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+      writtenSearch.current = searchString ? `?${searchString}` : "";
       window.history.replaceState(window.history.state, "", url);
     }
-  }, [query, sport, units, order, removedKey, openId]);
+  }, [query, sport, units, order, removedKey, openId, listedWindow]);
 
   useEffect(() => {
     if (openId == null) return;
@@ -197,13 +239,23 @@ export function ActivityLookup() {
     [filledClassification, removedKey],
   );
   const hardKey = intentClassification ? intentHardKey(intentClassification) : "";
+  // `from`/`to` narrow the list. Removing the dates chip clears them.
+  const activeWindow = removedKeys.includes("dates") ? null : listedWindow;
+  const effectiveClassification = useMemo(
+    () => mergeMachineWindow(intentClassification, activeWindow),
+    [intentClassification, activeWindow],
+  );
+  const codeWithWindow = useMemo(
+    () => mergeMachineWindow(codeClassification, activeWindow),
+    [codeClassification, activeWindow],
+  );
 
   const localHits: SearchHit[] = useMemo(() => {
-    if (!trimmed || !intentClassification) return [];
-    return searchActivities(index, trimmed, 500, undefined, intentClassification).filter((h) =>
+    if (!trimmed || !effectiveClassification) return [];
+    return searchActivities(index, trimmed, 500, undefined, effectiveClassification).filter((h) =>
       matchesSport(h.activity, sport),
     );
-  }, [trimmed, sport, intentClassification]);
+  }, [trimmed, sport, effectiveClassification]);
 
   const candidateIds = useMemo(
     () => localHits.slice(0, JEV_CANDIDATES).map((h) => h.activity.id),
@@ -280,7 +332,7 @@ export function ActivityLookup() {
   const results = useMemo(() => {
     if (!trimmed) {
       return activities
-        .filter((a) => matchesSport(a, sport))
+        .filter((a) => matchesSport(a, sport) && (!activeWindow || inDayWindow(a.start_date_local, activeWindow)))
         .map((activity): SearchHit => ({ activity, score: 0, kind: "keyword", matched: [] }));
     }
     // Locked metric and date rows stay in code order. Unlocked rows are gated by the membership
@@ -288,13 +340,14 @@ export function ActivityLookup() {
     const grade = rankGradeFor(trimmed, intentClassification, standoutGraded)?.value;
     if (!jevScores) return grade ? rerankUnlockedHits(localHits, {}, undefined, grade) : localHits;
     return rerankUnlockedHits(localHits, jevScores, jevCompanions, grade);
-  }, [trimmed, sport, localHits, jevScores, jevCompanions, intentClassification]);
+  }, [trimmed, sport, activeWindow, localHits, jevScores, jevCompanions, intentClassification]);
 
-  useEffect(() => setVisible(PAGE_SIZE), [trimmed, sport, order]);
+  useEffect(() => setVisible(PAGE_SIZE), [trimmed, sport, order, listedWindow]);
 
   const ordered = useMemo(() => orderHits(results, order), [results, order]);
   const shown = ordered.slice(0, visible);
   const openActivity = openId != null ? activities.find((a) => a.id === openId) : undefined;
+  const openInResults = openActivity != null && ordered.some((hit) => hit.activity.id === openActivity.id);
   const openInList = openActivity != null && shown.some((hit) => hit.activity.id === openActivity.id);
 
   useEffect(() => {
@@ -305,7 +358,7 @@ export function ActivityLookup() {
   const status = lookupStatus(
     trimmed,
     results,
-    intentClassification,
+    effectiveClassification,
     {
       available: jevAvailable,
       scored: Boolean(jevScores),
@@ -315,8 +368,8 @@ export function ActivityLookup() {
     rankGradeFor(trimmed, intentClassification, standoutGraded)?.label,
     USER_ORDERS.find((o) => o.key === order && o.key !== "match")?.status,
   );
-  const readAs = intentClassification ? interpretationParts(intentClassification, codeClassification) : [];
-  const totals = trimmed ? resultTotals(primaryHits(results, intentClassification).map((h) => h.activity)) : null;
+  const readAs = effectiveClassification ? interpretationParts(effectiveClassification, codeWithWindow) : [];
+  const totals = trimmed ? resultTotals(primaryHits(results, effectiveClassification).map((h) => h.activity)) : null;
 
   function focusRow(index: number) {
     const rows = listRef.current?.querySelectorAll<HTMLButtonElement>("button[data-activity-row]");
@@ -390,7 +443,10 @@ export function ActivityLookup() {
                 className={`${styles.readPart} ${part.fromJev ? styles.readPartJev : ""}`}
                 title={part.fromJev ? "Filled in by Jev. Click to remove." : "Click to remove."}
                 aria-label={`Remove ${part.label.toLowerCase()} ${part.value}`}
-                onClick={() => setRemoved({ query: trimmed, keys: [...removedKeys, part.key] })}
+                onClick={() => {
+                  if (part.key === "dates") setListedWindow(null);
+                  setRemoved({ query: trimmed, keys: [...removedKeys, part.key] });
+                }}
               >
                 <span className={styles.readLabel}>{part.label}</span>
                 {part.value}
@@ -468,7 +524,12 @@ export function ActivityLookup() {
         )}
 
         {openActivity && !openInList && (
-          <StimulusDecisionPanel activity={openActivity} pinned onClose={() => setOpenId(null)} />
+          <>
+            {!openInResults && (
+              <p className={styles.outside}>This session is outside the current filter.</p>
+            )}
+            <StimulusDecisionPanel activity={openActivity} pinned onClose={() => setOpenId(null)} />
+          </>
         )}
 
         {shown.length > 0 && (
