@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { AnimatedNumber } from "./AnimatedNumber";
 import { Chip } from "./Chip";
+import { RaceList } from "./RaceLinks";
 import { Rich } from "./Rich";
-import { data, lifetime, type RaceCounts } from "../lib/data";
+import { data, lifetime, type RaceCounts, type RaceDistance } from "../lib/data";
 import { fmt, fmt1 } from "../lib/format";
 import { headlineFor } from "../lib/comparisons";
 import { readMilesYear } from "../lib/focus";
 import { lookupYearHref } from "../lib/links";
+import { loggedRaces, raceByKey } from "../lib/loggedRaces";
+import type { RaceFocus } from "../lib/races";
 import { Link, useSearchString } from "../lib/router";
 import styles from "./YearChart.module.css";
 
@@ -36,10 +39,21 @@ const lifetimeRaces: RaceCounts = data.years.reduce(
 
 const YEARS = data.years.map((y) => y.year);
 
-export function YearChart() {
+type RaceListFilter = "all" | "pr" | RaceDistance;
+
+export function YearChart({
+  raceFocus,
+  onFocusRace,
+}: {
+  raceFocus: RaceFocus;
+  onFocusRace: (focus: RaceFocus) => void;
+}) {
   const search = useSearchString();
   const writtenSearch = useRef(search);
   const [selected, setSelected] = useState<Scope>(() => readMilesYear(window.location.search, YEARS));
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const [listFilter, setListFilter] = useState<RaceListFilter>("all");
 
   useEffect(() => {
     if (search === writtenSearch.current) return;
@@ -47,7 +61,7 @@ export function YearChart() {
     setSelected(readMilesYear(search, YEARS));
   }, [search]);
 
-  function choose(scope: Scope) {
+  function writeYear(scope: Scope) {
     setSelected(scope);
     const params = new URLSearchParams(window.location.search);
     if (scope === "lifetime") params.delete("year");
@@ -61,6 +75,25 @@ export function YearChart() {
       window.history.replaceState(window.history.state, "", url);
     }
   }
+
+  function choose(scope: Scope) {
+    writeYear(scope);
+    setListFilter("all");
+    onFocusRace(null);
+  }
+
+  // A related race on the list follows that race's year. Chart hovers do not,
+  // so scanning markers does not resize the year chart under the cursor.
+  useEffect(() => {
+    if (!raceFocus?.pin) return;
+    const race = raceByKey(raceFocus.key);
+    if (!race) return;
+    setListFilter("all");
+    const current = selectedRef.current;
+    if (current !== "lifetime" && current !== race.year) writeYear(race.year);
+    // writeYear is stable enough: it only depends on the latest search snapshot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [raceFocus]);
 
   const scope =
     selected === "lifetime"
@@ -77,6 +110,20 @@ export function YearChart() {
       ? lifetimeRaces
       : data.years.find((y) => y.year === selected)?.races ?? EMPTY_RACES;
   const totalRaces = RACE_KINDS.reduce((sum, k) => sum + races[k.key], 0);
+  const inScope = loggedRaces.filter((race) => selected === "lifetime" || race.year === selected);
+  const hasPr = inScope.some((race) => race.pr);
+  const shownRaces = [...inScope]
+    .reverse()
+    .filter((race) => {
+      if (listFilter === "all") return true;
+      if (listFilter === "pr") return race.pr;
+      return race.distance === listFilter;
+    });
+  const pinnedKey = raceFocus?.pin ? raceFocus.key : null;
+
+  function toggleDistance(distance: RaceDistance) {
+    setListFilter((current) => (current === distance ? "all" : distance));
+  }
 
   return (
     <section className={styles.section} aria-label="Mileage by year">
@@ -154,32 +201,65 @@ export function YearChart() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
       >
-        <p className={styles.racesLabel}>
-          Races {selected === "lifetime" ? "logged" : `in ${selected}`}
-        </p>
+        <div className={styles.racesHead}>
+          <p className={styles.racesLabel}>
+            Races {selected === "lifetime" ? "logged" : `in ${selected}`}
+          </p>
+          {hasPr && (
+            <button
+              type="button"
+              className={`${styles.prToggle} ${listFilter === "pr" ? styles.prToggleOn : ""}`}
+              aria-pressed={listFilter === "pr"}
+              onClick={() => setListFilter((current) => (current === "pr" ? "all" : "pr"))}
+            >
+              PRs
+            </button>
+          )}
+        </div>
         {totalRaces === 0 ? (
           <p className={styles.racesEmpty}>No races logged{selected === "lifetime" ? "" : " this year"}.</p>
         ) : (
-          <div className={styles.raceRow}>
-            {RACE_KINDS.map((k) => {
-              const count = races[k.key];
-              return (
-                <div
-                  key={k.key}
-                  className={styles.raceStat}
-                  style={{ "--race-color": k.color } as React.CSSProperties}
-                >
-                  <span
-                    className={styles.raceNum}
-                    style={{ color: count > 0 ? k.color : "var(--muted)" }}
+          <>
+            <div className={styles.raceRow}>
+              {RACE_KINDS.map((k) => {
+                const count = races[k.key];
+                const pressed = listFilter === k.key;
+                return (
+                  <button
+                    key={k.key}
+                    type="button"
+                    className={`${styles.raceStat} ${pressed ? styles.raceStatOn : ""}`}
+                    style={{ "--race-color": k.color } as React.CSSProperties}
+                    disabled={count === 0}
+                    aria-pressed={pressed}
+                    onClick={() => toggleDistance(k.key)}
                   >
-                    <AnimatedNumber value={count} duration={0.5} />
-                  </span>
-                  <span className={styles.raceName}>{k.label}</span>
-                </div>
-              );
-            })}
-          </div>
+                    <span
+                      className={styles.raceNum}
+                      style={{ color: count > 0 ? k.color : "var(--muted)" }}
+                    >
+                      <AnimatedNumber value={count} duration={0.5} />
+                    </span>
+                    <span className={styles.raceName}>{k.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className={styles.racesNote}>
+              A name opens that session. Week, year, and the other races stay linked from here.
+            </p>
+            {shownRaces.length === 0 ? (
+              <p className={styles.racesEmpty}>No races in this set.</p>
+            ) : (
+              <RaceList
+                races={shownRaces}
+                pinnedKey={pinnedKey}
+                linkedKey={raceFocus?.key ?? null}
+                onPin={(key) => onFocusRace({ key, pin: true })}
+                onRelate={(key) => onFocusRace({ key, pin: true })}
+              />
+            )}
+          </>
         )}
       </motion.div>
     </section>

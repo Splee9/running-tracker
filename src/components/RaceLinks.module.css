@@ -1,0 +1,178 @@
+.connections {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.handoff,
+.group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.handoff a,
+.relate {
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 13px;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  padding: 0 0 1px;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.handoff a:hover,
+.relate:hover {
+  border-bottom-color: var(--ink);
+}
+
+.groupLabel {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-right: 2px;
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pr {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #fff;
+  background: #c0432f;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.item {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.itemOn {
+  background: var(--surface-subtle);
+  border-bottom-color: transparent;
+  margin-left: -8px;
+  margin-right: -8px;
+  padding-left: 8px;
+  padding-right: 8px;
+  border-radius: 8px;
+}
+
+.itemLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  align-self: center;
+  flex: none;
+}
+
+.name {
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 16px;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1px;
+}
+
+.name:hover {
+  border-bottom-color: var(--ink);
+}
+
+.when,
+.time {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.related {
+  margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+}
+
+.related:hover {
+  color: var(--ink);
+  border-bottom-color: var(--line);
+}
+
+.tip {
+  position: absolute;
+  /* Overlap the marker so the pointer can move onto the links. */
+  transform: translate(-50%, calc(-100% + 14px));
+  width: max-content;
+  max-width: min(280px, 72vw);
+  text-align: left;
+  white-space: normal;
+  background: var(--card);
+  border: 1.5px solid;
+  border-radius: 9px;
+  padding: 8px 11px 10px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.1);
+  z-index: 3;
+}
+
+.tipName {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.tipName a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.tipName a:hover {
+  border-bottom-color: currentColor;
+}
+

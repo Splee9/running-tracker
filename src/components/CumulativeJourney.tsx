@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   motion,
   useScroll,
@@ -7,8 +7,11 @@ import {
   useReducedMotion,
   type MotionValue,
 } from "motion/react";
-import { data, lifetime } from "../lib/data";
+import { data, lifetime, type RaceDistance } from "../lib/data";
 import { fmt } from "../lib/format";
+import { raceKey, raceSessionHref, type RaceFocus } from "../lib/races";
+import { navigate } from "../lib/router";
+import { RaceChartTip } from "./RaceLinks";
 import styles from "./CumulativeJourney.module.css";
 
 // ---- geometry (static; data is baked in) --------------------------------
@@ -94,17 +97,60 @@ const RACE_MARKERS = data.raceEvents
   })
   .filter((m): m is NonNullable<typeof m> => m !== null);
 
-export function CumulativeJourney() {
+type TipAnchor = { left: string; top: string; color: string };
+
+function markerAnchor(marker: (typeof RACE_MARKERS)[number]): TipAnchor {
+  return {
+    left: `${(marker.x / W) * 100}%`,
+    top: `${(Math.max(12, marker.y - RACE_STYLE[marker.distance].stem) / H) * 100}%`,
+    color: RACE_STYLE[marker.distance].color,
+  };
+}
+
+export function CumulativeJourney({
+  raceFocus,
+  onFocusRace,
+}: {
+  raceFocus: RaceFocus;
+  onFocusRace: (focus: RaceFocus) => void;
+}) {
   const ref = useRef<HTMLElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
   const [hovered, setHovered] = useState<number | null>(null);
+  const [tipKey, setTipKey] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState<TipAnchor | null>(null);
   const { scrollYProgress } = useScroll({
     target: ref,
     offset: ["start start", "end end"],
   });
 
   const pathLength = useTransform(scrollYProgress, [0.05, 0.95], [0, 1]);
-  const hoveredRace = hovered === null ? null : RACE_MARKERS[hovered];
+
+  function showMarker(index: number) {
+    const marker = RACE_MARKERS[index];
+    if (!marker) return;
+    const key = raceKey(marker);
+    setHovered(index);
+    setTipKey(key);
+    setAnchor(markerAnchor(marker));
+    onFocusRace({ key, pin: false });
+  }
+
+  function showRelated(key: string) {
+    onFocusRace({ key, pin: false });
+    const index = RACE_MARKERS.findIndex((marker) => raceKey(marker) === key);
+    setHovered(index >= 0 ? index : null);
+    // Keep the card under the pointer. Moving it would drop the hover.
+    setTipKey(key);
+  }
+
+  function pointerLeftChart(event: ReactPointerEvent) {
+    const next = event.relatedTarget;
+    if (next instanceof Node && tipRef.current?.contains(next)) return;
+    setHovered(null);
+    setTipKey(null);
+  }
 
   return (
     <section ref={ref} className={styles.section} aria-label="Cumulative distance over time">
@@ -130,28 +176,23 @@ export function CumulativeJourney() {
               <RaceMarker
                 key={`${r.date}-${i}`}
                 r={r}
-                active={hovered === i}
+                active={hovered === i || raceFocus?.key === raceKey(r)}
                 progress={scrollYProgress}
                 reduce={reduce}
-                onEnter={() => setHovered(i)}
-                onLeave={() => setHovered((h) => (h === i ? null : h))}
+                onEnter={() => showMarker(i)}
+                onLeave={pointerLeftChart}
               />
             ))}
           </svg>
 
-          {hoveredRace && (
-            <div
-              className={styles.raceTip}
-              style={{
-                left: `${(hoveredRace.x / W) * 100}%`,
-                top: `${(Math.max(12, hoveredRace.y - RACE_STYLE[hoveredRace.distance].stem) / H) * 100}%`,
-                color: RACE_STYLE[hoveredRace.distance].color,
-                borderColor: RACE_STYLE[hoveredRace.distance].color,
-              }}
-            >
-              <span className={styles.raceTipType}>{RACE_STYLE[hoveredRace.distance].label}</span>
-              <span className={styles.raceTipDate}>{fmtMonth(hoveredRace.date)}</span>
-            </div>
+          {tipKey && anchor && (
+            <RaceChartTip
+              ref={tipRef}
+              raceKeyValue={tipKey}
+              anchor={anchor}
+              onRelate={showRelated}
+              onPointerLeave={pointerLeftChart}
+            />
           )}
         </div>
 
@@ -164,7 +205,10 @@ export function CumulativeJourney() {
           ))}
         </div>
 
-        <p className={styles.cue}>Hover a marker to see the race. The line is every mile, stacked end to end.</p>
+        <p className={styles.cue}>
+          Hover a marker for the race, then open its session or another race on this log. Click the marker to
+          open that session. The line is every mile, stacked end to end.
+        </p>
       </div>
     </section>
   );
@@ -220,13 +264,15 @@ function RaceMarker({
   onEnter,
   onLeave,
 }: {
-  r: { date: string; distance: string; x: number; y: number; frac: number };
+  r: { date: string; distance: RaceDistance; x: number; y: number; frac: number };
   active: boolean;
   progress: MotionValue<number>;
   reduce: boolean | null;
   onEnter: () => void;
-  onLeave: () => void;
+  onLeave: (event: ReactPointerEvent<SVGRectElement>) => void;
 }) {
+  const href = raceSessionHref(r);
+  const label = `${RACE_STYLE[r.distance].label} ${fmtMonth(r.date)}`;
   const s = RACE_STYLE[r.distance];
   const topY = Math.max(12, r.y - s.stem);
 
@@ -250,17 +296,34 @@ function RaceMarker({
       />
       <circle cx={r.x} cy={topY} r={active ? 5 : 3.5} fill={s.color} />
       <circle cx={r.x} cy={r.y} r={1.8} fill={s.color} />
-      {/* invisible, generous hit target for hover */}
-      <rect
-        x={r.x - 9}
-        y={topY - 8}
-        width={18}
-        height={r.y - topY + 16}
-        fill="transparent"
-        style={{ cursor: "pointer" }}
-        onPointerEnter={onEnter}
-        onPointerLeave={onLeave}
-      />
+      {/* invisible, generous hit target. A click opens the session. */}
+      <a
+        href={href ?? undefined}
+        aria-label={`${label}. Open the session in Activity Lookup.`}
+        onClick={(event) => {
+          if (!href) return;
+          const touch = event.nativeEvent instanceof PointerEvent && event.nativeEvent.pointerType === "touch";
+          if (touch && !active) {
+            event.preventDefault();
+            onEnter();
+            return;
+          }
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+          event.preventDefault();
+          navigate(href);
+        }}
+      >
+        <rect
+          x={r.x - 9}
+          y={topY - 8}
+          width={18}
+          height={r.y - topY + 16}
+          fill="transparent"
+          style={{ cursor: "pointer" }}
+          onPointerEnter={onEnter}
+          onPointerLeave={onLeave}
+        />
+      </a>
     </motion.g>
   );
 }

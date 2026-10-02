@@ -3,7 +3,7 @@
  * the lookup parser splits hyphens and reads a year.
  */
 
-import { weekMonday, weekSunday, yearOf } from "./week.ts";
+import { parseISODay, weekMonday, weekSunday, yearOf } from "./week.ts";
 
 /** Lookup sport chip. Training's "all" omits this. */
 export type LookupSport = "run" | "ride";
@@ -55,4 +55,21 @@ export function milesYearHref(isoDayOrYear: string | number): string | null {
   const year = typeof isoDayOrYear === "number" ? isoDayOrYear : yearOf(isoDayOrYear);
   if (year == null) return null;
   return `/miles?year=${year}`;
+}
+
+/**
+ * One logged race's public session. The day window plus a distance word narrows
+ * the list. `race` is `date|distance` from the miles log so Lookup can open the
+ * matching activity without joining the two JSON files.
+ */
+export function lookupRaceHref(date: string, distanceQuery: string, raceKey: string): string | null {
+  const day = parseISODay(date);
+  if (!day || !distanceQuery || !raceKey) return null;
+  const params = new URLSearchParams();
+  params.set("from", day);
+  params.set("to", day);
+  params.set("sport", "run");
+  params.set("q", distanceQuery);
+  params.set("race", raceKey);
+  return `/activity-lookup?${params.toString()}`;
 }

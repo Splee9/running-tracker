@@ -43,6 +43,8 @@ import {
 } from "../lib/lookupView";
 import { stimulusDecision } from "../lib/stimulusDecision";
 import { useSearchString } from "../lib/router";
+import { loggedRaces } from "../lib/loggedRaces";
+import { sessionToOpen } from "../lib/raceSession";
 import { machineWindow, inDayWindow, type DayWindow } from "../lib/week";
 import { StimulusDecisionPanel } from "./StimulusDecision";
 import styles from "./ActivityLookup.module.css";
@@ -103,7 +105,7 @@ function readParams() {
     removed,
     // Match kind and branch are for tuning. ?debug=1 shows them on each row.
     debug: params.has("debug"),
-    activity: activityId(params.get("activity")),
+    activity: sessionToOpen(activityId(params.get("activity")), activities, params.get("race"), loggedRaces),
     // A removed dates chip drops the machine window too, even if the URL still has it
     // for the instant before the write effect cleans the params.
     window: removed.includes("dates") ? null : machineWindow(params.get("from"), params.get("to")),
