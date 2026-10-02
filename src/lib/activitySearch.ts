@@ -79,6 +79,16 @@ export type Activity = {
   session_variability_impact?: string;
   /** 0–1 confidence in the variability judgment. */
   session_variability_confidence?: number;
+  /**
+   * How the fit was judged: `plan_backed`, `readiness_only`, or `thin`.
+   * Missing means the export did not include one. Not invented from the plan.
+   */
+  fit_basis?: string;
+  /**
+   * Basis for the planned intent, when the export sends it separately.
+   * Same vocabulary as `fit_basis`.
+   */
+  intent_basis?: string;
   // v3 enrichment (optional, backward compatible)
   average_heartrate?: number;
   max_heartrate?: number;

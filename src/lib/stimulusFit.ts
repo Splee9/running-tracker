@@ -57,10 +57,30 @@ export type StimulusFitActivity = {
   /** 0–1 confidence in the variability judgment. */
   session_variability_confidence?: number;
   /**
+   * How the fit was judged: `plan_backed`, `readiness_only`, or `thin`.
+   * Missing means the export did not include one.
+   */
+  fit_basis?: string;
+  /**
+   * Basis for the planned intent, when the export sends it separately.
+   * Same vocabulary as `fit_basis`.
+   */
+  intent_basis?: string;
+  /**
    * Stimulus label, used only to name the kind of day in "a typical easy day".
    * It does not choose the fit and it is not the fit score.
    */
   primary_stimulus?: string;
+};
+
+/** Quiet chip beside the fit sentence. Absent when the export sent no basis. */
+export type FitBasisChip = {
+  /** Spencer-friendly words: "With plan", "Readiness only", "Little to go on". */
+  label: string;
+  /** One line for the tooltip. */
+  hint: string;
+  /** Extra lines, such as an intent basis that differs from the fit basis. */
+  notes: string[];
 };
 
 export type StimulusFitView = {
@@ -77,6 +97,8 @@ export type StimulusFitView = {
   scoreLabel: string;
   /** Short verdict for the fit pill: "On target", "Overcooked", "Undercooked". Null when no fit was published. */
   verdictLabel: string | null;
+  /** How the fit was judged, when the export sent `fit_basis` or `intent_basis`. */
+  basis: FitBasisChip | null;
   /** Marked phrases in sentence order. */
   clauses: FitClause[];
   /**
@@ -104,6 +126,45 @@ const FIT_WHY: Record<string, string> = {
   overcooked: "What was delivered asked for more than readiness wanted.",
   undercooked: "What was delivered was lighter than readiness allowed.",
 };
+
+const BASIS_COPY: Record<string, { label: string; hint: string; intentNote: string }> = {
+  plan_backed: {
+    label: "With plan",
+    hint: "A calendar or week plan was present.",
+    intentNote: "The intent had a calendar or week plan.",
+  },
+  readiness_only: {
+    label: "Readiness only",
+    hint: "No plan. Fit comes from readiness and the delivered session.",
+    intentNote: "The intent had no plan.",
+  },
+  thin: {
+    label: "Little to go on",
+    hint: "A thin read: little plan and little readiness to judge from.",
+    intentNote: "The intent had little to go on.",
+  },
+};
+
+function basisKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/** Chip for the published basis. `fit_basis` leads; `intent_basis` fills in when that is all the export sent. */
+function basisChip(fitBasis: string | null, intentBasis: string | null): FitBasisChip | null {
+  const primary = fitBasis ?? intentBasis;
+  if (!primary) return null;
+  const known = BASIS_COPY[basisKey(primary)];
+  const plain = primary.replaceAll("_", " ");
+  const chip: FitBasisChip = known
+    ? { label: known.label, hint: known.hint, notes: [] }
+    : { label: plain, hint: `Published basis: ${plain}.`, notes: [] };
+  if (fitBasis && intentBasis && basisKey(fitBasis) !== basisKey(intentBasis)) {
+    const intent = BASIS_COPY[basisKey(intentBasis)];
+    const intentPlain = intentBasis.replaceAll("_", " ");
+    chip.notes.push(intent ? intent.intentNote : `Intent published as ${intentPlain}.`);
+  }
+  return chip;
+}
 
 function publishedUnit(value: number | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
@@ -229,6 +290,7 @@ export function stimulusFit(activity: StimulusFitActivity): StimulusFitView {
   const sessionVariability = token(activity.session_variability_impact);
   const fitLabel = token(activity.stimulus_fit);
   const fitConfidence = publishedUnit(activity.fit_confidence);
+  const basis = basisChip(token(activity.fit_basis), token(activity.intent_basis));
   const readinessConfidence = publishedUnit(activity.macro_readiness_confidence);
   const loadConfidence = publishedUnit(activity.activity_side_load_confidence);
   const variabilityConfidence = publishedUnit(activity.session_variability_confidence);
@@ -303,6 +365,7 @@ export function stimulusFit(activity: StimulusFitActivity): StimulusFitView {
     fitConfidence,
     scoreLabel: fitConfidence == null ? "Unavailable" : percent(fitConfidence),
     verdictLabel: fitLabel ? (FIT_SHORT[fitLabel] ?? humanFitToken(fitLabel)) : null,
+    basis,
     clauses,
     comparison: comparisonFrom(clauses),
     scope: STIMULUS_FIT_NOTE,

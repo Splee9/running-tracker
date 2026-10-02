@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from "react";
 import { sportLabel, type Activity } from "../lib/activitySearch";
 import { stimulusDecision } from "../lib/stimulusDecision";
-import { STIMULUS_FIT_NOTE, stimulusFit, type FitTerm } from "../lib/stimulusFit";
+import { STIMULUS_FIT_NOTE, stimulusFit, type FitBasisChip, type FitTerm } from "../lib/stimulusFit";
 import styles from "./StimulusDecision.module.css";
 
 function confidenceText(items: { label: string; value: number }[], fallback: string): string {
@@ -27,6 +27,25 @@ function Term({
       </span>
       <span role="tooltip" id={tipId} className={styles.tip}>
         {children}
+      </span>
+    </span>
+  );
+}
+
+function BasisChip({ chip }: { chip: FitBasisChip }) {
+  const tipId = useId();
+  return (
+    <span className={styles.termWrap}>
+      <span tabIndex={0} className={styles.basis} aria-describedby={tipId}>
+        {chip.label}
+      </span>
+      <span role="tooltip" id={tipId} className={styles.tip}>
+        <span className={styles.tipBody}>{chip.hint}</span>
+        {chip.notes.map((note) => (
+          <span key={note} className={styles.tipBody}>
+            {note}
+          </span>
+        ))}
       </span>
     </span>
   );
@@ -175,50 +194,57 @@ export function StimulusDecisionPanel({
               .
             </p>
           )}
-          <div className={`${styles.fitScore} ${styles[pillTone(fit.stimulusFit)]}`}>
-            <Term
-              tone="score"
-              text={
-                <>
-                  {/* Lead with the verdict so the percent reads as confidence in it, not as a grade. */}
-                  {fit.verdictLabel ? (
-                    <span className={styles.fitVerdict}>{fit.verdictLabel}</span>
-                  ) : (
-                    <span className={styles.fitLabel}>Fit</span>
-                  )}{" "}
-                  <span className={styles.fitValue}>
-                    {fit.fitConfidence == null
-                      ? fit.verdictLabel
-                        ? "confidence unavailable"
-                        : "unavailable"
-                      : `${fit.scoreLabel} sure`}
-                  </span>
-                </>
-              }
-            >
-              <span className={styles.tipBody}>{STIMULUS_FIT_NOTE}</span>
-              <span className={styles.tipConf}>
-                {fit.fitConfidence == null ? "Fit confidence not published." : `Fit confidence ${fit.scoreLabel}.`}
-              </span>
-            </Term>
-            {fitPct != null && (
-              <span
-                className={styles.track}
-                role="meter"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={fitPct}
-                aria-label={`Fit for the day ${fit.scoreLabel}`}
+          <div className={styles.fitRow}>
+            {fit.basis && <BasisChip chip={fit.basis} />}
+            <div className={`${styles.fitScore} ${styles[pillTone(fit.stimulusFit)]}`}>
+              <Term
+                tone="score"
+                text={
+                  <>
+                    {/* Lead with the verdict so the percent reads as confidence in it, not as a grade. */}
+                    {fit.verdictLabel ? (
+                      <span className={styles.fitVerdict}>{fit.verdictLabel}</span>
+                    ) : (
+                      <span className={styles.fitLabel}>Fit</span>
+                    )}{" "}
+                    <span className={styles.fitValue}>
+                      {fit.fitConfidence == null
+                        ? fit.verdictLabel
+                          ? "confidence unavailable"
+                          : "unavailable"
+                        : `${fit.scoreLabel} sure`}
+                    </span>
+                  </>
+                }
               >
-                <span className={styles.fill} style={{ width: `${fitPct}%` }} />
-              </span>
-            )}
+                <span className={styles.tipBody}>{STIMULUS_FIT_NOTE}</span>
+                <span className={styles.tipConf}>
+                  {fit.fitConfidence == null ? "Fit confidence not published." : `Fit confidence ${fit.scoreLabel}.`}
+                </span>
+              </Term>
+              {fitPct != null && (
+                <span
+                  className={styles.track}
+                  role="meter"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={fitPct}
+                  aria-label={`Fit for the day ${fit.scoreLabel}`}
+                >
+                  <span className={styles.fill} style={{ width: `${fitPct}%` }} />
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}
       <p className="sr-only">
         {view.scope}. {view.status}.
-        {fit.published ? ` ${fit.scope} Fit for the day ${fit.scoreLabel}.` : ""}
+        {fit.published
+          ? ` ${fit.scope} Fit for the day ${fit.scoreLabel}.${
+              fit.basis ? ` ${fit.basis.label}. ${fit.basis.hint}${fit.basis.notes.length ? ` ${fit.basis.notes.join(" ")}` : ""}` : ""
+            }`
+          : ""}
       </p>
     </section>
   );
