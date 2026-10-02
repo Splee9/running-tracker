@@ -148,6 +148,26 @@ in the export, the score says "Unavailable" and still shows the cluster, the
 modifiers, and an amber Review mark when `low_confidence` is set. `runner_up` /
 `secondary_stimulus` are shown only when present.
 
+### Stimulus fit (Layer B)
+
+Under that classification line, when the export includes them, the same expand
+row shows a second score: whether the delivered stimulus fit readiness and the
+plan. The line is Jev2 macro readiness compared with Jev3 activity-side load
+(and variability, when present), summarized as Jev4 `stimulus_fit`. The number
+beside it is `fit_confidence`. It is not `primary_confidence`, and the page
+does not invent a fit from the label or from Layer A.
+
+Older activities with none of these fields keep the classification line only.
+If a label arrived without `fit_confidence`, the fit score says Unavailable and
+the comparison still shows the labels that were published. There is no 0.55
+review mark on this score.
+
+The mapper copies `stimulus_fit` (or `fit`), `fit_confidence`, `macro_readiness`,
+`macro_readiness_gate`, `activity_side_load`, and `session_variability_impact`
+when the vault sends them, including the same keys nested on `layer_b` or on a
+judgment object. CamelCase aliases are accepted. Values outside 0–1 are left
+off `fit_confidence` rather than rescaled.
+
 `src/training-weekly-hours.json` is derived from `src/training-variability.json`
 (the export carries only rolling stats). Regenerate it whenever the TV file
 changes:

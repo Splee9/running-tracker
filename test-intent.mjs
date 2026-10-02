@@ -5,6 +5,7 @@ import { activityFacts, applyJevIntent, buildGradeRequest, buildIndex, buildJevR
 import { toActivity } from "./scripts/strava-activity.mjs";
 import { formatHours, formatWindow, interpretationParts, lookupStatus, orderHits, primaryHits, resultTotals } from "./src/lib/lookupView.ts";
 import { stimulusDecision } from "./src/lib/stimulusDecision.ts";
+import { stimulusFit } from "./src/lib/stimulusFit.ts";
 
 const testClock = new Date("2026-09-29T12:00:00-05:00");
 
@@ -1039,6 +1040,110 @@ check(
   JSON.stringify(mappedBlank),
 );
 
+const mappedFit = toActivity({
+  id: 6,
+  name: "tempo",
+  sport_type: "Run",
+  start_date_local: "2026-09-28T08:00:00Z",
+  primary_stimulus: "quality",
+  primary_confidence: 0.91,
+  confidence: 0.2,
+  macro_readiness: "ready",
+  macro_readiness_gate: "open",
+  activity_side_load: "moderate",
+  session_variability_impact: "elevated",
+  stimulus_fit: "aligned",
+  fit_confidence: 0.81,
+});
+check(
+  "toActivity copies Layer B fit fields and leaves classification confidence alone",
+  mappedFit.stimulus_fit === "aligned" &&
+    mappedFit.fit_confidence === 0.81 &&
+    mappedFit.macro_readiness === "ready" &&
+    mappedFit.macro_readiness_gate === "open" &&
+    mappedFit.activity_side_load === "moderate" &&
+    mappedFit.session_variability_impact === "elevated" &&
+    mappedFit.primary_confidence === 0.91 &&
+    !("fit" in mappedFit) &&
+    !("confidence" in mappedFit),
+  JSON.stringify(mappedFit),
+);
+const mappedFitAlias = toActivity({
+  id: 7,
+  name: "tempo",
+  sport_type: "Run",
+  start_date_local: "2026-09-27T08:00:00Z",
+  fit: "short",
+  fitConfidence: "0.5",
+  macroReadiness: "caution",
+  activitySideLoad: "high",
+  sessionVariabilityImpact: "low",
+  primary_confidence: 0.33,
+});
+check(
+  "toActivity accepts a fit alias and camelCase without using primary_confidence as fit",
+  mappedFitAlias.stimulus_fit === "short" &&
+    mappedFitAlias.fit_confidence === 0.5 &&
+    mappedFitAlias.macro_readiness === "caution" &&
+    mappedFitAlias.activity_side_load === "high" &&
+    mappedFitAlias.session_variability_impact === "low" &&
+    mappedFitAlias.primary_confidence === 0.33 &&
+    !("fit" in mappedFitAlias) &&
+    !("fitConfidence" in mappedFitAlias),
+  JSON.stringify(mappedFitAlias),
+);
+const mappedFitNested = toActivity({
+  id: 8,
+  name: "tempo",
+  sport_type: "Run",
+  start_date_local: "2026-09-26T08:00:00Z",
+  primary_confidence: 0.2,
+  confidence: 0.99,
+  layer_b: {
+    macro_readiness: "caution",
+    activity_side_load: "high",
+    stimulus_fit: { choice: "too_much", confidence: 0.99 },
+    fit_confidence: 1.4,
+  },
+});
+check(
+  "toActivity reads nested snake_case fit fields and drops an out-of-range fit confidence",
+  mappedFitNested.macro_readiness === "caution" &&
+    mappedFitNested.activity_side_load === "high" &&
+    mappedFitNested.stimulus_fit === "too_much" &&
+    !("fit_confidence" in mappedFitNested) &&
+    mappedFitNested.primary_confidence === 0.2 &&
+    !("layer_b" in mappedFitNested),
+  JSON.stringify(mappedFitNested),
+);
+const mappedFitObject = toActivity({
+  id: 9,
+  name: "tempo",
+  sport_type: "Run",
+  start_date_local: "2026-09-25T08:00:00Z",
+  layer_b: { stimulus_fit: { choice: "underdone", fit_confidence: 0.7, confidence: 0.99 } },
+  primary_confidence: 0.4,
+});
+check(
+  "toActivity takes fit confidence from the judgment object and ignores its label confidence",
+  mappedFitObject.stimulus_fit === "underdone" &&
+    mappedFitObject.fit_confidence === 0.7 &&
+    mappedFitObject.primary_confidence === 0.4 &&
+    !("layer_b" in mappedFitObject) &&
+    !("confidence" in mappedFitObject),
+  JSON.stringify(mappedFitObject),
+);
+check(
+  "toActivity does not invent a stimulus fit",
+  !("stimulus_fit" in mappedBlank) &&
+    !("fit_confidence" in mappedBlank) &&
+    !("macro_readiness" in mappedBlank) &&
+    !("macro_readiness_gate" in mappedBlank) &&
+    !("activity_side_load" in mappedBlank) &&
+    !("session_variability_impact" in mappedBlank),
+  JSON.stringify(mappedBlank),
+);
+
 console.log("\nstimulus decision panel:\n");
 
 const qualityDecision = stimulusDecision({
@@ -1128,6 +1233,66 @@ check(
     unlabeled.listLabel === null &&
     unlabeled.bars.length === 0,
   unlabeled.reasons.join(" | "),
+);
+
+console.log("\nstimulus fit panel:\n");
+
+// Fixture so the fit line can render before the vault export includes Layer B.
+const layerBActivity = act({
+  id: 9001,
+  name: "Fit fixture",
+  start_date_local: "2026-09-28T08:00:00",
+  distance_m: 14000,
+  moving_time_s: 4200,
+  elevation_gain_m: 40,
+  primary_stimulus: "quality",
+  stimulus_cluster: "quality_tempo",
+  modifiers: ["tempo"],
+  primary_confidence: 0.91,
+  macro_readiness: "ready",
+  macro_readiness_gate: "open",
+  activity_side_load: "moderate",
+  session_variability_impact: "elevated",
+  stimulus_fit: "aligned",
+  fit_confidence: 0.81,
+});
+const layerBFit = stimulusFit(layerBActivity);
+const layerBLabel = stimulusDecision(layerBActivity);
+check(
+  "Layer B shows Jev2 vs Jev3 leading to stimulus fit, scored by fit confidence",
+  layerBFit.published === true &&
+    layerBFit.scoreLabel === "81%" &&
+    layerBFit.fitConfidence === 0.81 &&
+    layerBFit.comparison ===
+      "Jev2: ready · gate open  vs  Jev3: moderate (+ elevated variability)  →  aligned" &&
+    layerBFit.scope.includes("not how sure we are of the label") &&
+    layerBLabel.primaryConfidence === 0.91 &&
+    layerBLabel.scoreLabel === "91%",
+  layerBFit.comparison,
+);
+const fitWithoutScore = stimulusFit({
+  macro_readiness: "ready",
+  activity_side_load: "too_hard",
+  stimulus_fit: "overreached",
+  primary_confidence: 0.99,
+});
+check(
+  "a fit label without fit_confidence stays Unavailable and does not borrow primary_confidence",
+  fitWithoutScore.published === true &&
+    fitWithoutScore.fitConfidence === null &&
+    fitWithoutScore.scoreLabel === "Unavailable" &&
+    fitWithoutScore.comparison === "Jev2: ready  vs  Jev3: too hard  →  overreached",
+  fitWithoutScore.comparison,
+);
+const olderActivity = stimulusFit({ primary_stimulus: "easy", primary_confidence: 0.88, confidence: 0.12 });
+check(
+  "an older activity with only Layer A fields does not grow a fit",
+  olderActivity.published === false &&
+    olderActivity.fitConfidence === null &&
+    olderActivity.scoreLabel === "Unavailable" &&
+    olderActivity.comparison === null &&
+    olderActivity.stimulusFit === null,
+  JSON.stringify(olderActivity),
 );
 
 console.log("\neval misses:\n");

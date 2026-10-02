@@ -1,5 +1,6 @@
 import { sportLabel, type Activity } from "../lib/activitySearch";
 import { stimulusDecision } from "../lib/stimulusDecision";
+import { stimulusFit } from "../lib/stimulusFit";
 import styles from "./StimulusDecision.module.css";
 
 export function StimulusDecisionPanel({
@@ -13,7 +14,9 @@ export function StimulusDecisionPanel({
   onClose: () => void;
 }) {
   const view = stimulusDecision(activity);
+  const fit = stimulusFit(activity);
   const pct = view.primaryConfidence == null ? null : Math.round(view.primaryConfidence * 100);
+  const fitPct = fit.fitConfidence == null ? null : Math.round(fit.fitConfidence * 100);
   const facts = [
     view.primary ? ["Primary", view.primaryText] : null,
     view.cluster ? ["Cluster", view.clusterText] : null,
@@ -27,7 +30,9 @@ export function StimulusDecisionPanel({
   return (
     <section
       className={`${styles.panel} ${pinned ? styles.pinned : ""}`}
-      aria-label={`Stimulus decision for ${activity.name}`}
+      aria-label={
+        fit.published ? `Stimulus label and fit for ${activity.name}` : `Stimulus decision for ${activity.name}`
+      }
     >
       {pinned && (
         <p className={styles.identity}>
@@ -82,8 +87,41 @@ export function StimulusDecisionPanel({
           ×
         </button>
       </div>
+      {fit.published && fit.comparison && (
+        <div className={styles.fit} aria-label="Stimulus fit">
+          <div className={styles.layout}>
+            <div className={`${styles.score} ${fit.fitConfidence == null ? styles.unavailable : styles.fitKnown}`}>
+            <p className={styles.scoreValue}>{fit.scoreLabel}</p>
+            {fit.fitConfidence != null && fitPct != null && (
+              <div
+                className={styles.track}
+                role="meter"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={fitPct}
+                aria-label={`Stimulus fit confidence ${fit.scoreLabel}`}
+              >
+                <span className={styles.fill} style={{ width: `${fitPct}%` }} />
+              </div>
+            )}
+          </div>
+          <div className={styles.copy}>
+            <p className={styles.facts}>
+              <span>
+                <span className={styles.factLabel}>Layer B</span>
+                Stimulus fit
+              </span>
+            </p>
+          </div>
+          <span className={styles.fitSpacer} aria-hidden="true" />
+          </div>
+          <p className={styles.comparison}>{fit.comparison}</p>
+          <p className={styles.why}>{fit.scope}</p>
+        </div>
+      )}
       <p className="sr-only">
         {view.scope}. {view.status}.
+        {fit.published && fit.comparison ? ` ${fit.scope} ${fit.comparison} Fit confidence ${fit.scoreLabel}.` : ""}
       </p>
     </section>
   );
