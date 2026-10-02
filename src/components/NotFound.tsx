@@ -8,8 +8,9 @@ export function NotFound() {
       <h1 className={styles.title}>No miles logged here.</h1>
       <p className={styles.links}>
         <Link href="/">Home →</Link>
+        <Link href="/lookup">Activity lookup →</Link>
+        <Link href="/chicago">Chicago →</Link>
         <Link href="/miles">Running log →</Link>
-        <Link href="/training">Training variability →</Link>
       </p>
     </section>
   );

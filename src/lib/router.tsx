@@ -1,11 +1,10 @@
 import { useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from "react";
 
 /**
- * A two-route site doesn't need a router library: the pathname lives in
- * history, `navigate` pushes to it, and components re-render on popstate.
- * Vercel serves each route's static HTML file (see vercel.json cleanUrls), and
- * unknown paths fall back to index.html, so deep links like /training resolve
- * here on first load too.
+ * The pathname lives in history, `navigate` pushes to it, and components
+ * re-render on popstate. Vercel serves each route's static HTML file (see
+ * vercel.json cleanUrls), and unknown paths fall back to index.html, so deep
+ * links like /chicago and /lookup?q=… resolve here on first load too.
  */
 
 const subscribe = (onChange: () => void) => {
@@ -21,9 +20,17 @@ export function usePathname(): string {
   return useSyncExternalStore(subscribe, getPathname);
 }
 
+/** Path plus query and hash, with a trailing slash stripped from the path. */
+function hrefOf(to: string, base: string): string {
+  const url = new URL(to, base);
+  return `${normalize(url.pathname)}${url.search}${url.hash}`;
+}
+
 export function navigate(to: string) {
-  if (normalize(to) !== getPathname()) {
-    window.history.pushState(null, "", to);
+  const next = hrefOf(to, window.location.href);
+  const current = hrefOf(window.location.href, window.location.href);
+  if (next !== current) {
+    window.history.pushState(null, "", next);
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
   // "instant" overrides the global smooth scroll so a new page starts at the top.

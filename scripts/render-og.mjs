@@ -53,13 +53,19 @@ const card = (page, route) => `<!doctype html>
 </style></head><body>
   <p class="eyebrow">${escape(page.eyebrow)}</p>
   <h1>${escape(page.headline).replace(/ (\S+)$/, "&nbsp;$1")}</h1>
-  <div class="foot"><b>Spencer Lee</b><span>${escape(route === "/" ? "Projects" : route)}</span></div>
+  <div class="foot"><b>Spencer Lee</b><span>${escape(route === "/" || route === "/portfolio" ? "Portfolio" : route)}</span></div>
   <div class="stripe"><i style="background:#2f2342"></i><i style="background:#7ca0e5"></i><i style="background:#e42f45"></i><i style="background:#b42b3f"></i></div>
 </body></html>`;
 
 const tmp = await mkdtemp(path.join(os.tmpdir(), "og-"));
 try {
+  const seen = new Set();
   for (const [route, page] of Object.entries(PAGES)) {
+    if (seen.has(page.image)) {
+      console.log(`og: ${route} shares public${page.image}`);
+      continue;
+    }
+    seen.add(page.image);
     const html = path.join(tmp, "card.html");
     const png = path.join(OUT, page.image);
     await writeFile(html, card(page, route));
