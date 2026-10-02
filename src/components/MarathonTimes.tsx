@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   motion,
   useScroll,
@@ -9,6 +9,9 @@ import {
 } from "motion/react";
 import { marathonResults } from "../lib/data";
 import { formatTime } from "../lib/format";
+import { raceSessionHref, type RaceFocus } from "../lib/races";
+import { navigate } from "../lib/router";
+import { RaceChartTip } from "./RaceLinks";
 import styles from "./MarathonTimes.module.css";
 
 // ---- geometry (static; data is baked in) --------------------------------
@@ -86,17 +89,64 @@ const YEAR_TICKS = (() => {
   return ticks;
 })();
 
-export function MarathonTimes() {
+type TipAnchor = { left: string; top: string; color: string };
+
+function pointKey(point: { date: string }): string {
+  return `${point.date}|marathon`;
+}
+
+export function MarathonTimes({
+  raceFocus,
+  onFocusRace,
+}: {
+  raceFocus: RaceFocus;
+  onFocusRace: (focus: RaceFocus) => void;
+}) {
   const ref = useRef<HTMLElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
   const [hovered, setHovered] = useState<number | null>(null);
+  const [tipKey, setTipKey] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState<TipAnchor | null>(null);
   const { scrollYProgress } = useScroll({
     target: ref,
     offset: ["start start", "end end"],
   });
 
   const lineLength = useTransform(scrollYProgress, [0.06, 0.94], [0, 1]);
-  const hoveredPoint = hovered === null ? null : POINTS[hovered];
+
+  function anchorFor(point: (typeof POINTS)[number]): TipAnchor {
+    return {
+      left: `${(point.x / W) * 100}%`,
+      top: `${(point.y / H) * 100}%`,
+      color: MARATHON_COLOR,
+    };
+  }
+
+  function showPoint(index: number) {
+    const point = POINTS[index];
+    if (!point) return;
+    const key = pointKey(point);
+    setHovered(index);
+    setTipKey(key);
+    setAnchor(anchorFor(point));
+    onFocusRace({ key, pin: false });
+  }
+
+  function showRelated(key: string) {
+    onFocusRace({ key, pin: false });
+    const index = POINTS.findIndex((point) => pointKey(point) === key);
+    setHovered(index >= 0 ? index : null);
+    // Keep the card under the pointer. Moving it would drop the hover.
+    setTipKey(key);
+  }
+
+  function pointerLeftChart(event: ReactPointerEvent) {
+    const next = event.relatedTarget;
+    if (next instanceof Node && tipRef.current?.contains(next)) return;
+    setHovered(null);
+    setTipKey(null);
+  }
 
   if (!POINTS.length) return null;
 
@@ -150,35 +200,29 @@ export function MarathonTimes() {
               <ResultPoint
                 key={`${p.date}-${i}`}
                 p={p}
-                active={hovered === i}
+                active={hovered === i || raceFocus?.key === pointKey(p)}
                 progress={scrollYProgress}
                 reduce={reduce}
-                onEnter={() => setHovered(i)}
-                onLeave={() => setHovered((h) => (h === i ? null : h))}
+                onEnter={() => showPoint(i)}
+                onLeave={pointerLeftChart}
               />
             ))}
           </svg>
 
-          {hoveredPoint && (
-            <div
-              className={styles.tip}
-              style={{
-                left: `${(hoveredPoint.x / W) * 100}%`,
-                top: `${(hoveredPoint.y / H) * 100}%`,
-              }}
-            >
-              <span className={styles.tipName}>
-                {hoveredPoint.name}
-                {hoveredPoint.pr && <span className={styles.tipPr}>PR</span>}
-              </span>
-              <span className={styles.tipTime}>{formatTime(hoveredPoint.seconds)}</span>
-              <span className={styles.tipDate}>{hoveredPoint.date.slice(0, 4)}</span>
-            </div>
+          {tipKey && anchor && (
+            <RaceChartTip
+              ref={tipRef}
+              raceKeyValue={tipKey}
+              anchor={anchor}
+              onRelate={showRelated}
+              onPointerLeave={pointerLeftChart}
+            />
           )}
         </div>
 
         <p className={styles.cue}>
-          Six marathons, fastest to the top. Hover a dot for the race — filled dots are PRs.
+          Six marathons, fastest to the top. Hover a dot, then open its session or a related race. Click the
+          dot to open that session. Filled dots are PRs.
         </p>
       </div>
     </section>
@@ -216,8 +260,10 @@ function ResultPoint({
   progress: MotionValue<number>;
   reduce: boolean | null;
   onEnter: () => void;
-  onLeave: () => void;
+  onLeave: (event: ReactPointerEvent<SVGCircleElement>) => void;
 }) {
+  const href = raceSessionHref({ date: p.date, distance: "marathon" });
+  const label = `${p.name}, ${p.date.slice(0, 4)}`;
   const start = Math.max(0, p.revealAt - 0.04);
   const end = Math.min(1, Math.max(start + 0.001, p.revealAt));
   const opacity = useTransform(progress, [start, end], [0, 1]);
@@ -237,16 +283,32 @@ function ResultPoint({
         stroke={MARATHON_COLOR}
         strokeWidth={2}
       />
-      {/* generous invisible hit target */}
-      <circle
-        cx={p.x}
-        cy={p.y}
-        r={16}
-        fill="transparent"
-        style={{ cursor: "pointer" }}
-        onPointerEnter={onEnter}
-        onPointerLeave={onLeave}
-      />
+      <a
+        href={href ?? undefined}
+        aria-label={`${label}. Open the session in Activity Lookup.`}
+        onClick={(event) => {
+          if (!href) return;
+          const touch = event.nativeEvent instanceof PointerEvent && event.nativeEvent.pointerType === "touch";
+          if (touch && !active) {
+            event.preventDefault();
+            onEnter();
+            return;
+          }
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+          event.preventDefault();
+          navigate(href);
+        }}
+      >
+        <circle
+          cx={p.x}
+          cy={p.y}
+          r={16}
+          fill="transparent"
+          style={{ cursor: "pointer" }}
+          onPointerEnter={onEnter}
+          onPointerLeave={onLeave}
+        />
+      </a>
     </motion.g>
   );
 }

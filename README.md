@@ -84,7 +84,14 @@ scripts/                  data export, grading, and eval scripts (see below)
 - `/miles` — the running log: lifetime and per-year mileage reframed as journeys.
   The selected year links to `/activity-lookup?q={year}`. `?year=` selects that
   chip (`lifetime` or an unknown year stays on lifetime). A strip under the title
-  shows the current Chicago phase and that week's mileage.
+  shows the current Chicago phase and that week's mileage. Each logged race — the
+  list under the year chart, the markers on the cumulative line, and the marathon
+  dots — links to that session (`?from=&to=` that day, `sport=run`, a distance
+  word, and `?race=date|distance`). The same card links that Monday–Sunday and
+  that year in Lookup, and links related races on this log: same distance, same
+  year, marathon PRs, and the previous and next race at that distance. Lookup
+  opens the public session when one matches; it does not copy activities into
+  the miles file.
 - `/training` — training variability: how much weekly hours swing around their
   mean over rolling 8 / 12 / 52-week windows, for Run, Bike, or All. Lower is
   steadier (Steady < 35, Moderate 35–55, Uneven 55–80, Erratic ≥ 80). One
@@ -141,7 +148,10 @@ scripts/                  data export, grading, and eval scripts (see below)
   intersect a date already parsed from `q`, instead of being written into `q`.
   `?debug=1` shows match kind, branch, and Jev score on each row. `?activity=`
   opens one session's stimulus decision, including when that session sits
-  outside the date window. The expand row also links the Chicago phase (when
+  outside the date window. `?race=YYYY-MM-DD|distance` (from the miles log)
+  opens the public run that matches that logged race when `?activity=` is
+  absent: a race record or a race-labeled run at that distance on that day.
+  A shakeout on the same morning stays closed. The expand row also links the Chicago phase (when
   the day is in the block), that week's 12-week variability band (loaded only
   after the row opens), and the miles year. A race in the same Monday–Sunday
   is a label. The variability file stays out of the lookup bundle.
