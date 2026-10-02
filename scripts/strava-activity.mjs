@@ -111,6 +111,93 @@ function runnerUpFor(a) {
   return cleanString(a.runner_up) ?? cleanString(a.secondary_stimulus);
 }
 
+function objectRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+// Root fields win. `layer_b` and a judgment object on `stimulus_fit` / `fit` can carry the same keys.
+function layerSources(a) {
+  const root = objectRecord(a);
+  if (!root) return [];
+  const records = [];
+  const push = (value) => {
+    const record = objectRecord(value);
+    if (record && !records.includes(record)) records.push(record);
+  };
+  push(root);
+  push(root.layer_b);
+  push(root.layerB);
+  for (const source of [...records]) {
+    push(source.stimulus_fit);
+    push(source.stimulusFit);
+    push(source.fit);
+  }
+  return records;
+}
+
+/** A published label. Numbers stay as printed. A judgment object contributes its label, never its confidence. */
+function publishedToken(value, depth = 0) {
+  if (depth > 2) return undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "string") return cleanString(value);
+  const record = objectRecord(value);
+  if (!record) return undefined;
+  return (
+    publishedToken(record.choice, depth + 1) ??
+    publishedToken(record.label, depth + 1) ??
+    publishedToken(record.value, depth + 1) ??
+    publishedToken(record.stimulus_fit, depth + 1) ??
+    publishedToken(record.fit, depth + 1)
+  );
+}
+
+function firstToken(sources, keys) {
+  for (const source of sources) {
+    for (const key of keys) {
+      const token = publishedToken(source?.[key]);
+      if (token !== undefined) return token;
+    }
+  }
+  return undefined;
+}
+
+function unitFrom(value) {
+  if (typeof value === "string" && value.trim()) return unitInterval(Number(value));
+  return unitInterval(value);
+}
+
+// Only `fit_confidence`. Layer A `confidence` / `primary_confidence` are a different number.
+function fitConfidenceFor(sources) {
+  for (const source of sources) {
+    const direct = unitFrom(source?.fit_confidence) ?? unitFrom(source?.fitConfidence);
+    if (direct !== undefined) return direct;
+  }
+  return undefined;
+}
+
+function explicitUnit(sources, keys) {
+  for (const source of sources) {
+    for (const key of keys) {
+      const n = unitFrom(source?.[key]);
+      if (n !== undefined) return n;
+    }
+  }
+  return undefined;
+}
+
+/** Confidence stored on a judgment object, such as `{ choice, confidence }`. Not the activity's label confidence. */
+function nestedConfidence(sources, labelKeys) {
+  for (const source of sources) {
+    for (const key of labelKeys) {
+      const record = objectRecord(source?.[key]);
+      if (!record) continue;
+      const n = unitFrom(record.confidence);
+      if (n !== undefined) return n;
+    }
+  }
+  return undefined;
+}
+
 function companionsFor(a) {
   const withRecord = a.with && typeof a.with === "object" && !Array.isArray(a.with) ? a.with : null;
   const names = Array.isArray(a.with)
@@ -162,6 +249,38 @@ export function toActivity(a) {
   if (probabilities) base.probabilities = probabilities;
   const runnerUp = runnerUpFor(a);
   if (runnerUp) base.runner_up = runnerUp;
+  // Layer B: Jev2 readiness vs Jev3 load → Jev4 stimulus fit. Omitted when absent.
+  // `fit` is an older alias for the fit label. It is not classification confidence.
+  const layer = layerSources(a);
+  const stimulusFit = firstToken(layer, ["stimulus_fit", "fit", "stimulusFit"]);
+  if (stimulusFit !== undefined) base.stimulus_fit = stimulusFit;
+  const fitConfidence = fitConfidenceFor(layer);
+  if (fitConfidence !== undefined) base.fit_confidence = fitConfidence;
+  const macroReadiness = firstToken(layer, ["macro_readiness", "macroReadiness"]);
+  if (macroReadiness !== undefined) base.macro_readiness = macroReadiness;
+  const macroGate = firstToken(layer, ["macro_readiness_gate", "macroReadinessGate"]);
+  if (macroGate !== undefined) base.macro_readiness_gate = macroGate;
+  const sideLoad = firstToken(layer, ["activity_side_load", "activitySideLoad"]);
+  if (sideLoad !== undefined) base.activity_side_load = sideLoad;
+  const variability = firstToken(layer, ["session_variability_impact", "sessionVariabilityImpact"]);
+  if (variability !== undefined) base.session_variability_impact = variability;
+  // Piece confidences for the fit sentence. A confidence nested on that piece's
+  // judgment object counts. Top-level `confidence` stays the Layer A alias.
+  const readinessConfidence =
+    explicitUnit(layer, ["macro_readiness_confidence", "macroReadinessConfidence"]) ??
+    nestedConfidence(layer, ["macro_readiness", "macroReadiness"]);
+  if (readinessConfidence !== undefined) base.macro_readiness_confidence = readinessConfidence;
+  const loadConfidence =
+    explicitUnit(layer, ["activity_side_load_confidence", "activitySideLoadConfidence"]) ??
+    nestedConfidence(layer, ["activity_side_load", "activitySideLoad"]);
+  if (loadConfidence !== undefined) base.activity_side_load_confidence = loadConfidence;
+  const variabilityConfidence =
+    explicitUnit(layer, [
+      "session_variability_confidence",
+      "sessionVariabilityConfidence",
+      "session_variability_impact_confidence",
+    ]) ?? nestedConfidence(layer, ["session_variability_impact", "sessionVariabilityImpact"]);
+  if (variabilityConfidence !== undefined) base.session_variability_confidence = variabilityConfidence;
   // v3 enrichment (omit undefined fields to keep backward compatibility)
   if (a.average_heartrate !== undefined) base.average_heartrate = a.average_heartrate;
   if (a.max_heartrate !== undefined) base.max_heartrate = a.max_heartrate;

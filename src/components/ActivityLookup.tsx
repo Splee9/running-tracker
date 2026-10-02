@@ -506,6 +506,7 @@ export function ActivityLookup() {
           Public activities only, rebuilt from the Strava log. Names, dates, distance, time,
           elevation, HR, pace, power, stimulus, place and intervals — no routes, polylines or stream data.
           Open a row for the stimulus label. Classification confidence is about that label, and the page does not relabel the session.
+          When the export includes it, a second line shows whether that session fit readiness and the plan. That score is not the label confidence.
         </p>
       </footer>
     </div>
