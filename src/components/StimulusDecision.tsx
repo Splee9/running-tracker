@@ -56,6 +56,14 @@ function fitTone(text: string): "termFit" | "fitOver" | "fitUnder" {
   return "termFit";
 }
 
+/** Pill color follows the published verdict, so the score and the verdict phrase agree. */
+function pillTone(value: string | null): "pillFit" | "pillOver" | "pillUnder" | "pillNone" {
+  if (value === "appropriate") return "pillFit";
+  if (value === "overcooked") return "pillOver";
+  if (value === "undercooked") return "pillUnder";
+  return "pillNone";
+}
+
 /** Reasons the row's own chips already show. Dropped from the expand so they are not read twice. */
 function shownOnRow(activity: Activity, line: string): boolean {
   if (line === activity.workout_structure?.trim()) return true;
@@ -167,13 +175,13 @@ export function StimulusDecisionPanel({
               .
             </p>
           )}
-          <div className={styles.fitScore}>
+          <div className={`${styles.fitScore} ${styles[pillTone(fit.stimulusFit)]}`}>
             <Term
               tone="score"
               text={
                 <>
                   <span className={styles.fitLabel}>Fit</span>{" "}
-                  {fit.fitConfidence == null ? "unavailable" : fit.scoreLabel}
+                  <span className={styles.fitValue}>{fit.fitConfidence == null ? "unavailable" : fit.scoreLabel}</span>
                 </>
               }
             >
