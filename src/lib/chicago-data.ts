@@ -1,4 +1,5 @@
 import raw from "../chicago-data.json";
+import { describeChicagoStrip, findChicagoDay, type StripFacts } from "./crosslink.ts";
 
 export type WorkoutType =
   | "quality"
@@ -107,6 +108,18 @@ export const data = raw as TrackerData;
 
 /** CSS custom-property name for a phase index (0-3). */
 export const PHASE_VAR = ["--p1", "--p2", "--p3", "--p4"] as const;
+
+/** Phase and build-week for a calendar day, or null outside the Chicago block. */
+export function chicagoDay(isoDay: string) {
+  return findChicagoDay(data.phases, data.weeks, isoDay);
+}
+
+export type ChicagoStrip = StripFacts;
+
+/** Current Chicago phase and week mileage. Null only when the file has no weeks. */
+export function chicagoStrip(): ChicagoStrip | null {
+  return describeChicagoStrip(data.meta, data.phases, data.weeks);
+}
 
 /** CSS custom-property name for a workout type. */
 export const TYPE_VAR: Record<WorkoutType, string> = {

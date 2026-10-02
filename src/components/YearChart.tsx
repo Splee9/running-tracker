@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { AnimatedNumber } from "./AnimatedNumber";
 import { Chip } from "./Chip";
@@ -6,8 +6,9 @@ import { Rich } from "./Rich";
 import { data, lifetime, type RaceCounts } from "../lib/data";
 import { fmt, fmt1 } from "../lib/format";
 import { headlineFor } from "../lib/comparisons";
+import { readMilesYear } from "../lib/focus";
 import { lookupYearHref } from "../lib/links";
-import { Link } from "../lib/router";
+import { Link, useSearchString } from "../lib/router";
 import styles from "./YearChart.module.css";
 
 type Scope = number | "lifetime";
@@ -33,8 +34,33 @@ const lifetimeRaces: RaceCounts = data.years.reduce(
   { ...EMPTY_RACES },
 );
 
+const YEARS = data.years.map((y) => y.year);
+
 export function YearChart() {
-  const [selected, setSelected] = useState<Scope>("lifetime");
+  const search = useSearchString();
+  const writtenSearch = useRef(search);
+  const [selected, setSelected] = useState<Scope>(() => readMilesYear(window.location.search, YEARS));
+
+  useEffect(() => {
+    if (search === writtenSearch.current) return;
+    writtenSearch.current = search;
+    setSelected(readMilesYear(search, YEARS));
+  }, [search]);
+
+  function choose(scope: Scope) {
+    setSelected(scope);
+    const params = new URLSearchParams(window.location.search);
+    if (scope === "lifetime") params.delete("year");
+    else params.set("year", String(scope));
+    const qs = params.toString();
+    const nextSearch = qs ? `?${qs}` : "";
+    const url = `${window.location.pathname}${nextSearch}${window.location.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (url !== current) {
+      writtenSearch.current = nextSearch;
+      window.history.replaceState(window.history.state, "", url);
+    }
+  }
 
   const scope =
     selected === "lifetime"
@@ -83,11 +109,11 @@ export function YearChart() {
       </div>
 
       <div className={styles.chips} role="group" aria-label="Choose a year">
-        <Chip active={selected === "lifetime"} onClick={() => setSelected("lifetime")}>
+        <Chip active={selected === "lifetime"} onClick={() => choose("lifetime")}>
           Lifetime
         </Chip>
         {[...data.years].reverse().map((y) => (
-          <Chip key={y.year} active={selected === y.year} onClick={() => setSelected(y.year)}>
+          <Chip key={y.year} active={selected === y.year} onClick={() => choose(y.year)}>
             {y.year}
             {y.partial ? " · YTD" : ""}
           </Chip>
@@ -102,7 +128,7 @@ export function YearChart() {
               key={y.year}
               type="button"
               className={`${styles.col} ${active ? styles.colActive : ""}`}
-              onClick={() => setSelected(y.year)}
+              onClick={() => choose(y.year)}
               aria-label={`${y.year}: ${fmt(y.miles)} miles`}
             >
               <span className={styles.val}>{fmt(y.miles)}</span>

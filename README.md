@@ -82,18 +82,25 @@ scripts/                  data export, grading, and eval scripts (see below)
 
 - `/` — projects home page linking to the pages below.
 - `/miles` — the running log: lifetime and per-year mileage reframed as journeys.
-  The selected year links to `/activity-lookup?q={year}`.
+  The selected year links to `/activity-lookup?q={year}`. `?year=` selects that
+  chip (`lifetime` or an unknown year stays on lifetime). A strip under the title
+  shows the current Chicago phase and that week's mileage.
 - `/training` — training variability: how much weekly hours swing around their
   mean over rolling 8 / 12 / 52-week windows, for Run, Bike, or All. Lower is
   steadier (Steady < 35, Moderate 35–55, Uneven 55–80, Erratic ≥ 80). One
   window is shown at a time; a switch overlays weekly hours as bars on a second
   axis. The week card links to that Monday–Sunday in Lookup (`?from=&to=`) and
-  to that year on the log.
+  to that year on the log. `?week=` (a Monday) selects that week, widening the
+  range preset if it would sit outside the chart; a Sunday that is not in the
+  series is said so. `?sport=`, `?horizon=`, `?range=`, and `?hours=1` set the
+  controls. The same Chicago strip sits under the title and can jump the chart
+  to the current build week.
 - `/training/chicago` — Chicago Marathon 2026 training tracker: 23-week phase
   plan, weekly load by workout type, aerobic efficiency trend, and head-to-head
   comparison against prior marathon builds. Aggregate weekly figures only — no
   pace, GPS, heart rate, or health data. The selected week links to its public
-  run sessions (`?from=&to=&sport=run`) and to `/training?week=`.
+  run sessions (`?from=&to=&sport=run`) and to `/training?week=`. `?week=` as a
+  Monday selects that bar. A block-local week number is ignored.
 - `/activity-lookup` — search every public activity. Three stages:
   1. **Label hard filters**, in the browser: modality, date, distance, place,
      weekday, and stimulus words (`easy`, `intervals`, `quality`, `long`,
@@ -134,7 +141,10 @@ scripts/                  data export, grading, and eval scripts (see below)
   intersect a date already parsed from `q`, instead of being written into `q`.
   `?debug=1` shows match kind, branch, and Jev score on each row. `?activity=`
   opens one session's stimulus decision, including when that session sits
-  outside the date window.
+  outside the date window. The expand row also links the Chicago phase (when
+  the day is in the block), that week's 12-week variability band (loaded only
+  after the row opens), and the miles year. A race in the same Monday–Sunday
+  is a label. The variability file stays out of the lookup bundle.
 
 ### Stimulus decision (Layer A)
 

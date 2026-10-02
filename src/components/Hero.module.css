@@ -38,7 +38,11 @@
 
 .title {
   font-size: var(--text-page);
-  margin: 8px 0 clamp(24px, 4vw, 36px);
+  margin: 8px 0 0;
+}
+
+.strip {
+  margin-bottom: clamp(24px, 4vw, 36px);
 }
 
 .number {

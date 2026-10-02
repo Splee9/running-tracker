@@ -1,5 +1,6 @@
 import { motion, type Variants } from "motion/react";
 import { AnimatedNumber } from "./AnimatedNumber";
+import { ContextStrip } from "./ContextStrip";
 import { lifetime } from "../lib/data";
 import { fmt } from "../lib/format";
 import styles from "./Hero.module.css";
@@ -22,6 +23,9 @@ export function Hero() {
       <motion.h1 className={styles.title} variants={rise} custom={1} initial="hidden" animate="show">
         Every mile, since 2018.
       </motion.h1>
+      <motion.div className={styles.strip} variants={rise} custom={1} initial="hidden" animate="show">
+        <ContextStrip />
+      </motion.div>
 
       <motion.div className={styles.number} variants={rise} custom={2} initial="hidden" animate="show">
         <AnimatedNumber value={lifetime.miles} duration={1.4} />

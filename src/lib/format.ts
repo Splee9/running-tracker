@@ -22,3 +22,12 @@ export function formatDate(iso: string): string {
     year: "numeric",
   });
 }
+
+/** ISO date → "Sep 21". No year, no timezone drift. */
+export function formatMonthDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}

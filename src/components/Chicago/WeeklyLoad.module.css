@@ -1,6 +1,7 @@
 .section {
   padding: var(--section-space) 0;
   border-top: 1px solid var(--line);
+  scroll-margin-top: 16px;
 }
 
 .heading {

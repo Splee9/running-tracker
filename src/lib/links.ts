@@ -26,19 +26,31 @@ export function lookupYearHref(year: number): string {
 }
 
 /**
- * Training page focused on a week. Phase 2 reads `week`; until then the URL
- * still names the Monday and the sport.
+ * Training page focused on a week. `horizon` is set when the chip names one
+ * (Lookup always says 12-week / medium). Omitted, the page keeps its default.
  */
-export function trainingWeekHref(isoDay: string, sport: "run" | "bike" | "all" = "run"): string | null {
+export function trainingWeekHref(
+  isoDay: string,
+  sport: "run" | "bike" | "all" = "run",
+  horizon?: "short" | "medium" | "long",
+): string | null {
   const week = weekMonday(isoDay);
   if (!week) return null;
   const params = new URLSearchParams();
   params.set("week", week);
   params.set("sport", sport);
+  if (horizon) params.set("horizon", horizon);
   return `/training?${params.toString()}`;
 }
 
-/** Miles page for a calendar year. Phase 2 reads `year`. */
+/** Chicago weekly bar for the Monday of `isoDay`. */
+export function chicagoWeekHref(isoDay: string): string | null {
+  const week = weekMonday(isoDay);
+  if (!week) return null;
+  return `/training/chicago?week=${week}`;
+}
+
+/** Miles page for a calendar year. The page reads `year`. */
 export function milesYearHref(isoDayOrYear: string | number): string | null {
   const year = typeof isoDayOrYear === "number" ? isoDayOrYear : yearOf(isoDayOrYear);
   if (year == null) return null;
