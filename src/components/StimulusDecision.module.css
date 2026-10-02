@@ -1,70 +1,54 @@
 .panel {
-  margin: 0 0 8px;
-  padding: 16px 16px 14px;
+  margin: -6px 8px 8px 5rem;
+  padding: 0 0 2px;
+}
+
+.pinned {
+  margin: 0 0 12px;
+  padding: 10px 12px;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
 }
 
-.head {
+.identity {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.name {
-  margin: 4px 0 0;
-  font-size: 18px;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.when {
-  margin-top: 2px;
-  font-size: 14px;
-  color: var(--muted);
-}
-
-.close {
-  flex-shrink: 0;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink);
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  min-height: 36px;
-  padding: 6px 14px;
-  cursor: pointer;
-}
-
-.close:hover {
-  border-color: var(--ink);
-}
-
-.subtitle {
-  margin-top: 10px;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0 0 6px;
   font-size: 13px;
   color: var(--muted);
 }
 
+.identityName {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0 14px;
+  align-items: center;
+}
+
 .score {
-  margin-top: 8px;
+  min-width: 4.75rem;
 }
 
 .scoreValue {
-  font-size: clamp(56px, 14vw, 88px);
+  font-size: clamp(48px, 7vw, 64px);
   font-weight: 600;
   letter-spacing: -0.04em;
-  line-height: 0.9;
+  line-height: 0.85;
   font-variant-numeric: tabular-nums;
 }
 
 .scoreStatus {
-  margin-top: 6px;
-  font-size: 14px;
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   font-weight: 600;
 }
 
@@ -81,15 +65,17 @@
 }
 
 .unavailable .scoreValue {
-  font-size: clamp(36px, 9vw, 52px);
+  font-size: clamp(22px, 4vw, 28px);
   letter-spacing: -0.03em;
+  line-height: 1;
 }
 
 .track {
   position: relative;
-  height: 8px;
-  max-width: 280px;
-  margin-top: 10px;
+  height: 6px;
+  width: 100%;
+  max-width: 7.5rem;
+  margin-top: 6px;
   background: var(--bar);
   border-radius: var(--radius-pill);
 }
@@ -103,70 +89,81 @@
 
 .reviewMark {
   position: absolute;
-  top: -5px;
-  bottom: -5px;
+  top: -4px;
+  bottom: -4px;
   width: 2px;
   margin-left: -1px;
   background: var(--ink);
-  box-shadow: 0 0 0 1px var(--card);
+  box-shadow: 0 0 0 1px var(--bg);
 }
 
 .facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 20px;
-  margin: 16px 0 0;
+  gap: 2px 14px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
-.facts div {
-  min-width: 0;
-}
-
-.facts dt {
+.factLabel {
+  margin-right: 5px;
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
   font-weight: 600;
 }
 
-.facts dd {
-  margin-top: 1px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.reasons {
-  margin: 12px 0 0;
-  padding-left: 1.1em;
-  font-size: 15px;
-  line-height: 1.4;
-}
-
-.reasons li + li {
-  margin-top: 2px;
+.why {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--muted);
 }
 
 .strava {
-  display: inline-block;
-  margin-top: 14px;
-  font-size: 14px;
   font-weight: 600;
   color: var(--ink);
   text-decoration: underline;
-  text-underline-offset: 3px;
+  text-underline-offset: 2px;
+}
+
+.close {
+  align-self: start;
+  width: 44px;
+  height: 44px;
+  margin: -12px -8px -12px 0;
+  padding: 0;
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--ink);
 }
 
 @media (max-width: 640px) {
-  .close {
-    min-height: 44px;
+  .panel {
+    margin-left: 4rem;
   }
 
   .scoreValue {
-    font-size: 64px;
+    font-size: 52px;
   }
 
   .unavailable .scoreValue {
-    font-size: 40px;
+    font-size: 22px;
   }
 }

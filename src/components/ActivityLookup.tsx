@@ -468,7 +468,7 @@ export function ActivityLookup() {
         )}
 
         {openActivity && !openInList && (
-          <StimulusDecisionPanel activity={openActivity} onClose={() => setOpenId(null)} />
+          <StimulusDecisionPanel activity={openActivity} pinned onClose={() => setOpenId(null)} />
         )}
 
         {shown.length > 0 && (
