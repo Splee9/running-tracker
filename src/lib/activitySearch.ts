@@ -48,6 +48,15 @@ export type Activity = {
   modality?: string;
   /** Caveat only. Rank the activity down; do not drop it for this flag alone. */
   low_confidence?: boolean;
+  /**
+   * Published 0–1 confidence for the stimulus label, when the vault sends one.
+   * Missing means the export did not include a number. The lookup page does not invent one.
+   */
+  confidence?: number;
+  /** Published label → probability, when the vault sends a distribution. */
+  probabilities?: Record<string, number>;
+  /** Published runner-up label, when the vault sends one. */
+  runner_up?: string;
   // v3 enrichment (optional, backward compatible)
   average_heartrate?: number;
   max_heartrate?: number;

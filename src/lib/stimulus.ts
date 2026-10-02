@@ -149,6 +149,20 @@ const CLUSTER_FOR_PRIMARY: Record<PrimaryStimulus, readonly string[]> = {
   hills: ["hills_session", "hills_prime_easy"],
 };
 
+function isPrimaryStimulus(value: string): value is PrimaryStimulus {
+  return (PRIMARY_STIMULI as readonly string[]).includes(value);
+}
+
+/**
+ * Whether a published cluster sits under a published primary.
+ * Null when the primary is outside the vocab, or the cluster is "other"
+ * (that cluster never confirms a primary).
+ */
+export function clusterFitsPrimary(primary: string, cluster: string): boolean | null {
+  if (!isPrimaryStimulus(primary) || cluster === "" || cluster === "other") return null;
+  return CLUSTER_FOR_PRIMARY[primary].includes(cluster);
+}
+
 const MODIFIER_CLUSTER: Record<string, string> = {
   intervals: "quality_intervals",
   tempo: "quality_tempo",

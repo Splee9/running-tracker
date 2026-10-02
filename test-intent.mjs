@@ -4,6 +4,7 @@
 import { activityFacts, applyJevIntent, buildGradeRequest, buildIndex, buildJevRequest, classifyIntent, climbingLabel, rankGradeFor, readStandout, STANDOUT_LEVELS, withGrades, withoutParts, describeActivity, describeIntent, jevCacheScope, MEMBERSHIP_DEMOTE_BELOW, needsIntentFacets, planShortlist, rerankUnlockedHits, resolveInterpretation, searchActivities, settledIntentPayload, splitJevAnswers } from "./src/lib/activitySearch.ts";
 import { toActivity } from "./scripts/strava-activity.mjs";
 import { formatHours, formatWindow, interpretationParts, lookupStatus, orderHits, primaryHits, resultTotals } from "./src/lib/lookupView.ts";
+import { stimulusDecision } from "./src/lib/stimulusDecision.ts";
 
 const testClock = new Date("2026-09-29T12:00:00-05:00");
 
@@ -992,6 +993,119 @@ check(
   "toActivity omits an absent stimulus cluster",
   !("stimulus_cluster" in mappedBlank) && !("modality" in mappedBlank) && !("low_confidence" in mappedBlank),
   JSON.stringify(mappedBlank),
+);
+
+const mappedDecision = toActivity({
+  id: 4,
+  name: "repeats",
+  sport_type: "Run",
+  start_date_local: "2024-06-02T00:00:00Z",
+  primary_stimulus: "quality",
+  modifiers: ["intervals"],
+  stimulus_cluster: "quality_intervals",
+  stimulus_confidence: 0.82,
+  stimulus_probabilities: { quality: 0.82, easy: 0.11, long: 1.4 },
+  secondary_stimulus: "easy",
+  low_confidence: false,
+});
+check(
+  "toActivity keeps a published confidence, probabilities, and runner-up",
+  mappedDecision.confidence === 0.82 &&
+    mappedDecision.probabilities.quality === 0.82 &&
+    mappedDecision.probabilities.easy === 0.11 &&
+    !("long" in mappedDecision.probabilities) &&
+    mappedDecision.runner_up === "easy" &&
+    !("low_confidence" in mappedDecision) &&
+    !("stimulus_confidence" in mappedDecision),
+  JSON.stringify(mappedDecision),
+);
+check(
+  "toActivity does not invent a confidence",
+  !("confidence" in mappedBlank) && !("probabilities" in mappedBlank) && !("runner_up" in mappedBlank),
+  JSON.stringify(mappedBlank),
+);
+
+console.log("\nstimulus decision panel:\n");
+
+const qualityDecision = stimulusDecision({
+  primary_stimulus: "quality",
+  modifiers: ["intervals", "marathon_pace"],
+  stimulus_cluster: "quality_intervals",
+  hard_lap_count: 7,
+  workout_structure: "3×800m",
+});
+check(
+  "a labeled session explains the published cluster and modifiers",
+  qualityDecision.why.includes("interval quality") &&
+    qualityDecision.why.includes("intervals, marathon pace") &&
+    qualityDecision.why.includes("7 hard laps") &&
+    qualityDecision.why.includes("3×800m") &&
+    !qualityDecision.why.toLowerCase().includes("tempo") &&
+    qualityDecision.tone === "unavailable" &&
+    qualityDecision.status.includes("Confidence unavailable") &&
+    qualityDecision.escalate === false &&
+    qualityDecision.listLabel === "quality",
+  qualityDecision.why,
+);
+const reviewDecision = stimulusDecision({
+  primary_stimulus: "easy",
+  stimulus_cluster: "quality_intervals",
+  low_confidence: true,
+  confidence: 0.91,
+});
+check(
+  "low_confidence escalates even when the number is high, and a mismatched cluster is named",
+  reviewDecision.escalate === true &&
+    reviewDecision.tone === "escalate" &&
+    reviewDecision.why.includes("does not sit under") &&
+    reviewDecision.status.includes("low_confidence") &&
+    reviewDecision.bars[0].value === 0.91 &&
+    reviewDecision.listLabel === "easy · review",
+  reviewDecision.status,
+);
+const underBar = stimulusDecision({
+  primary_stimulus: "long",
+  stimulus_cluster: "long_aerobic",
+  confidence: 0.62,
+});
+check(
+  "a published confidence under 0.75 escalates without a low_confidence flag",
+  underBar.escalate === true && underBar.confidence === 0.62 && underBar.status.includes("62%"),
+  underBar.status,
+);
+const clearDecision = stimulusDecision({
+  primary_stimulus: "race",
+  stimulus_cluster: "race",
+  confidence: 0.75,
+  probabilities: { race: 0.8, easy: 0.2 },
+});
+check(
+  "0.75 is above the review bar, and probabilities are the bars",
+  clearDecision.escalate === false &&
+    clearDecision.tone === "clear" &&
+    clearDecision.bars.map((bar) => bar.label).join(",") === "race,easy" &&
+    clearDecision.bars[0].primary === true,
+  JSON.stringify(clearDecision.bars),
+);
+const probabilityOnly = stimulusDecision({
+  primary_stimulus: "hills",
+  stimulus_cluster: "hills_session",
+  probabilities: { hills: 0.4, easy: 0.35 },
+});
+check(
+  "without a scalar, the primary probability is compared to the same bar",
+  probabilityOnly.escalate === true && probabilityOnly.confidence === null && probabilityOnly.status.includes("40%"),
+  probabilityOnly.status,
+);
+const unlabeled = stimulusDecision({});
+check(
+  "a session with no stimulus fields does not grow a label",
+  unlabeled.primary === null &&
+    unlabeled.cluster === null &&
+    unlabeled.why.startsWith("No stimulus label") &&
+    unlabeled.listLabel === null &&
+    unlabeled.bars.length === 0,
+  unlabeled.why,
 );
 
 console.log("\neval misses:\n");

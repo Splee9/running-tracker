@@ -123,7 +123,29 @@ scripts/                  data export, grading, and eval scripts (see below)
   removal reaches Jev's question too. An order menu (newest, longest, fastest
   pace, most climbing) overrides the ranking. Query, sport, units, order, and
   removed parts live in the URL (`?q=&sport=&u=&sort=&drop=`). `?debug=1` shows
-  match kind, branch, and Jev score on each row.
+  match kind, branch, and Jev score on each row. `?activity=` opens one
+  session's stimulus decision.
+
+### Stimulus decision
+
+Open a row to see the decision already stored on that public activity:
+`primary_stimulus`, `modifiers`, `stimulus_cluster`, and confidence. The panel
+is advise-only. It repeats the published label, draws a confidence bar when the
+export sent a number or a probability distribution, and says when a person
+should override it. Override when `low_confidence` is set, or when a published
+confidence is below 0.75. The page does not relabel the session.
+
+That is the career claim, in plain English: on real public training data, the
+classify-first decision is visible with its confidence, and a human still owns
+the override. Decision velocity here means you can see the call and the review
+bar on an actual session, not a demo label invented in the browser.
+
+The live export includes the stimulus label, cluster, modifiers, and
+`low_confidence`. A numeric `confidence` (or `stimulus_confidence`) and an
+optional `probabilities` / `stimulus_probabilities` map are kept when the vault
+sends them. Until that number is in the export, the panel says "Confidence
+unavailable" and still shows the cluster and modifiers. `runner_up` /
+`secondary_stimulus` are shown only when present.
 
 `src/training-weekly-hours.json` is derived from `src/training-variability.json`
 (the export carries only rolling stats). Regenerate it whenever the TV file
