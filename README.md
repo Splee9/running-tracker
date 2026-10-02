@@ -82,15 +82,18 @@ scripts/                  data export, grading, and eval scripts (see below)
 
 - `/` — projects home page linking to the pages below.
 - `/miles` — the running log: lifetime and per-year mileage reframed as journeys.
+  The selected year links to `/activity-lookup?q={year}`.
 - `/training` — training variability: how much weekly hours swing around their
   mean over rolling 8 / 12 / 52-week windows, for Run, Bike, or All. Lower is
   steadier (Steady < 35, Moderate 35–55, Uneven 55–80, Erratic ≥ 80). One
   window is shown at a time; a switch overlays weekly hours as bars on a second
-  axis.
+  axis. The week card links to that Monday–Sunday in Lookup (`?from=&to=`) and
+  to that year on the log.
 - `/training/chicago` — Chicago Marathon 2026 training tracker: 23-week phase
   plan, weekly load by workout type, aerobic efficiency trend, and head-to-head
   comparison against prior marathon builds. Aggregate weekly figures only — no
-  pace, GPS, heart rate, or health data.
+  pace, GPS, heart rate, or health data. The selected week links to its public
+  run sessions (`?from=&to=&sport=run`) and to `/training?week=`.
 - `/activity-lookup` — search every public activity. Three stages:
   1. **Label hard filters**, in the browser: modality, date, distance, place,
      weekday, and stimulus words (`easy`, `intervals`, `quality`, `long`,
@@ -125,9 +128,13 @@ scripts/                  data export, grading, and eval scripts (see below)
   The page shows what the query was read as; each part can be removed, and the
   removal reaches Jev's question too. An order menu (newest, longest, fastest
   pace, most climbing) overrides the ranking. Query, sport, units, order, and
-  removed parts live in the URL (`?q=&sport=&u=&sort=&drop=`). `?debug=1` shows
-  match kind, branch, and Jev score on each row. `?activity=` opens one
-  session's stimulus decision.
+  removed parts live in the URL (`?q=&sport=&u=&sort=&drop=`). `?from=` and
+  `?to=` are an inclusive local-date window (a missing `to` runs through the
+  Sunday of `from`'s Monday–Sunday week). They show up as the dates chip and
+  intersect a date already parsed from `q`, instead of being written into `q`.
+  `?debug=1` shows match kind, branch, and Jev score on each row. `?activity=`
+  opens one session's stimulus decision, including when that session sits
+  outside the date window.
 
 ### Stimulus decision (Layer A)
 

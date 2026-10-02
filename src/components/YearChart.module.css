@@ -35,6 +35,23 @@
   color: var(--ink);
 }
 
+.scopeLink {
+  margin-top: 12px;
+  font-size: 15px;
+}
+
+.scopeLink a {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1px;
+}
+
+.scopeLink a:hover {
+  border-bottom-color: var(--ink);
+}
+
 .scopeHeadline {
   margin-top: 12px;
   font-size: clamp(19px, 2.5vw, 24px);

@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { formatDate } from "../lib/format";
+import { lookupWeekHref, milesYearHref, type LookupSport } from "../lib/links";
+import { Link } from "../lib/router";
 import { BANDS, BAND_COLOR, fmtTv, toDays, type TvPoint } from "../lib/training";
 import styles from "./TvChart.module.css";
 
@@ -20,6 +22,8 @@ interface Props {
   /** Changes whenever the line should redraw (sport or horizon switch). */
   drawKey: string;
   label: string;
+  /** Lookup sport for the week link. Null is every sport (the All chart). */
+  lookupSport: LookupSport | null;
 }
 
 /**
@@ -55,10 +59,12 @@ function Plot({
   showHours,
   drawKey,
   label,
+  lookupSport,
   W,
   H,
 }: Props & { W: number; H: number }) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
   const [hovered, setHovered] = useState<number | null>(null);
 
@@ -124,6 +130,8 @@ function Plot({
   const lastY = py(last.tv);
 
   const activeWeek = hovered === null ? null : weeks[hovered];
+  const sessionsHref = activeWeek ? lookupWeekHref(activeWeek, lookupSport) : null;
+  const yearHref = activeWeek ? milesYearHref(activeWeek) : null;
   const activePoint = activeWeek ? byWeek.get(activeWeek) : undefined;
   const activeHours = hovered === null ? 0 : hours[hovered];
   const tipColor = activePoint ? BAND_COLOR[activePoint.band] : "var(--ink)";
@@ -282,28 +290,43 @@ function Plot({
           onPointerMove={(e) => track(e.clientX)}
           onPointerDown={(e) => track(e.clientX)}
           // Touch fires pointerleave on lift; keep the tapped week showing until the next tap.
-          onPointerLeave={(e) => e.pointerType !== "touch" && setHovered(null)}
+          onPointerLeave={(e) => {
+            if (e.pointerType === "touch") return;
+            const next = e.relatedTarget;
+            if (next instanceof Node && tipRef.current?.contains(next)) return;
+            setHovered(null);
+          }}
         />
       </svg>
 
       {activeWeek && (
         <div
-          className={styles.tip}
+          ref={tipRef}
+          className={styles.tipAnchor}
           style={{
             left: `${tipFrac * 100}%`,
             top: `${(tipY / H) * 100}%`,
-            transform: `translate(${tipShift}, -118%)`,
-            borderColor: tipColor,
+            transform: `translate(${tipShift}, -100%)`,
+          }}
+          onPointerLeave={(e) => {
+            if (e.pointerType === "touch") return;
+            setHovered(null);
           }}
         >
-          <span className={styles.tipValue} style={{ color: tipColor }}>
-            {activePoint ? `${fmtTv(activePoint.tv)} · ${activePoint.band}` : "No TV · nothing logged"}
-          </span>
-          <span className={styles.tipMeta}>
-            <b>{activeHours.toFixed(1)} h</b> this week
-            {activePoint && ` · ${activePoint.mean_hours.toFixed(1)} h/wk avg`}
-          </span>
-          <span className={styles.tipDate}>Week ending {formatDate(activeWeek)}</span>
+          <div className={styles.tip} style={{ borderColor: tipColor }}>
+            <span className={styles.tipValue} style={{ color: tipColor }}>
+              {activePoint ? `${fmtTv(activePoint.tv)} · ${activePoint.band}` : "No TV · nothing logged"}
+            </span>
+            <span className={styles.tipMeta}>
+              <b>{activeHours.toFixed(1)} h</b> this week
+              {activePoint && ` · ${activePoint.mean_hours.toFixed(1)} h/wk avg`}
+            </span>
+            <span className={styles.tipDate}>Week ending {formatDate(activeWeek)}</span>
+            <span className={styles.tipLinks}>
+              {sessionsHref && <Link href={sessionsHref}>Sessions</Link>}
+              {yearHref && <Link href={yearHref}>{activeWeek.slice(0, 4)} on the log</Link>}
+            </span>
+          </div>
         </div>
       )}
     </>

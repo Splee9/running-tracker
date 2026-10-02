@@ -1,4 +1,5 @@
 import { useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from "react";
+import { planNavigation } from "./navigation";
 
 /**
  * A two-route site doesn't need a router library: the pathname lives in
@@ -16,18 +17,34 @@ const subscribe = (onChange: () => void) => {
 const normalize = (path: string) => (path.length > 1 ? path.replace(/\/+$/, "") : path);
 
 const getPathname = () => normalize(window.location.pathname);
+const getSearch = () => window.location.search;
 
 export function usePathname(): string {
   return useSyncExternalStore(subscribe, getPathname);
 }
 
+/** The raw `location.search`, including the leading `?`, or `""`. Updates on `popstate`. */
+export function useSearchString(): string {
+  return useSyncExternalStore(subscribe, getSearch);
+}
+
 export function navigate(to: string) {
-  if (normalize(to) !== getPathname()) {
+  const { push, scroll } = planNavigation(
+    {
+      pathname: window.location.pathname,
+      search: window.location.search,
+      hash: window.location.hash,
+    },
+    to,
+  );
+  if (push) {
     window.history.pushState(null, "", to);
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
-  // "instant" overrides the global smooth scroll so a new page starts at the top.
-  window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  if (scroll) {
+    // "instant" overrides the global smooth scroll so a new page starts at the top.
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }
 }
 
 type LinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & { href: string };

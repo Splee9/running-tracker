@@ -3,7 +3,10 @@
 
 import { activityFacts, applyJevIntent, buildGradeRequest, buildIndex, buildJevRequest, classifyIntent, climbingLabel, rankGradeFor, readStandout, STANDOUT_LEVELS, withGrades, withoutParts, describeActivity, describeIntent, jevCacheScope, MEMBERSHIP_DEMOTE_BELOW, needsIntentFacets, planShortlist, rerankUnlockedHits, resolveInterpretation, searchActivities, settledIntentPayload, splitJevAnswers } from "./src/lib/activitySearch.ts";
 import { toActivity } from "./scripts/strava-activity.mjs";
-import { formatHours, formatWindow, interpretationParts, lookupStatus, orderHits, primaryHits, resultTotals } from "./src/lib/lookupView.ts";
+import { formatHours, formatWindow, interpretationParts, lookupStatus, mergeMachineWindow, orderHits, primaryHits, resultTotals } from "./src/lib/lookupView.ts";
+import { planNavigation } from "./src/lib/navigation.ts";
+import { lookupWeekHref, lookupYearHref, milesYearHref, trainingWeekHref } from "./src/lib/links.ts";
+import { inDayWindow, machineWindow, weekMonday, weekSunday, weekWindow, yearOf } from "./src/lib/week.ts";
 import { stimulusDecision } from "./src/lib/stimulusDecision.ts";
 import { stimulusFit } from "./src/lib/stimulusFit.ts";
 
@@ -1962,6 +1965,87 @@ const currentPr = rubric("current PR");
 check("current PR means race_pr, not a past PR in the name", currentPr.true.includes("race_pr") && currentPr.false.includes("past PR"), JSON.stringify(currentPr));
 const anyPr = rubric("races that were PRs");
 check("a PR search explains race_pr and PR in the name", anyPr.true.includes("race_pr") && anyPr.true.includes("was a PR when it happened"), JSON.stringify(anyPr));
+
+console.log("\nweek links:\n");
+
+check("week of Sep 21 is Mon–Sun", weekMonday("2026-09-21") === "2026-09-21" && weekSunday("2026-09-21") === "2026-09-27");
+check(
+  "partial Chicago week of Sep 28 closes Oct 4",
+  weekMonday("2026-09-28") === "2026-09-28" && weekSunday("2026-09-28") === "2026-10-04" && yearOf("2026-09-28") === 2026,
+);
+check(
+  "race day Sunday belongs to the week of Oct 5",
+  weekMonday("2026-10-11") === "2026-10-05" && weekSunday("2026-10-11") === "2026-10-11",
+);
+check("weekWindow rejects a Sunday", weekWindow("2026-09-27") === null && weekWindow("2026-09-21")?.to === "2026-09-27");
+check("impossible day is dropped", machineWindow("2026-02-31", "2026-03-01") === null);
+
+const week = machineWindow("2026-09-21", null);
+check("from alone runs through Sunday", week?.start === "2026-09-21" && week?.end === "2026-09-27");
+const swapped = machineWindow("2026-09-27", "2026-09-21");
+check("reversed bounds swap", swapped?.start === "2026-09-21" && swapped?.end === "2026-09-27");
+
+const year = classifyIntent("2026", testClock);
+const narrowed = mergeMachineWindow(year, week);
+check(
+  "a year query intersected with a week stays that week",
+  narrowed?.dateWindow?.start === "2026-09-21" && narrowed?.dateWindow?.end === "2026-09-27",
+);
+const weekHits = searchActivities(index, "2026", 500, testClock, narrowed);
+const weekIds = new Set(weekHits.map((hit) => hit.activity.id));
+check("week window keeps Sep 21", weekIds.has(42) && inDayWindow("2026-09-21T08:00:00", week));
+check("week window drops the next Monday", !weekIds.has(30), [...weekIds].sort((a, b) => a - b).join(","));
+
+const disjoint = mergeMachineWindow(classifyIntent("2024", testClock), week);
+check(
+  "a disjoint year and week match nothing",
+  disjoint?.dateWindow != null && disjoint.dateWindow.start > disjoint.dateWindow.end && searchActivities(index, "2024", 500, testClock, disjoint).length === 0,
+);
+
+const bare = mergeMachineWindow(null, week);
+const bareParts = interpretationParts(bare, bare);
+check(
+  "a window with no query is a dates chip, not a Jev fill",
+  bare?.intent?.kind === "list" && bareParts.length === 1 && bareParts[0].key === "dates" && bareParts[0].fromJev === false,
+  JSON.stringify(bareParts),
+);
+
+const here = { pathname: "/activity-lookup", search: "", hash: "" };
+check(
+  "a week link from Miles pushes and scrolls",
+  planNavigation({ pathname: "/miles", search: "", hash: "" }, "/activity-lookup?from=2026-09-21&to=2026-09-27").push
+    && planNavigation({ pathname: "/miles", search: "", hash: "" }, "/activity-lookup?from=2026-09-21&to=2026-09-27").scroll,
+);
+check(
+  "a week link already on Lookup pushes and does not scroll",
+  (() => {
+    const plan = planNavigation(here, "/activity-lookup?from=2026-09-21&to=2026-09-27");
+    return plan.push && !plan.scroll;
+  })(),
+);
+check(
+  "a week link uses from/to, not an ISO date in q",
+  lookupWeekHref("2026-09-27", "run") === "/activity-lookup?from=2026-09-21&to=2026-09-27&sport=run"
+    && !lookupWeekHref("2026-09-27", "run").includes("q="),
+);
+check(
+  "the all-sport chart omits a lookup sport",
+  lookupWeekHref("2026-09-21", null) === "/activity-lookup?from=2026-09-21&to=2026-09-27",
+);
+check("a miles year stays on q", lookupYearHref(2024) === "/activity-lookup?q=2024");
+check(
+  "variability and the log name the same Monday",
+  trainingWeekHref("2026-09-27", "run") === "/training?week=2026-09-21&sport=run"
+    && milesYearHref("2026-09-27") === "/miles?year=2026",
+);
+
+check(
+  "the same week URL does not push again",
+  !planNavigation(
+    { pathname: "/activity-lookup", search: "?from=2026-09-21&to=2026-09-27", hash: "" },
+    "/activity-lookup?from=2026-09-21&to=2026-09-27",
+  ).push,
+);
 
 console.log();
 if (failures === 0) {
