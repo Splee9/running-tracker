@@ -6,7 +6,7 @@ function ConfidenceBars({
   bars,
   reviewBelow,
 }: {
-  bars: { label: string; value: number; primary?: boolean }[];
+  bars: { label: string; value: number; marked?: boolean }[];
   reviewBelow: number;
 }) {
   return (
@@ -17,10 +17,7 @@ function ConfidenceBars({
         return (
           <li key={bar.label}>
             <div className={styles.barLabel}>
-              <span>
-                {bar.label}
-                {bar.primary ? <span className={styles.primaryMark}> primary</span> : null}
-              </span>
+              <span>{bar.label}</span>
               <span>{pct}%</span>
             </div>
             <div
@@ -32,10 +29,10 @@ function ConfidenceBars({
               aria-label={`${bar.label} ${pct} percent`}
             >
               <span
-                className={`${styles.fill} ${under ? styles.fillUnder : ""}`}
+                className={`${styles.fill} ${bar.marked && under ? styles.fillUnder : ""}`}
                 style={{ width: `${pct}%` }}
               />
-              <span className={styles.reviewMark} style={{ left: `${reviewBelow * 100}%` }} />
+              {bar.marked && <span className={styles.reviewMark} style={{ left: `${reviewBelow * 100}%` }} />}
             </div>
           </li>
         );
@@ -69,7 +66,7 @@ export function StimulusDecisionPanel({
           Close
         </button>
       </div>
-      <p className={styles.advise}>Advise only. The label stays as published.</p>
+      <p className={styles.advise}>{view.scope} The label stays as published.</p>
       <dl className={styles.facts}>
         <div>
           <dt>Primary</dt>
@@ -92,18 +89,18 @@ export function StimulusDecisionPanel({
       </dl>
       <h3>Why this label</h3>
       <p className={styles.copy}>{view.why}</p>
-      <h3>Confidence</h3>
-      {view.bars.length > 0 ? (
-        <>
-          <ConfidenceBars bars={view.bars} reviewBelow={view.reviewBelow} />
-          <p className={styles.legend}>The mark on each bar is the 0.75 review line.</p>
-        </>
-      ) : (
-        <p className={styles.unavailable}>Confidence unavailable</p>
+      <h3>Classification confidence</h3>
+      {view.primaryConfidence == null && (
+        <p className={styles.unavailable}>Classification confidence unavailable</p>
       )}
-      {view.lowConfidence && <p className={styles.flag}>Flagged low confidence</p>}
-      <h3>When to override</h3>
+      {view.bars.length > 0 && <ConfidenceBars bars={view.bars} reviewBelow={view.reviewBelow} />}
+      {view.primaryConfidence != null && (
+        <p className={styles.legend}>The mark is the 0.55 line on classification confidence.</p>
+      )}
+      {view.lowConfidence && <p className={styles.flag}>low_confidence is set on this label</p>}
+      <h3>When to review the label</h3>
       <p className={styles.copy}>{view.rule}</p>
+      <p className={styles.legend}>{view.stricterBar}</p>
       <p className={`${styles.status} ${styles[view.tone]}`}>{view.status}</p>
       <a
         className={styles.strava}

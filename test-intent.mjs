@@ -1003,25 +1003,39 @@ const mappedDecision = toActivity({
   primary_stimulus: "quality",
   modifiers: ["intervals"],
   stimulus_cluster: "quality_intervals",
-  stimulus_confidence: 0.82,
+  primary_confidence: 0.4,
+  confidence: 0.9,
+  stimulus_confidence: 0.2,
   stimulus_probabilities: { quality: 0.82, easy: 0.11, long: 1.4 },
   secondary_stimulus: "easy",
   low_confidence: false,
 });
 check(
-  "toActivity keeps a published confidence, probabilities, and runner-up",
-  mappedDecision.confidence === 0.82 &&
+  "toActivity keeps primary_confidence ahead of older aliases",
+  mappedDecision.primary_confidence === 0.4 &&
+    !("confidence" in mappedDecision) &&
     mappedDecision.probabilities.quality === 0.82 &&
     mappedDecision.probabilities.easy === 0.11 &&
     !("long" in mappedDecision.probabilities) &&
     mappedDecision.runner_up === "easy" &&
-    !("low_confidence" in mappedDecision) &&
-    !("stimulus_confidence" in mappedDecision),
+    !("low_confidence" in mappedDecision),
   JSON.stringify(mappedDecision),
 );
+const mappedAlias = toActivity({
+  id: 5,
+  name: "repeats",
+  sport_type: "Run",
+  start_date_local: "2024-06-03T00:00:00Z",
+  stimulus_confidence: 0.82,
+});
 check(
-  "toActivity does not invent a confidence",
-  !("confidence" in mappedBlank) && !("probabilities" in mappedBlank) && !("runner_up" in mappedBlank),
+  "toActivity maps an older stimulus_confidence alias onto primary_confidence",
+  mappedAlias.primary_confidence === 0.82 && !("stimulus_confidence" in mappedAlias),
+  JSON.stringify(mappedAlias),
+);
+check(
+  "toActivity does not invent a classification confidence",
+  !("primary_confidence" in mappedBlank) && !("confidence" in mappedBlank) && !("probabilities" in mappedBlank) && !("runner_up" in mappedBlank),
   JSON.stringify(mappedBlank),
 );
 
@@ -1042,49 +1056,53 @@ check(
     qualityDecision.why.includes("3×800m") &&
     !qualityDecision.why.toLowerCase().includes("tempo") &&
     qualityDecision.tone === "unavailable" &&
-    qualityDecision.status.includes("Confidence unavailable") &&
+    qualityDecision.status.includes("Classification confidence unavailable") &&
+    qualityDecision.scope.includes("closed vocab") &&
+    qualityDecision.scope.includes("right work that day") &&
     qualityDecision.escalate === false &&
     qualityDecision.listLabel === "quality",
-  qualityDecision.why,
+  qualityDecision.status,
 );
 const reviewDecision = stimulusDecision({
   primary_stimulus: "easy",
   stimulus_cluster: "quality_intervals",
   low_confidence: true,
-  confidence: 0.91,
+  primary_confidence: 0.91,
 });
 check(
-  "low_confidence escalates even when the number is high, and a mismatched cluster is named",
+  "low_confidence escalates even when classification confidence is high, and a mismatched cluster is named",
   reviewDecision.escalate === true &&
     reviewDecision.tone === "escalate" &&
     reviewDecision.why.includes("does not sit under") &&
     reviewDecision.status.includes("low_confidence") &&
-    reviewDecision.bars[0].value === 0.91 &&
+    reviewDecision.primaryConfidence === 0.91 &&
+    reviewDecision.bars[0].marked === true &&
     reviewDecision.listLabel === "easy · review",
   reviewDecision.status,
 );
 const underBar = stimulusDecision({
   primary_stimulus: "long",
   stimulus_cluster: "long_aerobic",
-  confidence: 0.62,
+  primary_confidence: 0.4,
 });
 check(
-  "a published confidence under 0.75 escalates without a low_confidence flag",
-  underBar.escalate === true && underBar.confidence === 0.62 && underBar.status.includes("62%"),
+  "primary_confidence under 0.55 escalates without a low_confidence flag",
+  underBar.escalate === true && underBar.primaryConfidence === 0.4 && underBar.status.includes("40%") && underBar.status.includes("0.55"),
   underBar.status,
 );
 const clearDecision = stimulusDecision({
   primary_stimulus: "race",
   stimulus_cluster: "race",
-  confidence: 0.75,
+  primary_confidence: 0.55,
   probabilities: { race: 0.8, easy: 0.2 },
 });
 check(
-  "0.75 is above the review bar, and probabilities are the bars",
+  "0.55 is not under the classification bar, and probabilities stay off that flag",
   clearDecision.escalate === false &&
     clearDecision.tone === "clear" &&
-    clearDecision.bars.map((bar) => bar.label).join(",") === "race,easy" &&
-    clearDecision.bars[0].primary === true,
+    clearDecision.bars.map((bar) => bar.label).join(",") === "Classification confidence,race,easy" &&
+    clearDecision.bars[0].marked === true &&
+    clearDecision.bars[1].marked !== true,
   JSON.stringify(clearDecision.bars),
 );
 const probabilityOnly = stimulusDecision({
@@ -1093,8 +1111,11 @@ const probabilityOnly = stimulusDecision({
   probabilities: { hills: 0.4, easy: 0.35 },
 });
 check(
-  "without a scalar, the primary probability is compared to the same bar",
-  probabilityOnly.escalate === true && probabilityOnly.confidence === null && probabilityOnly.status.includes("40%"),
+  "a probability map without primary_confidence does not flag the label",
+  probabilityOnly.escalate === false &&
+    probabilityOnly.primaryConfidence === null &&
+    probabilityOnly.status.includes("Classification confidence unavailable") &&
+    probabilityOnly.bars.length === 2,
   probabilityOnly.status,
 );
 const unlabeled = stimulusDecision({});

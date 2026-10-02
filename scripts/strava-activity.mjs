@@ -90,8 +90,8 @@ function unitInterval(value) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : undefined;
 }
 
-function confidenceFor(a) {
-  return unitInterval(a.confidence) ?? unitInterval(a.stimulus_confidence);
+function primaryConfidenceFor(a) {
+  return unitInterval(a.primary_confidence) ?? unitInterval(a.confidence) ?? unitInterval(a.stimulus_confidence);
 }
 
 function probabilitiesFor(a) {
@@ -154,10 +154,10 @@ export function toActivity(a) {
   if (a.stimulus_cluster !== undefined && a.stimulus_cluster !== "") base.stimulus_cluster = a.stimulus_cluster;
   if (a.modality !== undefined && a.modality !== "") base.modality = a.modality;
   if (a.low_confidence) base.low_confidence = true;
-  // public-activities decision fields. Kept only when the export sends them.
-  // `stimulus_confidence` / `stimulus_probabilities` / `secondary_stimulus` are aliases.
-  const confidence = confidenceFor(a);
-  if (confidence !== undefined) base.confidence = confidence;
+  // Layer A: classification confidence for the stimulus label. `primary_confidence`
+  // wins; `confidence` and `stimulus_confidence` are older aliases. Not a fit score.
+  const primaryConfidence = primaryConfidenceFor(a);
+  if (primaryConfidence !== undefined) base.primary_confidence = primaryConfidence;
   const probabilities = probabilitiesFor(a);
   if (probabilities) base.probabilities = probabilities;
   const runnerUp = runnerUpFor(a);

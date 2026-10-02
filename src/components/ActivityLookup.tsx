@@ -356,8 +356,8 @@ export function ActivityLookup() {
         <motion.p className={styles.intro} variants={rise} custom={2} initial="hidden" animate="show">
           Ask for a session the way you'd describe it: a distance, a place, a date, a kind of workout.
           Exact asks like "longest run" sort by the numbers; looser ones like "best Chicago runs" are
-          ranked by <b>Jev</b>. Open a row for the stimulus decision stored on that activity: the
-          label, the confidence, and when a person should override it.
+          ranked by <b>Jev</b>. Open a row for the stimulus label stored on that activity, how
+          sure the classifier is of that label, and when a person should review it.
         </motion.p>
       </header>
 
@@ -505,7 +505,7 @@ export function ActivityLookup() {
         <p>
           Public activities only, rebuilt from the Strava log. Names, dates, distance, time,
           elevation, HR, pace, power, stimulus, place and intervals — no routes, polylines or stream data.
-          Open a row for the stimulus decision. The page shows it and does not relabel the session.
+          Open a row for the stimulus label. Classification confidence is about that label, and the page does not relabel the session.
         </p>
       </footer>
     </div>

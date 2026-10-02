@@ -4,14 +4,20 @@
 import { clusterFitsPrimary } from "./stimulus.ts";
 
 /**
- * Escalate to a person when a published confidence is below this.
- * Display policy only: the page never rewrites the label.
- * Same 0.75 bar the lookup already uses before it acts on a confident Jev fill.
+ * Review the stimulus label when published classification confidence is below this.
+ * Vault Layer A bar. Display policy only: the page never rewrites the label.
+ * This is not the 0.75 bar used before a Jev search fill, and it is not a fit score.
  */
-export const STIMULUS_ESCALATE_BELOW = 0.75;
+export const STIMULUS_ESCALATE_BELOW = 0.55;
+
+export const STIMULUS_CLASSIFICATION_NOTE =
+  "Classification confidence is how sure the classifier is of the stimulus label in the closed vocab. It is not whether the session was the right work that day.";
 
 export const STIMULUS_OVERRIDE_RULE =
-  "A person should override the label when the export sets low_confidence, or when a published confidence is below 0.75. This page does not change the label.";
+  "Review the label when the export sets low_confidence, or when classification confidence in the primary is below 0.55. This page does not change the label.";
+
+export const STIMULUS_STRICTER_BAR_NOTE =
+  "A later career review can use a stricter bar. This panel flags the label at 0.55, or when low_confidence is set.";
 
 const CLUSTER_PHRASE: Record<string, string> = {
   easy_shell: "easy shell",
@@ -34,7 +40,8 @@ export type StimulusDecisionActivity = {
   stimulus_cluster?: string;
   modality?: string;
   low_confidence?: boolean;
-  confidence?: number;
+  /** 0–1 classification confidence for the primary stimulus label. */
+  primary_confidence?: number;
   probabilities?: Record<string, number>;
   runner_up?: string;
   hard_lap_count?: number;
@@ -47,7 +54,8 @@ export type ConfidenceBar = {
   label: string;
   /** 0–1, as published. */
   value: number;
-  primary?: boolean;
+  /** The primary classification-confidence bar. The 0.55 mark is drawn on this one. */
+  marked?: boolean;
 };
 
 export type StimulusDecisionTone = "escalate" | "clear" | "unavailable";
@@ -63,13 +71,15 @@ export type StimulusDecisionView = {
   /** Short label for the activity row. Null when nothing was published. */
   listLabel: string | null;
   why: string;
-  /** Published scalar confidence, when the export sent one. */
-  confidence: number | null;
+  /** Published primary classification confidence, when the export sent one. */
+  primaryConfidence: number | null;
   bars: ConfidenceBar[];
   lowConfidence: boolean;
   escalate: boolean;
   tone: StimulusDecisionTone;
+  scope: string;
   rule: string;
+  stricterBar: string;
   status: string;
   reviewBelow: number;
 };
@@ -133,32 +143,21 @@ function whyText(
   return parts.join(" ");
 }
 
-function statusText(
-  primary: string | null,
-  low: boolean,
-  confidence: number | null,
-  primaryProbability: number | null,
-): string {
+function statusText(low: boolean, confidence: number | null): string {
   if (low && confidence != null && confidence < STIMULUS_ESCALATE_BELOW) {
-    return `This activity should be reviewed: low_confidence is set, and confidence is ${percent(confidence)}, under 0.75.`;
+    return `Review this label: low_confidence is set, and classification confidence is ${percent(confidence)}, under 0.55.`;
   }
   if (low && confidence != null) {
-    return `This activity should be reviewed: low_confidence is set, even though confidence is ${percent(confidence)}.`;
+    return `Review this label: low_confidence is set, even though classification confidence is ${percent(confidence)}.`;
   }
-  if (low) return "This activity should be reviewed: the export set low_confidence.";
+  if (low) return "Review this label: the export set low_confidence.";
   if (confidence != null && confidence < STIMULUS_ESCALATE_BELOW) {
-    return `This activity should be reviewed: confidence is ${percent(confidence)}, under 0.75.`;
+    return `Review this label: classification confidence is ${percent(confidence)}, under 0.55.`;
   }
   if (confidence != null) {
-    return `This activity is above the review bar: confidence is ${percent(confidence)}, and it is not flagged.`;
+    return `Classification confidence is ${percent(confidence)}, at or above 0.55, and the label is not flagged.`;
   }
-  if (primary && primaryProbability != null && primaryProbability < STIMULUS_ESCALATE_BELOW) {
-    return `This activity should be reviewed: the published probability for ${humanLabel(primary)} is ${percent(primaryProbability)}, under 0.75.`;
-  }
-  if (primary && primaryProbability != null) {
-    return `This activity is above the review bar on the published probability for ${humanLabel(primary)} (${percent(primaryProbability)}), and it is not flagged.`;
-  }
-  return "Confidence unavailable. Cluster and modifiers above are the published decision. It is not flagged low_confidence.";
+  return "Classification confidence unavailable. Cluster and modifiers above are the published label. It is not flagged low_confidence.";
 }
 
 /** Read the published stimulus decision. Does not fill in a label the export omitted. */
@@ -170,27 +169,22 @@ export function stimulusDecision(activity: StimulusDecisionActivity): StimulusDe
   const modifiers = (activity.modifiers ?? []).filter((mod) => typeof mod === "string" && mod.trim());
   const modality = activity.modality?.trim() || null;
   const low = activity.low_confidence === true || lowFromPrimary;
-  const confidence = publishedUnit(activity.confidence);
+  const primaryConfidence = publishedUnit(activity.primary_confidence);
   const probabilities = activity.probabilities;
   const bars: ConfidenceBar[] = [];
+  if (primaryConfidence != null) {
+    bars.push({ label: "Classification confidence", value: primaryConfidence, marked: true });
+  }
   if (probabilities && typeof probabilities === "object") {
     const entries = Object.entries(probabilities)
       .filter((entry): entry is [string, number] => publishedUnit(entry[1]) != null)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
     for (const [label, value] of entries.slice(0, 8)) {
-      bars.push({ label: humanLabel(label), value, primary: label === primary });
+      bars.push({ label: humanLabel(label), value });
     }
   }
-  if (bars.length === 0 && confidence != null) {
-    bars.push({ label: "Confidence", value: confidence, primary: true });
-  }
-  const primaryProbability = primary && probabilities ? publishedUnit(probabilities[primary]) : null;
-  const escalate =
-    low ||
-    (confidence != null
-      ? confidence < STIMULUS_ESCALATE_BELOW
-      : primaryProbability != null && primaryProbability < STIMULUS_ESCALATE_BELOW);
-  const tone: StimulusDecisionTone = escalate ? "escalate" : bars.length === 0 ? "unavailable" : "clear";
+  const escalate = low || (primaryConfidence != null && primaryConfidence < STIMULUS_ESCALATE_BELOW);
+  const tone: StimulusDecisionTone = escalate ? "escalate" : primaryConfidence == null ? "unavailable" : "clear";
   const listCore = primary ? humanLabel(primary) : cluster ? humanLabel(cluster) : null;
   return {
     primary,
@@ -202,13 +196,15 @@ export function stimulusDecision(activity: StimulusDecisionActivity): StimulusDe
     modifierText: modifiers.length > 0 ? modifiers.map(humanLabel).join(", ") : "None published",
     listLabel: listCore ? (escalate ? `${listCore} · review` : listCore) : escalate ? "review" : null,
     why: whyText(activity, primary, cluster, modifiers),
-    confidence,
+    primaryConfidence,
     bars,
     lowConfidence: low,
     escalate,
     tone,
+    scope: STIMULUS_CLASSIFICATION_NOTE,
     rule: STIMULUS_OVERRIDE_RULE,
-    status: statusText(primary, low, confidence, primaryProbability),
+    stricterBar: STIMULUS_STRICTER_BAR_NOTE,
+    status: statusText(low, primaryConfidence),
     reviewBelow: STIMULUS_ESCALATE_BELOW,
   };
 }
