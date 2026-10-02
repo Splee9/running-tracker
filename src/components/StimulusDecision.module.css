@@ -126,7 +126,7 @@
 }
 
 .pillOver {
-  --pill: #8d2a24;
+  --pill: #9c4a2f;
 }
 
 .pillUnder {
@@ -140,17 +140,17 @@
   text-transform: uppercase;
 }
 
-.fitValue {
-  font-size: 20px;
+.fitVerdict {
+  font-size: 18px;
   font-weight: 650;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   line-height: 1.1;
 }
 
-.pillNone .fitValue {
+.fitValue {
   font-size: 14px;
   font-weight: 500;
-  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .track {
@@ -212,7 +212,7 @@
 }
 
 .fitOver {
-  color: #8d2a24;
+  color: #9c4a2f;
 }
 
 .fitUnder {

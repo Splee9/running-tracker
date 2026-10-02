@@ -75,6 +75,8 @@ export type StimulusFitView = {
   fitConfidence: number | null;
   /** "81%" or "Unavailable". */
   scoreLabel: string;
+  /** Short verdict for the fit pill: "On target", "Overcooked", "Undercooked". Null when no fit was published. */
+  verdictLabel: string | null;
   /** Marked phrases in sentence order. */
   clauses: FitClause[];
   /**
@@ -89,6 +91,12 @@ const FIT_PREDICATE: Record<string, string> = {
   appropriate: "on target",
   overcooked: "more than readiness wanted",
   undercooked: "lighter than it could have been",
+};
+
+const FIT_SHORT: Record<string, string> = {
+  appropriate: "On target",
+  overcooked: "Overcooked",
+  undercooked: "Undercooked",
 };
 
 const FIT_WHY: Record<string, string> = {
@@ -294,6 +302,7 @@ export function stimulusFit(activity: StimulusFitActivity): StimulusFitView {
     stimulusFit: fitLabel,
     fitConfidence,
     scoreLabel: fitConfidence == null ? "Unavailable" : percent(fitConfidence),
+    verdictLabel: fitLabel ? (FIT_SHORT[fitLabel] ?? humanFitToken(fitLabel)) : null,
     clauses,
     comparison: comparisonFrom(clauses),
     scope: STIMULUS_FIT_NOTE,

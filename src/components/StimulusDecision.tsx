@@ -180,8 +180,19 @@ export function StimulusDecisionPanel({
               tone="score"
               text={
                 <>
-                  <span className={styles.fitLabel}>Fit</span>{" "}
-                  <span className={styles.fitValue}>{fit.fitConfidence == null ? "unavailable" : fit.scoreLabel}</span>
+                  {/* Lead with the verdict so the percent reads as confidence in it, not as a grade. */}
+                  {fit.verdictLabel ? (
+                    <span className={styles.fitVerdict}>{fit.verdictLabel}</span>
+                  ) : (
+                    <span className={styles.fitLabel}>Fit</span>
+                  )}{" "}
+                  <span className={styles.fitValue}>
+                    {fit.fitConfidence == null
+                      ? fit.verdictLabel
+                        ? "confidence unavailable"
+                        : "unavailable"
+                      : `${fit.scoreLabel} sure`}
+                  </span>
                 </>
               }
             >
