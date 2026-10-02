@@ -144,6 +144,7 @@ export function stimulusDecision(activity: StimulusDecisionActivity): StimulusDe
   const escalate = low || (primaryConfidence != null && primaryConfidence < STIMULUS_ESCALATE_BELOW);
   const tone: StimulusDecisionTone = escalate ? "escalate" : primaryConfidence == null ? "unavailable" : "clear";
   const listCore = primary ? humanLabel(primary) : cluster ? humanLabel(cluster) : null;
+  const scoredCore = listCore && primaryConfidence != null ? `${listCore} ${percent(primaryConfidence)}` : listCore;
   return {
     primary,
     cluster,
@@ -152,7 +153,7 @@ export function stimulusDecision(activity: StimulusDecisionActivity): StimulusDe
     primaryText: primary ? humanLabel(primary) : "None published",
     clusterText: cluster ? humanLabel(cluster) : "None published",
     modifierText: modifiers.length > 0 ? modifiers.map(humanLabel).join(", ") : "None published",
-    listLabel: listCore ? (escalate ? `${listCore} · review` : listCore) : escalate ? "review" : null,
+    listLabel: scoredCore ? (escalate ? `${scoredCore} · review` : scoredCore) : escalate ? "review" : null,
     reasons: whyLines(activity, primary, cluster),
     primaryConfidence,
     scoreLabel: primaryConfidence == null ? "Unavailable" : percent(primaryConfidence),
