@@ -5,6 +5,8 @@ reframes the distance as journeys ("the length of Britain", "halfway around the
 Earth"). Built with Vite + React + TypeScript, with a scroll-driven cumulative
 line and cursor-reactive polish.
 
+Agent locks for Activity Lookup / Fit: [AGENTS.md](AGENTS.md) §Fit.
+
 ## About the data
 
 The running log, training, and Chicago pages show **aggregate figures only** —
