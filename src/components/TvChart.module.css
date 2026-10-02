@@ -92,19 +92,24 @@
 }
 
 /* hover tooltip (HTML, positioned by % over the SVG) */
-.tip {
+.tipAnchor {
   position: absolute;
+  z-index: 2;
+  /* Sits on the point so the pointer can move onto the card without a gap. */
+  padding-bottom: 12px;
+  pointer-events: auto;
+}
+
+.tip {
   display: flex;
   flex-direction: column;
   line-height: 1.2;
-  white-space: nowrap;
   background: var(--card);
   border: 1.5px solid;
   border-radius: 9px;
   padding: 7px 11px;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.1);
-  pointer-events: none;
-  z-index: 2;
+  pointer-events: auto;
 }
 
 .tipValue {
@@ -112,6 +117,7 @@
   font-weight: 700;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .tipMeta {
@@ -119,6 +125,7 @@
   color: var(--ink);
   font-variant-numeric: tabular-nums;
   margin-top: 2px;
+  white-space: nowrap;
 }
 
 .tipMeta b {
@@ -129,6 +136,22 @@
   font-size: 11.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tipLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+.tipLinks a {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
 }
 
 @media (max-width: 560px) {

@@ -5,6 +5,7 @@ import { activityFacts, applyJevIntent, buildGradeRequest, buildIndex, buildJevR
 import { toActivity } from "./scripts/strava-activity.mjs";
 import { formatHours, formatWindow, interpretationParts, lookupStatus, mergeMachineWindow, orderHits, primaryHits, resultTotals } from "./src/lib/lookupView.ts";
 import { planNavigation } from "./src/lib/navigation.ts";
+import { lookupWeekHref, lookupYearHref, milesYearHref, trainingWeekHref } from "./src/lib/links.ts";
 import { inDayWindow, machineWindow, weekMonday, weekSunday, weekWindow, yearOf } from "./src/lib/week.ts";
 import { stimulusDecision } from "./src/lib/stimulusDecision.ts";
 import { stimulusFit } from "./src/lib/stimulusFit.ts";
@@ -2022,6 +2023,22 @@ check(
     return plan.push && !plan.scroll;
   })(),
 );
+check(
+  "a week link uses from/to, not an ISO date in q",
+  lookupWeekHref("2026-09-27", "run") === "/activity-lookup?from=2026-09-21&to=2026-09-27&sport=run"
+    && !lookupWeekHref("2026-09-27", "run").includes("q="),
+);
+check(
+  "the all-sport chart omits a lookup sport",
+  lookupWeekHref("2026-09-21", null) === "/activity-lookup?from=2026-09-21&to=2026-09-27",
+);
+check("a miles year stays on q", lookupYearHref(2024) === "/activity-lookup?q=2024");
+check(
+  "variability and the log name the same Monday",
+  trainingWeekHref("2026-09-27", "run") === "/training?week=2026-09-21&sport=run"
+    && milesYearHref("2026-09-27") === "/miles?year=2026",
+);
+
 check(
   "the same week URL does not push again",
   !planNavigation(

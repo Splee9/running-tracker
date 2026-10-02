@@ -6,6 +6,8 @@ import { Rich } from "./Rich";
 import { data, lifetime, type RaceCounts } from "../lib/data";
 import { fmt, fmt1 } from "../lib/format";
 import { headlineFor } from "../lib/comparisons";
+import { lookupYearHref } from "../lib/links";
+import { Link } from "../lib/router";
 import styles from "./YearChart.module.css";
 
 type Scope = number | "lifetime";
@@ -73,6 +75,11 @@ export function YearChart() {
         <p className={styles.scopeHeadline} aria-live="polite">
           <Rich text={headlineFor(scope.miles)} />
         </p>
+        {selected !== "lifetime" && (
+          <p className={styles.scopeLink}>
+            <Link href={lookupYearHref(selected)}>Sessions in {selected}</Link>
+          </p>
+        )}
       </div>
 
       <div className={styles.chips} role="group" aria-label="Choose a year">

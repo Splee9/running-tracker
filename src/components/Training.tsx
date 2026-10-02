@@ -176,6 +176,7 @@ export function Training() {
                     showHours={showHours}
                     drawKey={`${sport}-${horizon}-${dateRange}`}
                     label={`${tv.filters[sport].label}, ${tv.horizons[horizon].label}, ${rangeLabel} view`}
+                    lookupSport={sport === "run" ? "run" : sport === "bike" ? "ride" : null}
                   />
                 </>
               );

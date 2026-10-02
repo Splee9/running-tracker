@@ -82,15 +82,18 @@ scripts/                  data export, grading, and eval scripts (see below)
 
 - `/` — projects home page linking to the pages below.
 - `/miles` — the running log: lifetime and per-year mileage reframed as journeys.
+  The selected year links to `/activity-lookup?q={year}`.
 - `/training` — training variability: how much weekly hours swing around their
   mean over rolling 8 / 12 / 52-week windows, for Run, Bike, or All. Lower is
   steadier (Steady < 35, Moderate 35–55, Uneven 55–80, Erratic ≥ 80). One
   window is shown at a time; a switch overlays weekly hours as bars on a second
-  axis.
+  axis. The week card links to that Monday–Sunday in Lookup (`?from=&to=`) and
+  to that year on the log.
 - `/training/chicago` — Chicago Marathon 2026 training tracker: 23-week phase
   plan, weekly load by workout type, aerobic efficiency trend, and head-to-head
   comparison against prior marathon builds. Aggregate weekly figures only — no
-  pace, GPS, heart rate, or health data.
+  pace, GPS, heart rate, or health data. The selected week links to its public
+  run sessions (`?from=&to=&sport=run`) and to `/training?week=`.
 - `/activity-lookup` — search every public activity. Three stages:
   1. **Label hard filters**, in the browser: modality, date, distance, place,
      weekday, and stimulus words (`easy`, `intervals`, `quality`, `long`,

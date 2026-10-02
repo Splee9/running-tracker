@@ -3,6 +3,8 @@ import { motion, useReducedMotion } from "motion/react";
 import { AnimatedNumber } from "../AnimatedNumber";
 import { data, PHASE_VAR, TYPE_VAR, type WeekDatum } from "../../lib/chicago-data";
 import { fmt1, formatDate } from "../../lib/chicago-format";
+import { lookupWeekHref, trainingWeekHref } from "../../lib/links";
+import { Link } from "../../lib/router";
 import styles from "./WeeklyLoad.module.css";
 
 const W = 1000;
@@ -294,6 +296,8 @@ function WeekReadout({ week }: { week: WeekDatum }) {
   const { typeOrder, typeLabels, phases } = data;
   const phase = phases[week.phase];
   const types = typeOrder.filter((t) => week.types[t] > 0);
+  const sessionsHref = lookupWeekHref(week.weekStart, "run");
+  const variabilityHref = trainingWeekHref(week.weekStart, "run");
   return (
     <div className={styles.readout}>
       <div className={styles.readoutTop}>
@@ -306,6 +310,14 @@ function WeekReadout({ week }: { week: WeekDatum }) {
             Week {week.week} · {formatDate(week.weekStart)} · {phase.name}
             {week.partial && " · in progress"}
           </p>
+          {(sessionsHref || variabilityHref) && (
+            <p className={styles.links}>
+              {sessionsHref && (
+                <Link href={sessionsHref}>Sessions {week.partial ? "so far" : "this week"}</Link>
+              )}
+              {variabilityHref && <Link href={variabilityHref}>Variability this week</Link>}
+            </p>
+          )}
         </div>
         <div className={styles.readoutStats}>
           <Stat label="4-wk avg" value={`${fmt1(week.rolling4)} mi`} />

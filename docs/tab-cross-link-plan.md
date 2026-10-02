@@ -1,6 +1,12 @@
 # Tab cross-link plan
 
-Plan only. Sources stay separate files. This document does not merge them, and it does not change Fit scoring.
+Sources stay separate files. This document does not merge them, and it does not change Fit scoring.
+
+## Status
+
+- **Phase 0 — done.** Shared Monday key (`src/lib/week.ts`), router search handling, Lookup `from`/`to`.
+- **Phase 1 — done.** Chicago week readout, the training-variability hover card, and the selected Miles year link out to Lookup. `/training?week=` and `/miles?year=` are written and not yet read.
+- **Phases 2–4 — not started.** Inbound focus, Lookup context chips, and the Miles/Training strip.
 
 Context for later Fit UI work: see [AGENTS.md](../AGENTS.md) §Fit. Layer A is `primary_stimulus` / `primary_confidence`. Layer B is `macro_readiness` → `activity_side_load` → `stimulus_fit` + `fit_confidence`. A cross-link may quote a published fit sentence. It must not invent `fit_confidence` or copy `primary_confidence` into it.
 
@@ -17,7 +23,7 @@ Ship it in four phases: fix URL plumbing, add outbound links from charts, teach 
 | Chat hypothesis | What the repo actually does |
 | --- | --- |
 | Shared time keys are the highest-leverage glue. | Confirmed. Every tab already has a calendar date. None of them share a link that uses it. |
-| Chicago week → Lookup filtered Monday–Sunday. | Right target. **Not possible through today's `?q=`.** `parseDateWindow` in `src/lib/activitySearch.ts` understands "this week", "last week", a year, and a named month. An ISO date is split on hyphens by `tokenize`, so `?q=2026-09-21` becomes the year 2026 plus leftover tokens `09` and `21`. A machine link needs its own `from` / `to` params. |
+| Chicago week → Lookup filtered Monday–Sunday. | Right target. `?q=` still cannot carry an ISO date: `parseDateWindow` understands "this week", "last week", a year, and a named month, and `tokenize` splits hyphens, so `?q=2026-09-21` is the year 2026. Phase 0 adds `from`/`to` for the machine window. |
 | TV week → that same Lookup filter, plus the Miles year. | Confirmed as navigation. The Miles year is `week.slice(0, 4)`. The numbers will not match: `/miles` is running mileage, `/training` hours can be run, bike, or all, and private activities never appear in Lookup. |
 | Lookup session → chips for Chicago phase, that week's TV band, nearby races. | Right UX, with gaps. Phase is a date-range lookup against `phases[].start/end` (Chicago only, 2026-05-04 through 2026-10-11). TV band exists only when that week's Sunday is in `training-variability.json` (history starts 2022-01-02; the in-progress week is omitted). "Nearby races" can be joined on `data.json` `raceEvents[].date`, and only marathons have names (`marathonResults`). There is no race id. |
 | A thin "this week / this block" strip on Miles and Training, reusing Chicago's current phase and recent Fit verdicts. | Phase and week mileage are cheap (`chicago-data.json` is ~14 KB). **Recent Fit verdicts are not on those pages.** They live only on vault activities, which `/miles` and `/training` do not load. Putting `activities.json` on those routes fights the current lazy split. Quote Fit on the strip only from a tiny sidecar, or link to Lookup and leave the sentences there. |
@@ -249,7 +255,7 @@ CI builds Lookup from an empty placeholder. Links to Lookup must still render. T
 
 Each phase is shippable alone and does not require the next one.
 
-### Phase 0 — URL plumbing
+### Phase 0 — URL plumbing (done)
 
 Touch `src/lib/router.tsx` and Lookup's param effect only as far as the requirements above. Add `from`/`to` as a real filter with tests next to the existing intent tests (window bounds, intersection with `q`, invalid dates, Sunday default). Add `week.ts` with tests for the known Mondays in this doc, including 2026-09-28 (partial Chicago week, no TV Sunday yet) and 2026-10-11 (race day, a Sunday).
 
@@ -257,7 +263,7 @@ No visible links yet, except whatever is needed to verify a hand-written URL.
 
 Exit: `/activity-lookup?from=2026-09-21&to=2026-09-27` filters on a full load and on a client `Link` from `/miles`, and Back returns to Miles. Typing in the search box still updates `q` without destroying `from`/`to` until the dates chip is removed.
 
-### Phase 1 — Outbound links
+### Phase 1 — Outbound links (done)
 
 - Chicago readout → Lookup week (`sport=run`) and `/training?week=`.
 - TV tooltip → Lookup week and `/miles?year=`.
@@ -267,7 +273,7 @@ Exit: `/activity-lookup?from=2026-09-21&to=2026-09-27` filters on a full load an
 
 Exit: from the current Chicago week and from a hovered TV week, a person lands on the public sessions for that Monday–Sunday.
 
-### Phase 2 — Inbound selection
+### Phase 2 — Inbound selection (not started)
 
 - `/training?week=&sport=&horizon=` highlights the week, switches sport/horizon, and expands the range preset if needed.
 - `/miles?year=` selects the year chip.
@@ -275,13 +281,13 @@ Exit: from the current Chicago week and from a hovered TV week, a person lands o
 
 Exit: the phase 1 links open the destination already focused on the same week or year. Sharing a URL restores that focus.
 
-### Phase 3 — Lookup context chips
+### Phase 3 — Lookup context chips (not started)
 
 Chips described above, on the expand row, under the fit sentence. Lazy-load TV for the band. Omit chips the data cannot support. Do not change fit copy in `src/lib/stimulusFit.ts` unless the chip layout forces a real Fit UI change; if it does, the PR says `Context: see AGENTS.md §Fit`.
 
 Exit: opening a session in the Chicago block shows phase, TV band (when the Sunday exists), year, and any race in that week, each as a link except the race label.
 
-### Phase 4 — Strip
+### Phase 4 — Strip (not started)
 
 `ContextStrip` on `/miles` and `/training` from Chicago `meta` + current `weekStart`. Links into phase 2 URLs. No Fit text.
 
@@ -312,9 +318,9 @@ Accepted with the plan: ship the recommended defaults.
 6. **Partial week.** The URL stays Monday–Sunday. Link copy says "so far" while that Chicago week is `partial`.
 7. **External Strava.** Context chips stay inside this site. The expand row already links the activity on Strava; that link is unchanged.
 
-## Suggested first PR after this one
+## Next
 
-Phase 0 only: `week.ts`, router search handling, Lookup `from`/`to`, tests. No chart links until that PR is in, so the first visible links (phase 1) have a URL that already works on client navigation and on refresh.
+Phase 2: `/training?week=`, `/miles?year=`, and `/training/chicago?week=` select the week or year the phase 1 links already name.
 
 ## Non-goals
 
