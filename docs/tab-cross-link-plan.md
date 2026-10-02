@@ -285,7 +285,7 @@ Exit: opening a session in the Chicago block shows phase, TV band (when the Sund
 
 `ContextStrip` on `/miles` and `/training` from Chicago `meta` + current `weekStart`. Links into phase 2 URLs. No Fit text.
 
-A Fit sidecar is a follow-up only after the open question below is answered. It stays out of this phase so the strip cannot drift into a second activity feed.
+Fit sentences stay on the Lookup expand. No sidecar in this phase.
 
 ## Risks
 
@@ -300,15 +300,21 @@ A Fit sidecar is a follow-up only after the open question below is answered. It 
 - **Empty CI activities.** Filters must not throw when `activities` is `[]`.
 - **Fit lock.** A chip that displays a fit score has to use the published `fit_confidence` and the sentence in `stimulusFit.ts`. Missing number → "Unavailable".
 
-## Open questions for Spencer
+## Decisions
 
-1. **Strip copy without Fit.** Is "Taper · week of Sep 28 · 37 mi so far" enough on Miles and Training, with Fit staying on the Lookup expand? Or do you want a sidecar of the last few public fit sentences, knowing they can describe a different set of runs than the Chicago total?
-2. **Chicago → Lookup sport.** Default `sport=run`, or show every public sport that week (rides included) so the week feels complete?
-3. **TV horizon on the chip.** Medium / 12-week matches the page default. Do you want the chip to follow whatever horizon `/training` last showed, or always 12-week so the word "Moderate" means one thing?
-4. **Nearby races.** Same calendar week only, or a wider window (for example ±3 days, or the next race on the calendar)? Non-marathon rows have a distance and a date and no name. Is "10K · Nov 28" worth a chip?
-5. **Prior builds.** The Chicago scatter names Flying Pig, Indy, and so on, but those weeks are not in the client JSON. Leave them unlinked?
-6. **Partial-week wording.** For week 22, should the Lookup link say "this week so far" while `partial` is true, even though the URL stays Mon–Sun?
-7. **External Strava.** Should a session chip also open `strava.com/activities/{id}` in a new tab, or stay inside this site?
+Accepted with the plan: ship the recommended defaults.
+
+1. **Strip copy.** Phase 4 is Chicago phase and week mileage only. Fit sentences stay on the Lookup expand. No fit sidecar unless a later request asks for one.
+2. **Chicago → Lookup sport.** `sport=run`. The sport chip can still be cleared.
+3. **TV horizon on the chip.** Always medium / 12-week, and the chip says so.
+4. **Nearby races.** Same Monday–Sunday only. A race with no name is still a chip (`10K · Nov 28`).
+5. **Prior builds.** Leave the Chicago scatter unlinked. Those weeks are not in the client JSON.
+6. **Partial week.** The URL stays Monday–Sunday. Link copy says "so far" while that Chicago week is `partial`.
+7. **External Strava.** Context chips stay inside this site. The expand row already links the activity on Strava; that link is unchanged.
+
+## Suggested first PR after this one
+
+Phase 0 only: `week.ts`, router search handling, Lookup `from`/`to`, tests. No chart links until that PR is in, so the first visible links (phase 1) have a URL that already works on client navigation and on refresh.
 
 ## Non-goals
 
@@ -318,7 +324,3 @@ A Fit sidecar is a follow-up only after the open question below is answered. It 
 - Changing stimulus labels, fit sentences, or confidence thresholds.
 - Making chart totals auditable from Lookup.
 - Drive-by refactors of search, Jev, or chart geometry.
-
-## Suggested first PR after this one
-
-Phase 0 only: `week.ts`, router search handling, Lookup `from`/`to`, tests. No chart links until that PR is in, so the first visible links (phase 1) have a URL that already works on client navigation and on refresh.
