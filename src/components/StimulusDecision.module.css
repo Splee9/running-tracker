@@ -44,6 +44,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+.scoreCategory {
+  margin-top: 4px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
 .scoreStatus {
   margin-top: 4px;
   font-size: 11px;

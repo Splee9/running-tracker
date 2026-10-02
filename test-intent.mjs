@@ -1076,7 +1076,7 @@ check(
     reviewDecision.status.includes("low_confidence") &&
     reviewDecision.primaryConfidence === 0.91 &&
     reviewDecision.bars[0].marked === true &&
-    reviewDecision.listLabel === "easy · review",
+    reviewDecision.listLabel === "easy 91% · review",
   reviewDecision.status,
 );
 const underBar = stimulusDecision({
@@ -1118,6 +1118,16 @@ check(
     probabilityOnly.status === "Unavailable" &&
     probabilityOnly.bars.length === 0,
   probabilityOnly.status,
+);
+const certain = stimulusDecision({
+  primary_stimulus: "quality",
+  stimulus_cluster: "quality_intervals",
+  primary_confidence: 1,
+});
+check(
+  "a 100% classification is attributed to the category label",
+  certain.scoreLabel === "100%" && certain.listLabel === "quality 100%" && certain.escalate === false,
+  certain.listLabel ?? "",
 );
 const unlabeled = stimulusDecision({});
 check(

@@ -133,9 +133,9 @@ Open a row to see the stimulus classification already stored on that public
 activity: `primary_stimulus`, `modifiers`, `stimulus_cluster`, and classification
 confidence. That number is how sure the classifier is of the label in the closed
 vocab. It is not a judgment of whether the session was the right work that day.
-The expand row leads with that score, then the label and a short why on one
-line. It does not relabel the session. When the number is missing it says
-Unavailable.
+The expand row leads with that score on the category label, then a short why
+on one line. The row chip carries the same pair, such as quality 100%. It does
+not relabel the session. When the number is missing it says Unavailable.
 
 Review the label when `low_confidence` is set, or when `primary_confidence` is
 below 0.55. A later career review can use a stricter bar. This panel uses 0.55.

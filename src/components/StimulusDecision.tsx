@@ -14,8 +14,8 @@ export function StimulusDecisionPanel({
 }) {
   const view = stimulusDecision(activity);
   const pct = view.primaryConfidence == null ? null : Math.round(view.primaryConfidence * 100);
+  const category = view.primary ? view.primaryText : view.cluster ? view.clusterText : null;
   const facts = [
-    view.primary ? ["Primary", view.primaryText] : null,
     view.cluster ? ["Cluster", view.clusterText] : null,
     view.modifiers.length > 0 ? ["Modifiers", view.modifierText] : null,
   ].filter((fact): fact is [string, string] => fact !== null);
@@ -40,6 +40,7 @@ export function StimulusDecisionPanel({
       <div className={styles.layout}>
         <div className={`${styles.score} ${styles[view.tone]}`}>
           <p className={styles.scoreValue}>{view.scoreLabel}</p>
+          {category && <p className={styles.scoreCategory}>{category}</p>}
           {view.primaryConfidence != null && pct != null && (
             <div
               className={styles.track}
@@ -47,7 +48,11 @@ export function StimulusDecisionPanel({
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={pct}
-              aria-label={`Classification confidence ${view.scoreLabel}`}
+              aria-label={
+                category
+                  ? `${view.scoreLabel} classification of ${category}`
+                  : `Classification confidence ${view.scoreLabel}`
+              }
             >
               <span className={styles.fill} style={{ width: `${pct}%` }} />
               <span className={styles.reviewMark} style={{ left: `${view.reviewBelow * 100}%` }} />
