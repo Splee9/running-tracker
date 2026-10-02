@@ -1143,8 +1143,48 @@ check(
     !("activity_side_load" in mappedBlank) &&
     !("activity_side_load_confidence" in mappedBlank) &&
     !("session_variability_impact" in mappedBlank) &&
-    !("session_variability_confidence" in mappedBlank),
+    !("session_variability_confidence" in mappedBlank) &&
+    !("fit_basis" in mappedBlank) &&
+    !("intent_basis" in mappedBlank),
   JSON.stringify(mappedBlank),
+);
+const mappedBasis = toActivity({
+  id: 11,
+  name: "tempo",
+  sport_type: "Run",
+  start_date_local: "2026-09-23T08:00:00Z",
+  primary_confidence: 0.91,
+  fit_basis: "plan_backed",
+  intent_basis: "readiness_only",
+  layer_b: { fit_basis: "thin", intent_basis: "thin", fitBasis: "thin" },
+});
+check(
+  "toActivity copies fit_basis and intent_basis from the root and does not invent them from confidence",
+  mappedBasis.fit_basis === "plan_backed" &&
+    mappedBasis.intent_basis === "readiness_only" &&
+    mappedBasis.primary_confidence === 0.91 &&
+    !("layer_b" in mappedBasis) &&
+    !("fitBasis" in mappedBasis),
+  JSON.stringify(mappedBasis),
+);
+const mappedBasisNested = toActivity({
+  id: 12,
+  name: "tempo",
+  sport_type: "Run",
+  start_date_local: "2026-09-22T08:00:00Z",
+  layer_b: {
+    stimulus_fit: { choice: "appropriate", fit_basis: "readiness_only" },
+    intentBasis: "plan_backed",
+  },
+  fitBasis: "  thin  ",
+});
+check(
+  "toActivity accepts camelCase basis aliases and a basis nested on the fit judgment",
+  mappedBasisNested.fit_basis === "thin" &&
+    mappedBasisNested.intent_basis === "plan_backed" &&
+    mappedBasisNested.stimulus_fit === "appropriate" &&
+    !("fit_basis" in toActivity({ id: 13, name: "easy", sport_type: "Run", start_date_local: "2026-09-21T00:00:00Z", fit_basis: "  ", intent_basis: "" })),
+  JSON.stringify(mappedBasisNested),
 );
 const mappedPieceConf = toActivity({
   id: 10,
@@ -1417,8 +1457,93 @@ check(
     olderActivity.fitConfidence === null &&
     olderActivity.scoreLabel === "Unavailable" &&
     olderActivity.comparison === null &&
-    olderActivity.stimulusFit === null,
+    olderActivity.stimulusFit === null &&
+    olderActivity.basis === null,
   JSON.stringify(olderActivity),
+);
+const withPlan = stimulusFit({
+  ...layerBActivity,
+  fit_basis: "plan_backed",
+  intent_basis: "plan_backed",
+});
+check(
+  "a plan-backed fit wears one With plan chip and does not repeat a matching intent",
+  withPlan.basis?.label === "With plan" &&
+    withPlan.basis?.hint === "A calendar or week plan was present." &&
+    withPlan.basis?.notes.length === 0 &&
+    withPlan.comparison === layerBProse &&
+    withPlan.published === true,
+  JSON.stringify(withPlan.basis),
+);
+const readinessOnly = stimulusFit({
+  stimulus_fit: "appropriate",
+  fit_confidence: 0.5,
+  fit_basis: "readiness_only",
+  primary_confidence: 0.99,
+});
+check(
+  "readiness only says there was no plan, and that chip is not classification confidence",
+  readinessOnly.basis?.label === "Readiness only" &&
+    readinessOnly.basis?.hint === "No plan. Fit comes from readiness and the delivered session." &&
+    readinessOnly.fitConfidence === 0.5 &&
+    readinessOnly.basis?.notes.length === 0,
+  JSON.stringify(readinessOnly.basis),
+);
+const thinBasis = stimulusFit({
+  macro_readiness: "baseline",
+  stimulus_fit: "appropriate",
+  fit_basis: "thin",
+});
+check(
+  "a thin basis stays a quiet chip and does not change the fit sentence",
+  thinBasis.basis?.label === "Little to go on" &&
+    thinBasis.basis?.hint.includes("thin read") &&
+    thinBasis.comparison === "The body was set for a normal day; so it was on target." &&
+    !thinBasis.comparison.toLowerCase().includes("thin") &&
+    !thinBasis.comparison.toLowerCase().includes("basis"),
+  thinBasis.comparison,
+);
+const intentOnly = stimulusFit({
+  macro_readiness: "chill",
+  stimulus_fit: "undercooked",
+  intent_basis: "PLAN_BACKED",
+});
+check(
+  "intent_basis fills the chip when fit_basis is absent",
+  intentOnly.basis?.label === "With plan" &&
+    intentOnly.basis?.hint === "A calendar or week plan was present." &&
+    intentOnly.basis?.notes.length === 0 &&
+    intentOnly.verdictLabel === "Undercooked",
+  JSON.stringify(intentOnly.basis),
+);
+const differ = stimulusFit({
+  stimulus_fit: "overcooked",
+  fit_basis: "readiness_only",
+  intent_basis: "plan_backed",
+});
+check(
+  "a different intent basis is a note on the fit chip, not a second verdict",
+  differ.basis?.label === "Readiness only" &&
+    differ.basis?.notes.length === 1 &&
+    differ.basis?.notes[0] === "The intent had a calendar or week plan." &&
+    differ.verdictLabel === "Overcooked",
+  JSON.stringify(differ.basis),
+);
+const noBasis = stimulusFit({ stimulus_fit: "appropriate", fit_confidence: 0.4, primary_confidence: 0.2 });
+check(
+  "a fit without a basis does not invent a chip",
+  noBasis.published === true && noBasis.basis === null && noBasis.verdictLabel === "On target",
+  JSON.stringify(noBasis.basis),
+);
+const basisOnly = stimulusFit({ fit_basis: "plan_backed", intent_basis: "thin", primary_confidence: 0.9 });
+check(
+  "a basis alone does not invent a fit sentence or borrow classification confidence",
+  basisOnly.published === false &&
+    basisOnly.comparison === null &&
+    basisOnly.fitConfidence === null &&
+    basisOnly.basis?.label === "With plan" &&
+    basisOnly.basis?.notes[0] === "The intent had little to go on.",
+  JSON.stringify(basisOnly),
 );
 
 console.log("\neval misses:\n");

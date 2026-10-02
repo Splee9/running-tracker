@@ -105,13 +105,47 @@
   overflow-wrap: anywhere;
 }
 
+/* Chip and verdict sit under the sentence. The sentence still leads. */
+.fitRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.fitRow > .termWrap {
+  display: inline-flex;
+}
+
+/* How the fit was judged. Quieter than the verdict pill. */
+.basis {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  cursor: help;
+}
+
+.basis:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
 /* Fit confidence: a pill tinted by the verdict, with its meter inside. */
 .fitScore {
   --pill: var(--muted);
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin-top: 10px;
+  margin-top: 0;
   padding: 5px 14px 5px 12px;
   color: var(--pill);
   background: color-mix(in srgb, var(--pill) 11%, transparent);

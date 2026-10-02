@@ -171,11 +171,19 @@ If a label arrived without `fit_confidence`, the fit score says Unavailable and
 the comparison still shows the labels that were published. There is no 0.55
 review mark on this score.
 
+When the export includes `fit_basis` — or `intent_basis` when `fit_basis` is
+absent — a quiet chip sits under the fit sentence. `plan_backed` reads "With
+plan" (a calendar or week plan was present). `readiness_only` reads "Readiness
+only" (no plan; the fit comes from readiness and the delivered session).
+`thin` reads "Little to go on". A differing `intent_basis` is a second line on
+that chip's tooltip. The page does not invent a basis, and a basis alone does
+not grow a fit sentence.
+
 The mapper copies `stimulus_fit` (or `fit`), `fit_confidence`, `macro_readiness`,
-`macro_readiness_gate`, `activity_side_load`, and `session_variability_impact`
-when the vault sends them, including the same keys nested on `layer_b` or on a
-judgment object. CamelCase aliases are accepted. Values outside 0–1 are left
-off `fit_confidence` rather than rescaled.
+`macro_readiness_gate`, `activity_side_load`, `session_variability_impact`,
+`fit_basis`, and `intent_basis` when the vault sends them, including the same
+keys nested on `layer_b` or on a judgment object. CamelCase aliases are
+accepted. Values outside 0–1 are left off `fit_confidence` rather than rescaled.
 
 `src/training-weekly-hours.json` is derived from `src/training-variability.json`
 (the export carries only rolling stats). Regenerate it whenever the TV file

@@ -264,6 +264,12 @@ export function toActivity(a) {
   if (sideLoad !== undefined) base.activity_side_load = sideLoad;
   const variability = firstToken(layer, ["session_variability_impact", "sessionVariabilityImpact"]);
   if (variability !== undefined) base.session_variability_impact = variability;
+  // How the fit was judged. Not invented when the export omits it.
+  // `intent_basis` is the planned intent's basis when the vault sends it separately.
+  const fitBasis = firstToken(layer, ["fit_basis", "fitBasis"]);
+  if (fitBasis !== undefined) base.fit_basis = fitBasis;
+  const intentBasis = firstToken(layer, ["intent_basis", "intentBasis"]);
+  if (intentBasis !== undefined) base.intent_basis = intentBasis;
   // Piece confidences for the fit sentence. A confidence nested on that piece's
   // judgment object counts. Top-level `confidence` stays the Layer A alias.
   const readinessConfidence =
