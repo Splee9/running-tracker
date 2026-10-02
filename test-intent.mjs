@@ -1050,18 +1050,17 @@ const qualityDecision = stimulusDecision({
 });
 check(
   "a labeled session explains the published cluster and modifiers",
-  qualityDecision.why.includes("interval quality") &&
-    qualityDecision.why.includes("intervals, marathon pace") &&
-    qualityDecision.why.includes("7 hard laps") &&
-    qualityDecision.why.includes("3×800m") &&
-    !qualityDecision.why.toLowerCase().includes("tempo") &&
+  qualityDecision.modifierText.includes("intervals") &&
+    qualityDecision.modifierText.includes("marathon pace") &&
+    qualityDecision.reasons.includes("7 hard laps") &&
+    qualityDecision.reasons.includes("3×800m") &&
+    !qualityDecision.reasons.join(" ").toLowerCase().includes("tempo") &&
     qualityDecision.tone === "unavailable" &&
-    qualityDecision.status.includes("Classification confidence unavailable") &&
-    qualityDecision.scope.includes("closed vocab") &&
-    qualityDecision.scope.includes("right work that day") &&
+    qualityDecision.scoreLabel === "Unavailable" &&
+    qualityDecision.scope === "Classifier confidence on this label — not fit for the day" &&
     qualityDecision.escalate === false &&
     qualityDecision.listLabel === "quality",
-  qualityDecision.status,
+  qualityDecision.reasons.join(" | "),
 );
 const reviewDecision = stimulusDecision({
   primary_stimulus: "easy",
@@ -1073,7 +1072,7 @@ check(
   "low_confidence escalates even when classification confidence is high, and a mismatched cluster is named",
   reviewDecision.escalate === true &&
     reviewDecision.tone === "escalate" &&
-    reviewDecision.why.includes("does not sit under") &&
+    reviewDecision.reasons.some((line) => line.includes("does not match")) &&
     reviewDecision.status.includes("low_confidence") &&
     reviewDecision.primaryConfidence === 0.91 &&
     reviewDecision.bars[0].marked === true &&
@@ -1087,7 +1086,7 @@ const underBar = stimulusDecision({
 });
 check(
   "primary_confidence under 0.55 escalates without a low_confidence flag",
-  underBar.escalate === true && underBar.primaryConfidence === 0.4 && underBar.status.includes("40%") && underBar.status.includes("0.55"),
+  underBar.escalate === true && underBar.scoreLabel === "40%" && underBar.status === "Review · under 0.55",
   underBar.status,
 );
 const clearDecision = stimulusDecision({
@@ -1100,9 +1099,10 @@ check(
   "0.55 is not under the classification bar, and probabilities stay off that flag",
   clearDecision.escalate === false &&
     clearDecision.tone === "clear" &&
-    clearDecision.bars.map((bar) => bar.label).join(",") === "Classification confidence,race,easy" &&
-    clearDecision.bars[0].marked === true &&
-    clearDecision.bars[1].marked !== true,
+    clearDecision.scoreLabel === "55%" &&
+    clearDecision.status === "Above 0.55" &&
+    clearDecision.bars.length === 1 &&
+    clearDecision.bars[0].marked === true,
   JSON.stringify(clearDecision.bars),
 );
 const probabilityOnly = stimulusDecision({
@@ -1114,8 +1114,9 @@ check(
   "a probability map without primary_confidence does not flag the label",
   probabilityOnly.escalate === false &&
     probabilityOnly.primaryConfidence === null &&
-    probabilityOnly.status.includes("Classification confidence unavailable") &&
-    probabilityOnly.bars.length === 2,
+    probabilityOnly.scoreLabel === "Unavailable" &&
+    probabilityOnly.status === "Unavailable" &&
+    probabilityOnly.bars.length === 0,
   probabilityOnly.status,
 );
 const unlabeled = stimulusDecision({});
@@ -1123,10 +1124,10 @@ check(
   "a session with no stimulus fields does not grow a label",
   unlabeled.primary === null &&
     unlabeled.cluster === null &&
-    unlabeled.why.startsWith("No stimulus label") &&
+    unlabeled.reasons[0] === "No stimulus label published" &&
     unlabeled.listLabel === null &&
     unlabeled.bars.length === 0,
-  unlabeled.why,
+  unlabeled.reasons.join(" | "),
 );
 
 console.log("\neval misses:\n");

@@ -132,8 +132,9 @@ Open a row to see the stimulus classification already stored on that public
 activity: `primary_stimulus`, `modifiers`, `stimulus_cluster`, and classification
 confidence. That number is how sure the classifier is of the label in the closed
 vocab. It is not a judgment of whether the session was the right work that day.
-The panel is advise-only. It repeats the published label and does not relabel
-the session.
+The panel leads with that score, then a short why. It repeats the published
+label and does not relabel the session. When the number is missing it says
+Unavailable.
 
 Review the label when `low_confidence` is set, or when `primary_confidence` is
 below 0.55. A later career review can use a stricter bar. This panel uses 0.55.
@@ -143,7 +144,7 @@ The live export includes the stimulus label, cluster, modifiers, and
 keeps it when the vault sends it (`confidence` and `stimulus_confidence` are
 older aliases), and keeps an optional `probabilities` map. Until the number is
 in the export, the panel says "Classification confidence unavailable" and still
-shows the cluster, the modifiers, and the `low_confidence` flag. `runner_up` /
+shows the cluster, the modifiers, and the `low_confidence` flag in amber. `runner_up` /
 `secondary_stimulus` are shown only when present.
 
 `src/training-weekly-hours.json` is derived from `src/training-variability.json`
