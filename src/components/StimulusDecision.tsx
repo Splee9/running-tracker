@@ -91,7 +91,7 @@ export function StimulusDecisionPanel({
           </span>
         </p>
       )}
-      <div className={styles.layout}>
+      <div className={`${styles.layout} ${styles.classify}`}>
         <div className={`${styles.score} ${styles[view.tone]}`}>
           <p className={styles.scoreValue}>{view.scoreLabel}</p>
           {view.primaryConfidence != null && pct != null && (
