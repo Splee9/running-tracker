@@ -6,13 +6,13 @@
     "blockWeeks": 23,
     "goal": "sub-2:42:00",
     "goalPace": "6:11/mi",
-    "daysToRace": 9,
+    "daysToRace": 8,
     "currentPhase": 3,
     "currentPhaseName": "Taper",
     "currentWeek": 22,
-    "blockMilesToDate": 1213.0,
+    "blockMilesToDate": 1232.7,
     "peakMpw": 88,
-    "lastUpdated": "2026-10-02"
+    "lastUpdated": "2026-10-03"
   },
   "phases": [
     {
@@ -478,24 +478,24 @@
       "weekStart": "2026-09-28",
       "phase": 3,
       "phaseShort": "Taper",
-      "miles": 37.0,
-      "runs": 4,
-      "longest": 10.3,
-      "easyEF": 1.535,
+      "miles": 56.7,
+      "runs": 6,
+      "longest": 12.3,
+      "easyEF": 1.528,
       "types": {
-        "quality": 10.3,
+        "quality": 22.5,
         "long": 0.0,
         "medlong": 0.0,
-        "easy": 26.8,
+        "easy": 34.2,
         "commute": 0.0,
         "other": 0.0
       },
       "partial": true,
-      "rolling4": 36.7
+      "rolling4": 41.6
     }
   ],
   "crossBuild": {
-    "generated": "2026-10-02",
+    "generated": "2026-10-03",
     "source": "apps/health/data/builds.json",
     "window_weeks": 4,
     "completed": [
@@ -550,7 +550,7 @@
     ],
     "head_to_head": {
       "weeks_out": 1,
-      "note": "trailing 4 completed weeks at ~1 weeks out from race day (as of 2026-10-02)",
+      "note": "trailing 4 completed weeks at ~1 weeks out from race day (as of 2026-10-03)",
       "current": {
         "build": "Chicago 2026",
         "avg": 43.4,
@@ -602,7 +602,7 @@
       "Uneven": "55–<80",
       "Erratic": "≥80"
     },
-    "generated": "2026-10-02",
+    "generated": "2026-10-03",
     "completed": [
       {
         "build": "Flying Pig 2022",
