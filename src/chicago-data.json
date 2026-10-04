@@ -6,13 +6,13 @@
     "blockWeeks": 23,
     "goal": "sub-2:42:00",
     "goalPace": "6:11/mi",
-    "daysToRace": 8,
+    "daysToRace": 7,
     "currentPhase": 3,
     "currentPhaseName": "Taper",
     "currentWeek": 22,
     "blockMilesToDate": 1232.7,
     "peakMpw": 88,
-    "lastUpdated": "2026-10-03"
+    "lastUpdated": "2026-10-04"
   },
   "phases": [
     {
@@ -490,12 +490,12 @@
         "commute": 0.0,
         "other": 0.0
       },
-      "partial": true,
+      "partial": false,
       "rolling4": 41.6
     }
   ],
   "crossBuild": {
-    "generated": "2026-10-03",
+    "generated": "2026-10-04",
     "source": "apps/health/data/builds.json",
     "window_weeks": 4,
     "completed": [
@@ -550,11 +550,11 @@
     ],
     "head_to_head": {
       "weeks_out": 1,
-      "note": "trailing 4 completed weeks at ~1 weeks out from race day (as of 2026-10-03)",
+      "note": "trailing 4 completed weeks at ~1 weeks out from race day (as of 2026-10-04)",
       "current": {
         "build": "Chicago 2026",
-        "avg": 43.4,
-        "ef": 1.573
+        "avg": 41.6,
+        "ef": 1.564
       },
       "benchmark": {
         "build": "Indianapolis 2025",
@@ -564,8 +564,8 @@
       },
       "chi": {
         "build": "Chicago 2026",
-        "avg": 43.4,
-        "ef": 1.573
+        "avg": 41.6,
+        "ef": 1.564
       },
       "indy": {
         "build": "Indianapolis 2025",
@@ -602,7 +602,7 @@
       "Uneven": "55–<80",
       "Erratic": "≥80"
     },
-    "generated": "2026-10-03",
+    "generated": "2026-10-04",
     "completed": [
       {
         "build": "Flying Pig 2022",
@@ -655,13 +655,13 @@
     ],
     "head_to_head": {
       "weeks_out": 1,
-      "note": "8-week run Training Variability ending the Sunday before race week (Chicago '26 still mid-window: 7 of 8 weeks through 2026-09-27).",
+      "note": "8-week run Training Variability ending the Sunday before race week (full window).",
       "chi": {
         "build": "Chicago 2026",
-        "tv": 36.96,
-        "mean_h_wk": 6.66,
-        "band": "Moderate",
-        "ef": 1.573
+        "tv": 34.02,
+        "mean_h_wk": 6.72,
+        "band": "Steady",
+        "ef": 1.564
       },
       "indy": {
         "build": "Indianapolis 2025",
