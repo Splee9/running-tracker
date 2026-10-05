@@ -2230,7 +2230,7 @@ const sources = {
 const strip = describeChicagoStrip(chicago.meta, chicago.phases, chicago.weeks);
 check(
   "the strip is the current Chicago phase and week mileage",
-  strip?.sentence === "Taper · week 22 · 37 mi so far · Chicago Oct 11" && strip?.monday === "2026-09-28" && strip?.partial === true,
+  strip?.sentence === "Taper · week 22 · 56.7 mi · Chicago Oct 11" && strip?.monday === "2026-09-28" && strip?.partial === false,
   strip?.sentence,
 );
 
