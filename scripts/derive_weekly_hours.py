@@ -14,6 +14,11 @@ count exactly. The rolling windows reach back 51 weeks before the first
 published week, so those lookback weeks are fitted too but not emitted.
 
 Usage: pip install numpy scipy && python3 scripts/derive_weekly_hours.py
+
+Deploys do not run this. Vercel downloads data/public/training-weekly-hours.json
+from spencer-brain (scripts/fetch-training.mjs), where hours come straight from
+the training database. Use this script only to rebuild a local fallback from
+src/training-variability.json.
 """
 
 import datetime as dt
