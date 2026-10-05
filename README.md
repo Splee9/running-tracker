@@ -20,8 +20,12 @@ speed, and a city-level place name). Private activities are dropped at export.
 There is no GPS, route, or map data anywhere on the site.
 
 The aggregate numbers live in `src/data.json`, `src/chicago-data.json`, and the
-`src/training-*.json` files, all regenerated from a private training pipeline
-(the source data never ships here — only the derived JSON does).
+`src/training-*.json` files. Every deploy downloads the current copies from the
+private `Splee9/spencer-brain` vault (`data/public/miles-tracker.json`,
+`data/public/chicago-tracker.json`, `data/public/training-variability.json`, and
+`data/public/training-weekly-hours.json`). The committed copies stay in the repo
+so a build without `BRAIN_GITHUB_TOKEN` still works. The source log never ships
+here — only these derived JSON files do.
 
 ## Develop
 
@@ -29,6 +33,8 @@ The aggregate numbers live in `src/data.json`, `src/chicago-data.json`, and the
 npm install
 npm run fetch:activities  # build src/activities.json (see below)
 npm run fetch:chicago     # refresh src/chicago-data.json from spencer-brain
+npm run fetch:miles       # refresh src/data.json from spencer-brain
+npm run fetch:training    # refresh src/training-*.json from spencer-brain
 npm run dev               # local dev server with hot reload
 npm run build             # type-check, production bundle to dist/, and the Jev function
 npm run preview           # serve the production build locally
@@ -49,12 +55,14 @@ on every pull request and on pushes to `main`, using the empty placeholder.
 ```
 src/
   App.tsx                 route switch + per-page titles
-  data.json               aggregate stats (generated; do not hand-edit)
+  data.json               aggregate stats for / and /miles (vault miles-tracker.json
+                          at deploy; committed fallback; do not hand-edit)
   chicago-data.json       Chicago 2026 build: phases, weekly load, prior builds
-                          (generated)
-  training-variability.json  weekly training-variability series (generated)
-  training-weekly-hours.json weekly hours derived from the TV series
-                          (scripts/derive_weekly_hours.py)
+                          (vault at deploy; committed fallback)
+  training-variability.json  weekly training-variability series (vault at deploy;
+                          committed fallback)
+  training-weekly-hours.json weekly hours (vault at deploy; committed fallback).
+                          scripts/derive_weekly_hours.py can rebuild it locally
   activities.json         public activity list for /activity-lookup (built from
                           spencer-brain at deploy time; gitignored)
   activity-grades.json    offline Jev "standout" Score per activity (committed;
@@ -212,9 +220,14 @@ The mapper copies `stimulus_fit` (or `fit`), `fit_confidence`, `macro_readiness`
 keys nested on `layer_b` or on a judgment object. CamelCase aliases are
 accepted. Values outside 0–1 are left off `fit_confidence` rather than rescaled.
 
-`src/training-weekly-hours.json` is derived from `src/training-variability.json`
-(the export carries only rolling stats). Regenerate it whenever the TV file
-changes:
+`src/training-variability.json` and `src/training-weekly-hours.json` stay
+committed, but every deploy overwrites them from spencer-brain so `/training`
+matches the box. Weekly hours in `data/public/training-weekly-hours.json` come
+straight from the training database (the file's `derivation` string says so).
+
+`scripts/derive_weekly_hours.py` can still rebuild the local hours file from
+`src/training-variability.json` when you only have the variability export (that
+older file carries rolling stats, not the weekly totals). Deploys do not run it:
 
 ```bash
 pip install numpy scipy
@@ -254,16 +267,19 @@ everything and waits out 429s):
 STRAVA_ACCESS_TOKEN=... node scripts/export-activities.mjs [--full]
 ```
 
-`src/chicago-data.json` stays committed, but every deploy overwrites it with
-`data/public/chicago-tracker.json` from `Splee9/spencer-brain`, which the box
-republishes each morning before it calls the deploy hook:
+`src/chicago-data.json`, `src/data.json`, and the two `src/training-*.json`
+files stay committed, but every deploy overwrites them from `Splee9/spencer-brain`.
+The box republishes those snapshots each morning before it calls the deploy hook:
 
 ```bash
 BRAIN_GITHUB_TOKEN=... node scripts/fetch-chicago.mjs   # BRAIN_CHICAGO_PATH overrides the path
+BRAIN_GITHUB_TOKEN=... node scripts/fetch-miles.mjs     # BRAIN_MILES_PATH overrides the path
+BRAIN_GITHUB_TOKEN=... node scripts/fetch-training.mjs  # BRAIN_TV_PATH and BRAIN_WEEKLY_HOURS_PATH
 ```
 
-Without `BRAIN_GITHUB_TOKEN` it keeps the committed file. With a token, a missing
-or malformed snapshot fails the build, so the last good deploy stays live.
+Without `BRAIN_GITHUB_TOKEN` each script keeps the committed file. With a token,
+a missing or malformed snapshot fails the build, so the last good deploy stays
+live. `fetch-training` checks both files before it writes either one.
 
 Routing is a ~50-line `history.pushState` wrapper (`src/lib/router.tsx`), not a
 library. `vercel.json` turns on clean URLs and rewrites unknown paths to
@@ -281,9 +297,9 @@ route, add it to `PAGES` and run `npm run og:images` for its card.
 ## Deploy
 
 Vercel builds from source on every push to `main`, and opens a preview per pull
-request (see `vercel.json`): `node scripts/fetch-activities.mjs && node scripts/fetch-chicago.mjs && npm run build`,
-publishing `dist/`. No manual upload step. A deploy hook picks up grokbot's
-activity and Chicago updates. `npm run dev` does not run the Jev function; lookup stays on
+request (see `vercel.json`): `node scripts/fetch-activities.mjs && node scripts/fetch-chicago.mjs && node scripts/fetch-miles.mjs && node scripts/fetch-training.mjs && npm run build`,
+publishing `dist/`. No manual upload step. A deploy hook picks up the vault's
+activity, Chicago, Miles, and training updates. `npm run dev` does not run the Jev function; lookup stays on
 the local shortlist (the request 404s). `npx vercel dev` serves `/api/jev-rerank`
 locally.
 
@@ -299,6 +315,9 @@ available at build time, and the Jev key at runtime. The default exposure
 | `BRAIN_GITHUB_TOKEN` | Fine-grained GitHub token, Contents: read on `Splee9/spencer-brain`. |
 | `BRAIN_ACTIVITIES_PATH` | Optional; defaults to `data/public/strava-activities.json`.      |
 | `BRAIN_CHICAGO_PATH` | Optional; defaults to `data/public/chicago-tracker.json`.            |
+| `BRAIN_MILES_PATH` | Optional; defaults to `data/public/miles-tracker.json`.                |
+| `BRAIN_TV_PATH` | Optional; defaults to `data/public/training-variability.json`.         |
+| `BRAIN_WEEKLY_HOURS_PATH` | Optional; defaults to `data/public/training-weekly-hours.json`. |
 | `OPENROUTER_API_KEY` | Jev via OpenRouter's Decisions API (`typesafe/jev-1.13-20260917`).   |
 | `TYPESAFE_API_KEY`   | Alternative: Jev direct from TypeSafe (`jev-1.13.0`). Used only if no OpenRouter key. |
 | `JEV_MODEL`          | Optional model override.                                             |
