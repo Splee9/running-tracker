@@ -73,3 +73,15 @@ export function lookupRaceHref(date: string, distanceQuery: string, raceKey: str
   params.set("race", raceKey);
   return `/activity-lookup?${params.toString()}`;
 }
+
+/** Runs in one calendar month on Lookup. `ym` is `YYYY-MM`. */
+export function lookupMonthHref(ym: string): string | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(ym);
+  if (!match) return null;
+  const last = new Date(Date.UTC(+match[1], +match[2], 0)).getUTCDate();
+  const params = new URLSearchParams();
+  params.set("from", `${ym}-01`);
+  params.set("to", `${ym}-${String(last).padStart(2, "0")}`);
+  params.set("sport", "run");
+  return `/activity-lookup?${params.toString()}`;
+}

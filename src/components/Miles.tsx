@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { Hero } from "./Hero";
 import { RaceLog } from "./RaceLog";
-import { CumulativeJourney } from "./CumulativeJourney";
-import { MarathonTimes } from "./MarathonTimes";
-import { Comparisons } from "./Comparisons";
+import { Timeline } from "./Timeline";
+import { MilestoneLedger } from "./MilestoneLedger";
 import { Colophon } from "./Colophon";
 import { Footer } from "./Footer";
 import { data } from "../lib/data";
@@ -41,9 +40,8 @@ export function Miles() {
     <>
       <Hero selected={selected} onChoose={chooseYear} />
       <RaceLog selected={selected} raceFocus={raceFocus} onFocusRace={focusRace} />
-      <CumulativeJourney raceFocus={raceFocus} onFocusRace={focusRace} />
-      <MarathonTimes raceFocus={raceFocus} onFocusRace={focusRace} />
-      <Comparisons />
+      <Timeline selected={selected} onChoose={chooseYear} raceFocus={raceFocus} onFocusRace={focusRace} />
+      <MilestoneLedger selected={selected} />
       <Colophon />
       <Footer />
     </>

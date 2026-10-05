@@ -69,41 +69,18 @@ export function headlineFor(miles: number): string {
   return `That's **${pct.toFixed(0)}%** of the way around the planet.`;
 }
 
-export interface Card {
-  big: string;
-  desc: string;
-}
-
-/** Three stat cards: marathons, a round-trip journey, and a slice of the globe. */
-export function cardsFor(miles: number): Card[] {
-  const marathons = miles / 26.2;
-  const earthPct = (miles / GLOBE[0].miles) * 100;
-
-  let trip = JOURNEYS[0];
-  let bestErr = Infinity;
-  for (const j of JOURNEYS) {
-    const back = miles / (j.miles * 2);
-    if (back >= 0.5 && back <= 6) {
-      const err = Math.abs(back - Math.round(back));
-      if (err < bestErr) {
-        bestErr = err;
-        trip = j;
-      }
-    }
-  }
-  const roundTrips = miles / (trip.miles * 2);
-
-  return [
-    { big: fmtInt(marathons), desc: "marathons, back to back" },
-    {
-      big: roundTrips >= 1 ? roundTrips.toFixed(1) + "×" : (miles / trip.miles).toFixed(1) + "×",
-      desc: roundTrips >= 1 ? `${trip.from} to ${stripParen(trip.to)} and back` : `the length of ${trip.short}`,
-    },
-    {
-      big: earthPct >= 100 ? (miles / GLOBE[0].miles).toFixed(2) + "×" : earthPct.toFixed(0) + "%",
-      desc: earthPct >= 100 ? "around the Earth" : "of the way around the Earth",
-    },
-  ];
-}
-
-const fmtInt = (n: number) => Math.round(n).toLocaleString();
+/** Distances the log is measured against, shortest first. */
+export const MILESTONES: { miles: number; label: string }[] = [
+  { miles: 790, label: "Chicago to New York" },
+  { miles: 874, label: "the length of Britain" },
+  { miles: 2190, label: "the Appalachian Trail" },
+  { miles: 2650, label: "the Pacific Crest Trail" },
+  { miles: 2760, label: "Chicago to Miami and back" },
+  { miles: 4030, label: "Chicago to Los Angeles and back" },
+  { miles: 6786, label: "the Moon's circumference" },
+  { miles: 12450, label: "halfway around the Earth" },
+  { miles: 13171, label: "every branch of the Great Wall of China" },
+  { miles: 16601, label: "two-thirds of the way around the Earth" },
+  { miles: 18676, label: "three-quarters of the way around the Earth" },
+  { miles: 24901, label: "all the way around the Earth" },
+];
