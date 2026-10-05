@@ -81,7 +81,7 @@ export function RaceSummary({ race }: { race: LoggedRace }) {
   );
 }
 
-/** The race list under the year chart. The name opens the session. */
+/** Race cards under the hero. The name opens the session. */
 export function RaceList({
   races,
   pinnedKey,
@@ -90,9 +90,10 @@ export function RaceList({
   onRelate,
 }: {
   races: readonly LoggedRace[];
-  /** Expanded row. Chart hovers leave this null so the list does not grow. */
+  /** Expanded card. Chart hovers leave this null so the list does not grow. */
   pinnedKey: string | null;
   linkedKey: string | null;
+  /** Toggles a card open or closed. */
   onPin: (key: string) => void;
   onRelate: (key: string) => void;
 }) {
@@ -102,22 +103,33 @@ export function RaceList({
       {races.map((race) => {
         const key = raceKey(race);
         const pinned = pinnedKey === key;
+        const color = RACE_DISTANCE_COLOR[race.distance];
         return (
-          <li key={key} className={`${styles.item} ${pinned || linkedKey === key ? styles.itemOn : ""}`}>
-            <div className={styles.itemLine}>
-              <span className={styles.dot} style={{ background: RACE_DISTANCE_COLOR[race.distance] }} />
-              <RaceSessionLink race={race} className={styles.name} />
-              {race.pr && <span className={styles.pr}>PR</span>}
-              <span className={styles.when}>{formatDate(race.date)}</span>
+          <li
+            key={key}
+            className={`${styles.card} ${pinned || linkedKey === key ? styles.cardOn : ""} ${pinned ? styles.cardOpen : ""}`}
+            style={{ "--race-color": color } as CSSProperties}
+          >
+            <div className={styles.cardMain}>
+              <div className={styles.cardTitle}>
+                <span className={styles.dot} style={{ background: color }} />
+                <RaceSessionLink race={race} className={styles.name} />
+                {race.pr && <span className={styles.pr}>PR</span>}
+              </div>
               {race.seconds != null && <span className={styles.time}>{formatTime(race.seconds)}</span>}
             </div>
-            {pinned ? (
-              <RaceConnections race={race} onRelate={onRelate} />
-            ) : (
-              <button type="button" className={styles.related} onClick={() => onPin(key)}>
-                Related races
+            <div className={styles.cardFoot}>
+              <span className={styles.when}>{formatDate(race.date)}</span>
+              <button
+                type="button"
+                className={`${styles.pill} ${pinned ? styles.pillOn : ""}`}
+                aria-expanded={pinned}
+                onClick={() => onPin(key)}
+              >
+                {pinned ? "Hide related" : "Related"}
               </button>
-            )}
+            </div>
+            {pinned && <RaceConnections race={race} onRelate={onRelate} />}
           </li>
         );
       })}

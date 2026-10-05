@@ -73,6 +73,146 @@
   color: var(--ink);
 }
 
+.metaLink {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1px;
+}
+
+.metaLink:hover {
+  border-bottom-color: var(--ink);
+}
+
+.headline {
+  margin-top: 12px;
+  font-size: clamp(19px, 2.5vw, 24px);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  max-width: 36ch;
+}
+
+/* year bars: pick a year, the number above follows */
+.years {
+  margin-top: clamp(28px, 4vw, 40px);
+}
+
+.yearsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.yearsLabel {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.chart {
+  display: flex;
+  align-items: flex-end;
+  gap: clamp(6px, 2vw, 18px);
+  height: clamp(140px, 22vw, 200px);
+}
+
+.col {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  margin-bottom: 6px;
+}
+
+.col:hover .val,
+.colActive .val {
+  opacity: 1;
+}
+
+.barTrack {
+  width: 100%;
+  max-width: 72px;
+  display: flex;
+  align-items: flex-end;
+}
+
+.bar {
+  width: 100%;
+  height: 100%;
+  transform-origin: bottom;
+  background: var(--bar);
+  border-radius: 6px 6px 0 0;
+  opacity: 0.6;
+  transition: background 0.25s ease, opacity 0.25s ease;
+}
+
+/* the year in progress reads as unfinished */
+.barPartial {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 5px,
+    rgba(255, 255, 255, 0.28) 5px 8px
+  );
+}
+
+.col:hover .bar {
+  opacity: 0.85;
+}
+
+.colActive .bar {
+  background-color: var(--bar-active);
+  opacity: 1;
+}
+
+.col:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+.xlabel {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.colActive .xlabel {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  .val,
+  .xlabel {
+    font-size: 11px;
+  }
+}
+
 .scrollCue {
   margin-top: clamp(28px, 4vw, 36px);
   color: var(--muted);
