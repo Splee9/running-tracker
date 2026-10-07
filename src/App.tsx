@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { CursorSpotlight } from "./components/CursorSpotlight";
 import { Nav } from "./components/Nav";
+import { HireFiveLines } from "./components/Build/HireFiveLines";
 import { Home } from "./components/Home";
 import { Miles } from "./components/Miles";
 import { NotFound } from "./components/NotFound";
@@ -46,6 +47,8 @@ export default function App() {
           <Suspense fallback={null}>
             <ActivityLookup />
           </Suspense>
+        ) : path === "/build/hire-five-lines" ? (
+          <HireFiveLines />
         ) : (
           <NotFound />
         )}

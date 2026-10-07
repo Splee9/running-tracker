@@ -54,6 +54,14 @@ export const PAGES: Record<string, PageMeta> = {
     eyebrow: "Activity lookup",
     headline: "Find any session.",
   },
+  "/build/hire-five-lines": {
+    title: "Hire five-line contracts — Spencer Lee",
+    description:
+      "A production agent fleet needs an explicit job card and a probation record before it gets autonomy.",
+    image: "/og/hire-five-lines.png",
+    eyebrow: "Build",
+    headline: "Hire five-line contracts.",
+  },
 };
 
 export const NOT_FOUND_TITLE = "Not found — Spencer Lee";
