@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
+import { Analytics } from "@vercel/analytics/react";
 import { CursorSpotlight } from "./components/CursorSpotlight";
 import { Nav } from "./components/Nav";
 import { Home } from "./components/Home";
@@ -27,6 +28,7 @@ export default function App() {
 
   return (
     <>
+      <Analytics />
       <CursorSpotlight />
       <Nav />
       <main>
