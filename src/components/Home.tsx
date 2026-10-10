@@ -65,6 +65,20 @@ export function Home() {
           </Link>
         </div>
       </motion.div>
+
+      <motion.div className={styles.projects} variants={rise} custom={4} initial="hidden" animate="show">
+        <h2 className={styles.projectsTitle}>Build</h2>
+        <div className={styles.projectGrid}>
+          <Link href="/build/hire-five-lines" className={styles.projectCard}>
+            <h3 className={styles.projectName}>Hire five-line contracts</h3>
+            <p className={styles.projectDesc}>
+              A job card and a probation record decide what an agent is allowed to do before it
+              gets autonomy.
+            </p>
+            <span className={styles.projectArrow}>→</span>
+          </Link>
+        </div>
+      </motion.div>
     </section>
   );
 }
